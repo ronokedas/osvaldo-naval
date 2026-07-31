@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus } from '../types';
+import { generateTechnicalReport } from '../utils/pdfGenerator';
 import {
   X,
   Ship,
@@ -347,6 +348,16 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                         </a>
                       </div>
                     )}
+
+                    <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => generateTechnicalReport(t, vessel)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        Gerar Laudo / Relatório Técnico (PDF)
+                      </button>
+                    </div>
                   </div>
                 ))}
 
