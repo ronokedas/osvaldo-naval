@@ -1,0 +1,6 @@
+{
+  "name": "Nautilus - Gestão Naval & Financeiro",
+  "description": "Sistema de controle financeiro, orçamentos e documentos técnicos da Nautilus Projetos Navais LTDA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

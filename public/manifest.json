@@ -1,0 +1,17 @@
+{
+  "name": "Nautilus Engenharia",
+  "short_name": "Nautilus",
+  "description": "Sistema de Gestão de Projetos e Financeiro da Nautilus Engenharia Naval",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
