@@ -131,8 +131,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* User Profile Mini Badge */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-base flex items-center justify-center shrink-0">
-              {currentUser.nome.charAt(0)}
+            <div className="w-10 h-10 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-base flex items-center justify-center shrink-0 overflow-hidden">
+              {currentUser.avatarUrl ? (
+                <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                currentUser.nome.charAt(0)
+              )}
             </div>
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-white truncate">{currentUser.nome}</p>

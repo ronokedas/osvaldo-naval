@@ -21,6 +21,7 @@ import { FinancialView } from './components/FinancialView';
 import { TeamView } from './components/TeamView';
 import { DeployConfigView } from './components/DeployConfigView';
 import { GlobalDocumentSearch } from './components/GlobalDocumentSearch';
+import { UserProfileModal } from './components/UserProfileModal';
 import {
   INITIAL_USERS,
   INITIAL_CLIENTS,
@@ -48,6 +49,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Fetch initial data from server API on mount
   useEffect(() => {
@@ -372,6 +374,14 @@ export default function App() {
     (t) => t.responsavelId === currentUser.id && t.status !== 'baixado'
   ).length;
 
+  const handleUpdateProfile = (avatarUrl: string) => {
+    const updatedUser = { ...currentUser, avatarUrl };
+    setCurrentUser(updatedUser);
+    setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+    apiPut(`/api/users/${currentUser.id}`, updatedUser);
+    setIsProfileModalOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col">
       {/* Top Header */}
@@ -383,6 +393,7 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         pendingAlertsCount={criticalPendings.length}
+        onToggleProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Main App Body */}
@@ -493,6 +504,15 @@ export default function App() {
             setSelectedVessel(null);
             setActiveTab('proposals');
           }}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {isProfileModalOpen && (
+        <UserProfileModal
+          currentUser={currentUser}
+          onClose={() => setIsProfileModalOpen(false)}
+          onUpdateProfile={handleUpdateProfile}
         />
       )}
     </div>

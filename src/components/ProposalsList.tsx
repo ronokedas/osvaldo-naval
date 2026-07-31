@@ -273,9 +273,9 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
           <div className="max-w-4xl mx-auto my-6 relative">
             <ProposalPdfTemplate
               proposal={selectedProposal}
-              onDownloadPdf={() =>
-                generateProposalPdf('printable-proposal-content', `Proposta_${selectedProposal.numero.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`)
-              }
+              onDownloadPdf={() => {
+                window.open(`/api/generate-proposal-pdf/${selectedProposal.id}`, '_blank');
+              }}
               onPrint={() => window.print()}
               onClose={() => setSelectedProposal(null)}
             />

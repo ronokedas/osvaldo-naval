@@ -367,8 +367,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 return (
                   <div key={u.id} className="flex items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2 overflow-hidden">
-                      <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 font-bold text-blue-900 flex items-center justify-center shrink-0">
-                        {u.nome.charAt(0)}
+                      <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 font-bold text-blue-900 flex items-center justify-center shrink-0 overflow-hidden">
+                        {u.avatarUrl ? (
+                          <img src={u.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          u.nome.charAt(0)
+                        )}
                       </div>
                       <div className="overflow-hidden">
                         <p className="font-bold text-slate-800 truncate">{u.nome}</p>

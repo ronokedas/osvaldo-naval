@@ -11,6 +11,7 @@ interface HeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   pendingAlertsCount: number;
+  onToggleProfile?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   pendingAlertsCount,
+  onToggleProfile,
 }) => {
   return (
     <header className="bg-[#061224] text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
@@ -114,9 +116,17 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* User Profile Badge */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 text-white font-bold text-sm flex items-center justify-center shadow-inner">
-              {currentUser.nome.charAt(0)}
-            </div>
+            <button 
+              onClick={onToggleProfile}
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 text-white font-bold text-sm flex items-center justify-center shadow-inner overflow-hidden border border-slate-700 hover:border-blue-400 transition"
+              title="Meu Perfil"
+            >
+              {currentUser.avatarUrl ? (
+                <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                currentUser.nome.charAt(0)
+              )}
+            </button>
           </div>
         </div>
       </div>

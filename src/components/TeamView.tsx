@@ -52,8 +52,12 @@ export const TeamView: React.FC<TeamViewProps> = ({
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-full bg-blue-900 text-white font-bold text-base flex items-center justify-center">
-                    {u.nome.charAt(0)}
+                  <div className="w-10 h-10 rounded-full bg-blue-900 text-white font-bold text-base flex items-center justify-center overflow-hidden">
+                    {u.avatarUrl ? (
+                      <img src={u.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      u.nome.charAt(0)
+                    )}
                   </div>
 
                   <span
