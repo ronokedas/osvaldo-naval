@@ -16,7 +16,10 @@ import {
   Paperclip,
   Download,
   MessageCircle,
+  Printer,
+  FilePlus,
 } from 'lucide-react';
+import { PaymentReceiptModal } from './PaymentReceiptModal';
 
 interface VesselDetailModalProps {
   vessel: Vessel;
@@ -61,6 +64,7 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
 
   // New payment modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedReceiptEntry, setSelectedReceiptEntry] = useState<FinancialEntry | null>(null);
   const [payValor, setPayValor] = useState('5000');
   const [payTipo, setPayTipo] = useState<'sinal' | 'parcela' | 'quitacao'>('parcela');
   const [payForma, setPayForma] = useState<'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque'>('PIX');
@@ -427,10 +431,10 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                 {vesselPayments.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 text-xs"
+                    className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`font-mono font-bold text-sm ${
                             p.tipo === 'sinal' ? 'text-blue-700' : 'text-emerald-700'
@@ -442,12 +446,25 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                           {p.tipo}
                         </span>
                         <span className="text-slate-400">• {p.formaPagamento}</span>
+                        {p.notaFiscalNumero && (
+                          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
+                            NF-e: {p.notaFiscalNumero}
+                          </span>
+                        )}
                       </div>
                       <p className="text-slate-600 mt-1">{p.observacao}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">
                         Registrado por: {p.lancadoPorNome} em {p.data}
                       </p>
                     </div>
+
+                    <button
+                      onClick={() => setSelectedReceiptEntry(p)}
+                      className="inline-flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-blue-600 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer shrink-0 self-start sm:self-auto"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                      Recibo PDF
+                    </button>
                   </div>
                 ))}
 
@@ -668,6 +685,15 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Recibo PDF Modal */}
+      {selectedReceiptEntry && (
+        <PaymentReceiptModal
+          entry={selectedReceiptEntry}
+          vessel={vessel}
+          onClose={() => setSelectedReceiptEntry(null)}
+        />
       )}
     </div>
   );

@@ -1,0 +1,758 @@
+{
+  "users": [
+    {
+      "id": "user-1",
+      "nome": "Osvaldo",
+      "email": "osvaldo@nautilus.eng.br",
+      "cargo": "Diretor Técnico & Administrador",
+      "role": "admin",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 2
+    },
+    {
+      "id": "user-2",
+      "nome": "Deisy Saldanha",
+      "email": "deisy@nautilus.eng.br",
+      "cargo": "Gestora Administrativa e Financeira",
+      "role": "financeiro",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 3
+    },
+    {
+      "id": "user-3",
+      "nome": "Ultrassonista 1 (Carlos)",
+      "email": "ultrassonista1@nautilus.eng.br",
+      "cargo": "Inspetor Ultrassonista NDT II",
+      "role": "tecnico",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 4
+    },
+    {
+      "id": "user-4",
+      "nome": "Ultrassonista 2 (Marcos)",
+      "email": "ultrassonista2@nautilus.eng.br",
+      "cargo": "Inspetor Ultrassonista NDT II",
+      "role": "tecnico",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 3
+    },
+    {
+      "id": "user-5",
+      "nome": "Desenhista 1 (Ana Beatriz)",
+      "email": "desenhista1@nautilus.eng.br",
+      "cargo": "Projetista / Desenhista CAD",
+      "role": "tecnico",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 5
+    },
+    {
+      "id": "user-6",
+      "nome": "Desenhista 2 (Fernando)",
+      "email": "desenhista2@nautilus.eng.br",
+      "cargo": "Desenhista Estrutural Naval",
+      "role": "tecnico",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 4
+    },
+    {
+      "id": "user-7",
+      "nome": "Desenhista 3 (Rafael)",
+      "email": "desenhista3@nautilus.eng.br",
+      "cargo": "Desenhista Técnico Naval",
+      "role": "tecnico",
+      "ativo": true,
+      "acessoAtivo": true,
+      "tarefasAtivas": 3
+    }
+  ],
+  "clients": [
+    {
+      "id": "cli-1",
+      "nome": "Rogelio",
+      "empresa": "Armador OPUS",
+      "telefone": "(91) 98112-4090",
+      "email": "rogelio@opusnaval.com.br"
+    },
+    {
+      "id": "cli-2",
+      "nome": "Manoel Santos",
+      "empresa": "Transportes Norte Ltda",
+      "telefone": "(91) 99344-1122",
+      "email": "contato@transportesnorte.com.br"
+    },
+    {
+      "id": "cli-3",
+      "nome": "Roberto Magalhães",
+      "empresa": "Navegação Amazônia",
+      "telefone": "(92) 98100-5544",
+      "email": "roberto@navamazonia.com.br"
+    },
+    {
+      "id": "cli-4",
+      "nome": "Juliana Costa",
+      "empresa": "Ferry Boat Ltda",
+      "telefone": "(91) 98822-9900",
+      "email": "operacoes@ferryboatpa.com.br"
+    },
+    {
+      "id": "cli-5",
+      "nome": "Sérgio Mendes",
+      "empresa": "Transportes Tapajós",
+      "telefone": "(93) 99123-7766",
+      "email": "sergio@tapajosnavegacao.com.br"
+    },
+    {
+      "id": "cli-6",
+      "nome": "Eduardo Paes",
+      "empresa": "Norte Serviços Marítimos",
+      "telefone": "(91) 98455-3311",
+      "email": "eduardo@norteservicos.com.br"
+    }
+  ],
+  "vessels": [
+    {
+      "id": "ves-1",
+      "clienteId": "cli-1",
+      "clienteNome": "Rogelio / Armador OPUS",
+      "nome": "OPUS",
+      "tipo": "Empurrador Fluvial",
+      "registro": "PA-30492-B",
+      "status": "aberta",
+      "certificadoraPrincipal": "Amazon Naval",
+      "valorTotal": 18500,
+      "valorSinal": 5000,
+      "valorRecebido": 10000,
+      "criadoEm": "2026-07-15",
+      "descricao": "Inspeção completa de ultrassom de casco e emissão de laudo com croqui de sondagem."
+    },
+    {
+      "id": "ves-2",
+      "clienteId": "cli-2",
+      "clienteNome": "Transportes Norte Ltda",
+      "nome": "Balsa Rio Negro",
+      "tipo": "Balsa Graneleira",
+      "registro": "AM-10298-C",
+      "status": "aberta",
+      "certificadoraPrincipal": "Amazon Naval",
+      "valorTotal": 22000,
+      "valorSinal": 7000,
+      "valorRecebido": 12000,
+      "criadoEm": "2026-07-18",
+      "descricao": "Elaboração de plano de arranjo geral e medições de espessura de anteparas."
+    },
+    {
+      "id": "ves-3",
+      "clienteId": "cli-3",
+      "clienteNome": "Navegação Amazônia",
+      "nome": "Empurrador Solimões",
+      "tipo": "Empurrador de Grande Porte",
+      "registro": "PA-99201-E",
+      "status": "aberta",
+      "certificadoraPrincipal": "Auto Ship",
+      "valorTotal": 28000,
+      "valorSinal": 10000,
+      "valorRecebido": 18000,
+      "criadoEm": "2026-07-20",
+      "descricao": "Medição de chapas de fundo e convés, laudo para renovação de certificado."
+    },
+    {
+      "id": "ves-4",
+      "clienteId": "cli-4",
+      "clienteNome": "Ferry Boat Ltda",
+      "nome": "Ferry Amazônia",
+      "tipo": "Ferry Boat de Passageiros/Cargas",
+      "registro": "PA-44102-F",
+      "status": "aberta",
+      "certificadoraPrincipal": "A definir",
+      "valorTotal": 15000,
+      "valorSinal": 4500,
+      "valorRecebido": 4500,
+      "criadoEm": "2026-07-22",
+      "descricao": "Memorial descritivo e reavaliação de estabilidade."
+    },
+    {
+      "id": "ves-5",
+      "clienteId": "cli-5",
+      "clienteNome": "Transportes Tapajós",
+      "nome": "Balsa Tapajós",
+      "tipo": "Balsa Tanque",
+      "registro": "PA-77301-T",
+      "status": "aberta",
+      "certificadoraPrincipal": "Amazon Naval",
+      "valorTotal": 19500,
+      "valorSinal": 6000,
+      "valorRecebido": 19500,
+      "criadoEm": "2026-07-10",
+      "descricao": "Plano estrutural e medição de chapas de costado."
+    },
+    {
+      "id": "ves-6",
+      "clienteId": "cli-6",
+      "clienteNome": "Norte Serviços Marítimos",
+      "nome": "Rebocador do Norte",
+      "tipo": "Rebocador Portuário",
+      "registro": "PA-12004-R",
+      "status": "aberta",
+      "certificadoraPrincipal": "Auto Ship",
+      "valorTotal": 16000,
+      "valorSinal": 5000,
+      "valorRecebido": 8000,
+      "criadoEm": "2026-07-05",
+      "descricao": "Croqui de sondagem e correção do plano estrutural após exigência da certificadora."
+    }
+  ],
+  "proposals": [
+    {
+      "embarcacaoId": "ves-123",
+      "embarcacaoNome": "EMBARCACAO TESTE",
+      "clienteNome": "Cliente Modelo",
+      "destinatario": "Cliente Modelo",
+      "assunto": "Elaboração de projetos",
+      "prazoEntregaDias": 15,
+      "condicaoPagamento": "100% no Aceite",
+      "status": "enviado",
+      "valorTotal": 8500,
+      "elaboradoPor": "Deisy Saldanha",
+      "observacoesGerais": "Condição de teste 1\nCondição de teste 2",
+      "itens": [
+        {
+          "id": "item-t1",
+          "descricao": "Item 1",
+          "quantidade": 1,
+          "valorUnitario": 4000
+        },
+        {
+          "id": "item-t2",
+          "descricao": "Item 2",
+          "quantidade": 1,
+          "valorUnitario": 4500
+        }
+      ],
+      "id": "prop-1785789800628",
+      "numero": "DS 054/26",
+      "ano": 2026,
+      "criadoEm": "2026-08-03"
+    },
+    {
+      "embarcacaoId": "ves-123",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "Cliente Exemplo",
+      "destinatario": "Sr. Rogelio",
+      "assunto": "Elaboração de relatório de medição de espessura de solda por ultrassom, com croqui de sondagem e declaração de responsabilidade técnica",
+      "prazoEntregaDias": 10,
+      "condicaoPagamento": "À vista",
+      "status": "rascunho",
+      "valorTotal": 3300,
+      "elaboradoPor": "Deisy Saldanha",
+      "observacoesGerais": "A embarcação deverá estar com seus compartimentos limpos e secos para a realização dos serviços contratados.\nO cliente deverá fornecer os dados completos dos armadores e/ou proprietários.\nDespesas de transporte, alimentação e estadia ficam a cargo do armador, quando aplicável.",
+      "itens": [
+        {
+          "id": "item-1",
+          "descricao": "Anotação de Responsabilidade Técnica (ART)",
+          "quantidade": 1,
+          "valorUnitario": 500
+        },
+        {
+          "id": "item-2",
+          "descricao": "Declaração de responsabilidade técnica",
+          "quantidade": 1,
+          "valorUnitario": 300
+        },
+        {
+          "id": "item-3",
+          "descricao": "Relatório de medição de chapas por ultrassom",
+          "quantidade": 1,
+          "valorUnitario": 1500
+        },
+        {
+          "id": "item-4",
+          "descricao": "Certificado de homologação nas certificadoras",
+          "quantidade": 1,
+          "valorUnitario": 500
+        },
+        {
+          "id": "item-5",
+          "descricao": "Croqui de sondagem",
+          "quantidade": 1,
+          "valorUnitario": 500
+        }
+      ],
+      "id": "prop-1785789619610",
+      "numero": "DS 053/26",
+      "ano": 2026,
+      "criadoEm": "2026-08-03"
+    },
+    {
+      "id": "prop-1",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "Rogelio / Armador OPUS",
+      "numero": "DS 051/26",
+      "ano": 2026,
+      "dataEmissao": "30 de julho de 2026",
+      "destinatario": "A/C: Sr. Rogelio",
+      "assunto": "Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica para uma embarcação tipo empurrador, denominada OPUS.",
+      "prazoEntregaDias": 10,
+      "observacoesGerais": "- Início do serviço após aceite formal e pagamento do sinal (cobre taxas de ART e despesas de escritório).\n- Despesas de transporte, alimentação e estadia ficam a cargo do armador, quando aplicável.\n- A embarcação deve estar com compartimentos limpos e secos para a realização dos serviços.\n- Cliente deve fornecer dados completos dos armadores e/ou proprietários.\n- Se o processo for paralisado por pendência do armador/proprietário, o pagamento das parcelas deve continuar até quitação total.\n- Proposta válida por 30 dias a contar da data de emissão.",
+      "condicaoPagamento": "Pagamento em 3 parcelas: R$ 5.000,00 de sinal no aceite + R$ 5.000,00 na entrega do relatório + saldo de R$ 8.500,00 na homologação.",
+      "status": "aprovado",
+      "itens": [
+        {
+          "id": "i1",
+          "descricao": "Anotação de Responsabilidade Técnica (ART) - CREA/PA",
+          "quantidade": 1,
+          "valorUnitario": 800
+        },
+        {
+          "id": "i2",
+          "descricao": "Declaração de responsabilidade técnica emitida por Engenheiro Naval",
+          "quantidade": 1,
+          "valorUnitario": 1200
+        },
+        {
+          "id": "i3",
+          "descricao": "Relatório de medição de chapas de casco por ultrassom NDT",
+          "quantidade": 1,
+          "valorUnitario": 8500
+        },
+        {
+          "id": "i4",
+          "descricao": "Certificado de homologação nas certificadoras credenciadas",
+          "quantidade": 1,
+          "valorUnitario": 3500
+        },
+        {
+          "id": "i5",
+          "descricao": "Croqui de sondagem e mapeamento de espessuras remanescentes",
+          "quantidade": 1,
+          "valorUnitario": 4500
+        }
+      ],
+      "valorTotal": 18500,
+      "aceiteData": "2026-07-28",
+      "aceiteAssinaturaNome": "Rogelio - Armador OPUS",
+      "elaboradoPor": "Deisy Saldanha - Administrativo/Financeiro",
+      "criadoEm": "2026-07-27"
+    },
+    {
+      "id": "prop-2",
+      "embarcacaoId": "ves-2",
+      "embarcacaoNome": "Balsa Rio Negro",
+      "clienteNome": "Transportes Norte Ltda",
+      "numero": "DS 050/26",
+      "ano": 2026,
+      "dataEmissao": "25 de julho de 2026",
+      "destinatario": "A/C: Sr. Manoel Santos",
+      "assunto": "Serviço de medição de espessura de chapas de fundo e convés com elaboração de plano de arranjo geral para a Balsa Rio Negro.",
+      "prazoEntregaDias": 12,
+      "observacoesGerais": "- Início do serviço após aceite formal e pagamento do sinal (cobre taxas de ART e despesas de escritório).\n- Despesas de transporte, alimentação e estadia ficam a cargo do armador, quando aplicável.\n- A embarcação deve estar com compartimentos limpos e secos para a realização dos serviços.\n- Cliente deve fornecer dados completos dos armadores e/ou proprietários.\n- Se o processo for paralisado por pendência do armador/proprietário, o pagamento das parcelas deve continuar até quitação total.\n- Proposta válida por 30 dias a contar da data de emissão.",
+      "condicaoPagamento": "Sinal de R$ 7.000,00 + R$ 15.000,00 em 30 dias.",
+      "status": "aprovado",
+      "itens": [
+        {
+          "id": "i1",
+          "descricao": "Anotação de Responsabilidade Técnica (ART)",
+          "quantidade": 1,
+          "valorUnitario": 1000
+        },
+        {
+          "id": "i2",
+          "descricao": "Relatório de ultrassom de chapas metálicas",
+          "quantidade": 1,
+          "valorUnitario": 11000
+        },
+        {
+          "id": "i3",
+          "descricao": "Plano de arranjo geral e croqui de sondagem",
+          "quantidade": 1,
+          "valorUnitario": 10000
+        }
+      ],
+      "valorTotal": 22000,
+      "aceiteData": "2026-07-26",
+      "aceiteAssinaturaNome": "Manoel Santos - Transportes Norte",
+      "elaboradoPor": "Deisy Saldanha - Administrativo/Financeiro",
+      "criadoEm": "2026-07-25"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-1",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "Rogelio / Armador OPUS",
+      "tipo": "ultrassom",
+      "titulo": "Relatório de medição de chapas por ultrassom",
+      "responsavelId": "user-3",
+      "responsavelNome": "Ultrassonista 1 (Carlos)",
+      "responsavelCargo": "Inspetor Ultrassonista NDT II",
+      "status": "execucao",
+      "certificadora": "Amazon Naval",
+      "prazo": "Hoje, 17:00",
+      "arquivoNome": "relatorio_ultrassom_opus_v1.pdf",
+      "observacoes": "Medição realizada nos pontos críticos do bojo e fundo da embarcação.",
+      "historicoNotas": [
+        {
+          "data": "2026-07-29 10:15",
+          "autor": "Carlos",
+          "texto": "Inspeção de campo concluída com sucesso. Gerando relatório gráfico."
+        }
+      ],
+      "atualizadoEm": "2026-07-30 09:30"
+    },
+    {
+      "id": "task-2",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "Rogelio / Armador OPUS",
+      "tipo": "desenho",
+      "titulo": "Croqui de sondagem",
+      "responsavelId": "user-5",
+      "responsavelNome": "Desenhista 1 (Ana Beatriz)",
+      "responsavelCargo": "Projetista CAD",
+      "status": "pendente",
+      "certificadora": "Amazon Naval",
+      "prazo": "Amanhã, 12:00",
+      "observacoes": "Aguardando envio das planilhas de espessura do ultrassonista.",
+      "atualizadoEm": "2026-07-30 08:00"
+    },
+    {
+      "id": "task-3",
+      "embarcacaoId": "ves-2",
+      "embarcacaoNome": "Balsa Rio Negro",
+      "clienteNome": "Transportes Norte Ltda",
+      "tipo": "desenho",
+      "titulo": "Plano de arranjo geral",
+      "responsavelId": "user-5",
+      "responsavelNome": "Desenhista 1 (Ana Beatriz)",
+      "responsavelCargo": "Projetista CAD",
+      "status": "em_revisao",
+      "certificadora": "Amazon Naval",
+      "prazo": "02/08/2026",
+      "arquivoNome": "arranjo_geral_rio_negro_rev0.dwg",
+      "observacoes": "Ajustando cotas do passadiço conforme solicitação técnica.",
+      "atualizadoEm": "2026-07-29 16:45"
+    },
+    {
+      "id": "task-4",
+      "embarcacaoId": "ves-3",
+      "embarcacaoNome": "Empurrador Solimões",
+      "clienteNome": "Navegação Amazônia",
+      "tipo": "ultrassom",
+      "titulo": "Medição de espessura por ultrassom",
+      "responsavelId": "user-4",
+      "responsavelNome": "Ultrassonista 2 (Marcos)",
+      "responsavelCargo": "Inspetor Ultrassonista NDT II",
+      "status": "enviado",
+      "certificadora": "Auto Ship",
+      "prazo": "05/08/2026",
+      "arquivoNome": "laudo_ultrassom_solimoes_assinado.pdf",
+      "observacoes": "Enviado protocolo digital para análise do perito da Auto Ship.",
+      "atualizadoEm": "2026-07-30 11:00"
+    },
+    {
+      "id": "task-5",
+      "embarcacaoId": "ves-4",
+      "embarcacaoNome": "Ferry Amazônia",
+      "clienteNome": "Ferry Boat Ltda",
+      "tipo": "art",
+      "titulo": "Memorial descritivo e ART",
+      "responsavelId": "user-1",
+      "responsavelNome": "Osvaldo",
+      "responsavelCargo": "Diretor Técnico",
+      "status": "pendente",
+      "certificadora": "A definir",
+      "prazo": "31/07/2026",
+      "observacoes": "Aguardando armador confirmar tipo de carga principal transportada.",
+      "atualizadoEm": "2026-07-28 14:00"
+    },
+    {
+      "id": "task-6",
+      "embarcacaoId": "ves-5",
+      "embarcacaoNome": "Balsa Tapajós",
+      "clienteNome": "Transportes Tapajós",
+      "tipo": "desenho",
+      "titulo": "Plano estrutural",
+      "responsavelId": "user-6",
+      "responsavelNome": "Desenhista 2 (Fernando)",
+      "responsavelCargo": "Desenhista Estrutural Naval",
+      "status": "pronto",
+      "certificadora": "Amazon Naval",
+      "prazo": "11/08/2026",
+      "arquivoNome": "plano_estrutural_tapajos_final.pdf",
+      "observacoes": "Pronto para protocolo. Laudo liberado pelo Osvaldo.",
+      "atualizadoEm": "2026-07-30 10:20"
+    },
+    {
+      "id": "task-7",
+      "embarcacaoId": "ves-6",
+      "embarcacaoNome": "Rebocador do Norte",
+      "clienteNome": "Norte Serviços Marítimos",
+      "tipo": "desenho",
+      "titulo": "Correção do plano estrutural",
+      "responsavelId": "user-7",
+      "responsavelNome": "Desenhista 3 (Rafael)",
+      "responsavelCargo": "Desenhista Técnico Naval",
+      "status": "exigencia",
+      "certificadora": "Auto Ship",
+      "prazo": "29/07/2026",
+      "arquivoNome": "plano_rebocador_exigencia.pdf",
+      "observacoes": "Exigência da certificadora: Reforçar chapeamento na regiâo da bucha do leme.",
+      "historicoNotas": [
+        {
+          "data": "2026-07-29 15:00",
+          "autor": "Auto Ship",
+          "texto": "Solicitado detalhamento dos reforços transversais das hastes."
+        }
+      ],
+      "atualizadoEm": "2026-07-30 08:30"
+    }
+  ],
+  "financialEntries": [
+    {
+      "embarcacaoId": "ves-123",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "ARMADOR / RESPONSÁVEL",
+      "valor": 3300,
+      "tipo": "quitacao",
+      "formaPagamento": "PIX",
+      "observacao": "Proposta DS 053/26 - pagamento à vista",
+      "lancadoPorNome": "Deisy Saldanha",
+      "data": "2026-08-03T12:00:00Z",
+      "id": "fin-1785789636262"
+    },
+    {
+      "id": "fin-1",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "OPUS",
+      "data": "2026-07-28",
+      "valor": 5000,
+      "tipo": "sinal",
+      "formaPagamento": "PIX",
+      "observacao": "Sinal de entrada - Cobertura de ART e despesas operacionais de escritório.",
+      "lancadoPorNome": "Deisy Saldanha",
+      "notaFiscalNumero": "NF-0542",
+      "notaFiscalNome": "NF_0542_OPUS_SINAL.pdf",
+      "notaFiscalUrl": "#",
+      "reciboNumero": "REC-0542-A"
+    },
+    {
+      "id": "fin-2",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "OPUS",
+      "data": "2026-07-30",
+      "valor": 5000,
+      "tipo": "parcela",
+      "formaPagamento": "Transferência Bancária",
+      "observacao": "2ª Parcela paga após medição de ultrassom.",
+      "lancadoPorNome": "Deisy Saldanha",
+      "notaFiscalNumero": "NF-0549",
+      "notaFiscalNome": "NF_0549_OPUS_PARCELA2.pdf",
+      "notaFiscalUrl": "#"
+    },
+    {
+      "id": "fin-3",
+      "embarcacaoId": "ves-2",
+      "embarcacaoNome": "Balsa Rio Negro",
+      "data": "2026-07-26",
+      "valor": 7000,
+      "tipo": "sinal",
+      "formaPagamento": "PIX",
+      "observacao": "Sinal conforme proposta DS 050/26.",
+      "lancadoPorNome": "Deisy Saldanha",
+      "notaFiscalNumero": "NF-0538",
+      "notaFiscalNome": "NF_0538_BALSA_RIO_NEGRO.pdf",
+      "notaFiscalUrl": "#"
+    },
+    {
+      "id": "fin-4",
+      "embarcacaoId": "ves-2",
+      "embarcacaoNome": "Balsa Rio Negro",
+      "data": "2026-07-29",
+      "valor": 5000,
+      "tipo": "parcela",
+      "formaPagamento": "Boleto",
+      "observacao": "Pagamento intermediário.",
+      "lancadoPorNome": "Deisy Saldanha"
+    },
+    {
+      "id": "fin-5",
+      "embarcacaoId": "ves-3",
+      "embarcacaoNome": "Empurrador Solimões",
+      "data": "2026-07-21",
+      "valor": 10000,
+      "tipo": "sinal",
+      "formaPagamento": "PIX",
+      "observacao": "Sinal de 50% de entrada.",
+      "lancadoPorNome": "Deisy Saldanha",
+      "notaFiscalNumero": "NF-0520",
+      "notaFiscalNome": "NF_0520_SOLIMOES.pdf",
+      "notaFiscalUrl": "#"
+    },
+    {
+      "id": "fin-6",
+      "embarcacaoId": "ves-3",
+      "embarcacaoNome": "Empurrador Solimões",
+      "data": "2026-07-29",
+      "valor": 8000,
+      "tipo": "parcela",
+      "formaPagamento": "Transferência Bancária",
+      "observacao": "2ª parcela quitada.",
+      "lancadoPorNome": "Deisy Saldanha"
+    }
+  ],
+  "criticalPendings": [
+    {
+      "id": "crit-1",
+      "tipo": "prazo_vencido",
+      "titulo": "Prazo de entrega vencido",
+      "embarcacaoNome": "Rebocador do Norte",
+      "detalhe": "Ajuste de desenho do plano estrutural - Atrasado em 1 dia",
+      "urgencia": "alta",
+      "data": "Hoje"
+    },
+    {
+      "id": "crit-2",
+      "tipo": "exigencia_certificadora",
+      "titulo": "Exigência recebida da certificadora",
+      "embarcacaoNome": "Rebocador do Norte (Auto Ship)",
+      "detalhe": "Reforço do chapeamento na região da bucha do leme exigido",
+      "urgencia": "alta",
+      "data": "Ontem"
+    },
+    {
+      "id": "crit-3",
+      "tipo": "documento_devolvido",
+      "titulo": "Documento retornado para correção",
+      "embarcacaoNome": "Balsa Rio Negro",
+      "detalhe": "Ajustar escala e símbolos do plano de arranjo geral",
+      "urgencia": "media",
+      "data": "29/07/2026"
+    }
+  ],
+  "protocols": [
+    {
+      "id": "prot-1785789619610",
+      "numeroProtocolo": "PROT-100/26",
+      "dataEnvio": "2026-08-03",
+      "embarcacaoId": "ves-123",
+      "embarcacaoNome": "OPUS",
+      "clienteNome": "Sr. Rogelio",
+      "destinatario": "Certificadora Naval",
+      "orgaoOuEmpresa": "Certificadora Naval",
+      "tipoProtocolo": "certificadora",
+      "responsavelEnvioNome": "Deisy Saldanha",
+      "status": "em_trânsito",
+      "documentosIncluidos": [
+        "Anotação de Responsabilidade Técnica (ART)",
+        "Declaração de responsabilidade técnica",
+        "Relatório de medição de espessura por ultrassom",
+        "Croqui / plano de sondagem",
+        "Certificado de calibração do equipamento",
+        "Registro fotográfico e anexos complementares"
+      ],
+      "observacoes": "Documentação para renovação."
+    },
+    {
+      "id": "prot-1",
+      "numeroProtocolo": "PROT-082/26",
+      "dataEnvio": "2026-08-01",
+      "embarcacaoId": "ves-1",
+      "embarcacaoNome": "Ferry Boat Princesa do Amazonas",
+      "clienteNome": "Navegação Princesa LTDA",
+      "tipoProtocolo": "capitania_dpc",
+      "destinatario": "Capitania Fluvial da Amazônia Ocidental (CFAOC)",
+      "orgaoOuEmpresa": "Marinha do Brasil",
+      "documentosIncluidos": [
+        "Laudo de Estabilidade Definitivo (2 vias)",
+        "Plano de Arranjo Geral (Impresso A0)",
+        "ART de Medição e Cálculo nº AM2026987654",
+        "Memorial Desritivo de Construção"
+      ],
+      "responsavelEnvioNome": "Lucas M. (Entrega)",
+      "status": "protocolado",
+      "codigoRastreio": "MARINHA-2026-8841",
+      "comprovanteNome": "Comprovante_Capitania_PROT082.pdf",
+      "comprovanteUrl": "#",
+      "observacoes": "Protocolado fisicamente no setor de Análise de Projetos da Capitania."
+    },
+    {
+      "id": "prot-2",
+      "numeroProtocolo": "PROT-081/26",
+      "dataEnvio": "2026-07-30",
+      "embarcacaoId": "ves-2",
+      "embarcacaoNome": "Rebocador Opus I",
+      "clienteNome": "Opus Navegação",
+      "tipoProtocolo": "certificadora",
+      "destinatario": "Engº Carlos Perito - RBNA Registros",
+      "orgaoOuEmpresa": "RBNA Sociedade Classificadora",
+      "documentosIncluidos": [
+        "Relatório de Relatório de Medição de Espessura por Ultrassom (MEU)",
+        "Desenho de Chapeamento de Fundo e Chime"
+      ],
+      "responsavelEnvioNome": "Eng. Osvaldo M.",
+      "status": "exigencia",
+      "codigoRastreio": "RBNA-MANAUS-1042",
+      "comprovanteNome": "Protocolo_RBNA_Opus.pdf",
+      "comprovanteUrl": "#",
+      "observacoes": "Recebida nota de exigência nº 02 sobre espessura do leme."
+    },
+    {
+      "id": "prot-3",
+      "numeroProtocolo": "PROT-079/26",
+      "dataEnvio": "2026-07-28",
+      "embarcacaoId": "ves-3",
+      "embarcacaoNome": "Empurrador Solimões",
+      "clienteNome": "Transportes Fluviais do Solimões",
+      "tipoProtocolo": "entrega_cliente",
+      "destinatario": "Sr. Roberto (Diretor de Operações)",
+      "orgaoOuEmpresa": "Transportes Fluviais do Solimões",
+      "documentosIncluidos": [
+        "Pasta Final do Termo de Vistoria e Aderência",
+        "Certificados Digitais com Chancela DPC",
+        "Via de Recibo e Nota Fiscal NF-0520"
+      ],
+      "responsavelEnvioNome": "Lucas M. (Entrega)",
+      "status": "concluido",
+      "codigoRastreio": "ENTREGA-DIRETA-CLIENTE",
+      "comprovanteNome": "Protocolo_Assinado_Solimoes.pdf",
+      "comprovanteUrl": "#",
+      "observacoes": "Entregue em mãos com assinatura do cliente no termo de recebimento."
+    }
+  ],
+  "emailConfig": {
+    "smtpHost": "smtp.nautilus.eng.br",
+    "smtpPort": 587,
+    "usuario": "notificacoes@nautilus.eng.br",
+    "senha": "••••••••••••",
+    "nomeRemetente": "Nautilus Projetos Navais - Sistema",
+    "emailRemetente": "contato@nautilus.eng.br",
+    "usarTlsSsl": true,
+    "ativo": true,
+    "envioAutomaticoPropostas": true,
+    "envioAutomaticoProtocolos": true,
+    "envioAutomaticoRecibos": true
+  },
+  "signatureConfig": {
+    "imagemUrl": "",
+    "nomeSignatario": "Engº Osvaldo M. Saldanha",
+    "cargoSignatario": "Engenheiro Naval Responsável Técnico",
+    "creaOrRegistro": "CREA/PA 15.892-D • DPC/AM 041",
+    "aplicarPropostas": true,
+    "aplicarProtocolos": true,
+    "aplicarRecibos": true,
+    "ativo": true
+  },
+  "logoConfig": {
+    "imagemUrl": "/logo.svg",
+    "nomeEmpresa": "NAUTILUS",
+    "subtitulo": "ENGENHARIA NAVAL",
+    "ativo": true
+  }
+}

@@ -1,4 +1,11 @@
-import { User, Client, Vessel, Proposal, DocumentTask, FinancialEntry, CriticalPending } from '../types';
+import { User, Client, Vessel, Proposal, DocumentTask, FinancialEntry, CriticalPending, Protocol, EmailConfig, SignatureConfig, LogoConfig } from '../types';
+
+export const DEFAULT_LOGO_CONFIG: LogoConfig = {
+  imagemUrl: '/logo.svg',
+  nomeEmpresa: 'NAUTILUS',
+  subtitulo: 'ENGENHARIA NAVAL',
+  ativo: true,
+};
 
 export const INITIAL_USERS: User[] = [
   {
@@ -8,6 +15,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Diretor Técnico & Administrador',
     role: 'admin',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 2,
   },
   {
@@ -17,6 +25,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Gestora Administrativa e Financeira',
     role: 'financeiro',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 3,
   },
   {
@@ -26,6 +35,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Inspetor Ultrassonista NDT II',
     role: 'tecnico',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 4,
   },
   {
@@ -35,6 +45,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Inspetor Ultrassonista NDT II',
     role: 'tecnico',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 3,
   },
   {
@@ -44,6 +55,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Projetista / Desenhista CAD',
     role: 'tecnico',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 5,
   },
   {
@@ -53,6 +65,7 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Desenhista Estrutural Naval',
     role: 'tecnico',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 4,
   },
   {
@@ -62,9 +75,35 @@ export const INITIAL_USERS: User[] = [
     cargo: 'Desenhista Técnico Naval',
     role: 'tecnico',
     ativo: true,
+    acessoAtivo: true,
     tarefasAtivas: 3,
   },
 ];
+
+export const DEFAULT_EMAIL_CONFIG: EmailConfig = {
+  smtpHost: 'smtp.nautilus.eng.br',
+  smtpPort: 587,
+  usuario: 'notificacoes@nautilus.eng.br',
+  senha: '••••••••••••',
+  nomeRemetente: 'Nautilus Projetos Navais - Sistema',
+  emailRemetente: 'contato@nautilus.eng.br',
+  usarTlsSsl: true,
+  ativo: true,
+  envioAutomaticoPropostas: true,
+  envioAutomaticoProtocolos: true,
+  envioAutomaticoRecibos: true,
+};
+
+export const DEFAULT_SIGNATURE_CONFIG: SignatureConfig = {
+  imagemUrl: '', // Base64 or uploaded URL
+  nomeSignatario: 'Engº Osvaldo M. Saldanha',
+  cargoSignatario: 'Engenheiro Naval Responsável Técnico',
+  creaOrRegistro: 'CREA/PA 15.892-D • DPC/AM 041',
+  aplicarPropostas: true,
+  aplicarProtocolos: true,
+  aplicarRecibos: true,
+  ativo: true,
+};
 
 export const INITIAL_CLIENTS: Client[] = [
   {
@@ -403,6 +442,10 @@ export const INITIAL_FINANCIAL_ENTRIES: FinancialEntry[] = [
     formaPagamento: 'PIX',
     observacao: 'Sinal de entrada - Cobertura de ART e despesas operacionais de escritório.',
     lancadoPorNome: 'Deisy Saldanha',
+    notaFiscalNumero: 'NF-0542',
+    notaFiscalNome: 'NF_0542_OPUS_SINAL.pdf',
+    notaFiscalUrl: '#',
+    reciboNumero: 'REC-0542-A',
   },
   {
     id: 'fin-2',
@@ -414,6 +457,9 @@ export const INITIAL_FINANCIAL_ENTRIES: FinancialEntry[] = [
     formaPagamento: 'Transferência Bancária',
     observacao: '2ª Parcela paga após medição de ultrassom.',
     lancadoPorNome: 'Deisy Saldanha',
+    notaFiscalNumero: 'NF-0549',
+    notaFiscalNome: 'NF_0549_OPUS_PARCELA2.pdf',
+    notaFiscalUrl: '#',
   },
   {
     id: 'fin-3',
@@ -425,6 +471,9 @@ export const INITIAL_FINANCIAL_ENTRIES: FinancialEntry[] = [
     formaPagamento: 'PIX',
     observacao: 'Sinal conforme proposta DS 050/26.',
     lancadoPorNome: 'Deisy Saldanha',
+    notaFiscalNumero: 'NF-0538',
+    notaFiscalNome: 'NF_0538_BALSA_RIO_NEGRO.pdf',
+    notaFiscalUrl: '#',
   },
   {
     id: 'fin-4',
@@ -447,6 +496,9 @@ export const INITIAL_FINANCIAL_ENTRIES: FinancialEntry[] = [
     formaPagamento: 'PIX',
     observacao: 'Sinal de 50% de entrada.',
     lancadoPorNome: 'Deisy Saldanha',
+    notaFiscalNumero: 'NF-0520',
+    notaFiscalNome: 'NF_0520_SOLIMOES.pdf',
+    notaFiscalUrl: '#',
   },
   {
     id: 'fin-6',
@@ -488,5 +540,74 @@ export const INITIAL_CRITICAL_PENDINGS: CriticalPending[] = [
     detalhe: 'Ajustar escala e símbolos do plano de arranjo geral',
     urgencia: 'media',
     data: '29/07/2026',
+  },
+];
+
+export const INITIAL_PROTOCOLS: Protocol[] = [
+  {
+    id: 'prot-1',
+    numeroProtocolo: 'PROT-082/26',
+    dataEnvio: '2026-08-01',
+    embarcacaoId: 'ves-1',
+    embarcacaoNome: 'Ferry Boat Princesa do Amazonas',
+    clienteNome: 'Navegação Princesa LTDA',
+    tipoProtocolo: 'capitania_dpc',
+    destinatario: 'Capitania Fluvial da Amazônia Ocidental (CFAOC)',
+    orgaoOuEmpresa: 'Marinha do Brasil',
+    documentosIncluidos: [
+      'Laudo de Estabilidade Definitivo (2 vias)',
+      'Plano de Arranjo Geral (Impresso A0)',
+      'ART de Medição e Cálculo nº AM2026987654',
+      'Memorial Desritivo de Construção'
+    ],
+    responsavelEnvioNome: 'Lucas M. (Entrega)',
+    status: 'protocolado',
+    codigoRastreio: 'MARINHA-2026-8841',
+    comprovanteNome: 'Comprovante_Capitania_PROT082.pdf',
+    comprovanteUrl: '#',
+    observacoes: 'Protocolado fisicamente no setor de Análise de Projetos da Capitania.',
+  },
+  {
+    id: 'prot-2',
+    numeroProtocolo: 'PROT-081/26',
+    dataEnvio: '2026-07-30',
+    embarcacaoId: 'ves-2',
+    embarcacaoNome: 'Rebocador Opus I',
+    clienteNome: 'Opus Navegação',
+    tipoProtocolo: 'certificadora',
+    destinatario: 'Engº Carlos Perito - RBNA Registros',
+    orgaoOuEmpresa: 'RBNA Sociedade Classificadora',
+    documentosIncluidos: [
+      'Relatório de Relatório de Medição de Espessura por Ultrassom (MEU)',
+      'Desenho de Chapeamento de Fundo e Chime'
+    ],
+    responsavelEnvioNome: 'Eng. Osvaldo M.',
+    status: 'exigencia',
+    codigoRastreio: 'RBNA-MANAUS-1042',
+    comprovanteNome: 'Protocolo_RBNA_Opus.pdf',
+    comprovanteUrl: '#',
+    observacoes: 'Recebida nota de exigência nº 02 sobre espessura do leme.',
+  },
+  {
+    id: 'prot-3',
+    numeroProtocolo: 'PROT-079/26',
+    dataEnvio: '2026-07-28',
+    embarcacaoId: 'ves-3',
+    embarcacaoNome: 'Empurrador Solimões',
+    clienteNome: 'Transportes Fluviais do Solimões',
+    tipoProtocolo: 'entrega_cliente',
+    destinatario: 'Sr. Roberto (Diretor de Operações)',
+    orgaoOuEmpresa: 'Transportes Fluviais do Solimões',
+    documentosIncluidos: [
+      'Pasta Final do Termo de Vistoria e Aderência',
+      'Certificados Digitais com Chancela DPC',
+      'Via de Recibo e Nota Fiscal NF-0520'
+    ],
+    responsavelEnvioNome: 'Lucas M. (Entrega)',
+    status: 'concluido',
+    codigoRastreio: 'ENTREGA-DIRETA-CLIENTE',
+    comprovanteNome: 'Protocolo_Assinado_Solimoes.pdf',
+    comprovanteUrl: '#',
+    observacoes: 'Entregue em mãos com assinatura do cliente no termo de recebimento.',
   },
 ];

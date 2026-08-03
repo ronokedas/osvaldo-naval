@@ -7,8 +7,42 @@ export interface User {
   cargo: string;
   role: UserRole;
   ativo: boolean;
+  acessoAtivo?: boolean;
   avatarUrl?: string;
+  senha?: string;
   tarefasAtivas?: number;
+}
+
+export interface EmailConfig {
+  smtpHost: string;
+  smtpPort: number;
+  usuario: string;
+  senha?: string;
+  nomeRemetente: string;
+  emailRemetente: string;
+  usarTlsSsl: boolean;
+  ativo: boolean;
+  envioAutomaticoPropostas: boolean;
+  envioAutomaticoProtocolos: boolean;
+  envioAutomaticoRecibos: boolean;
+}
+
+export interface SignatureConfig {
+  imagemUrl?: string;
+  nomeSignatario: string;
+  cargoSignatario: string;
+  creaOrRegistro?: string;
+  aplicarPropostas: boolean;
+  aplicarProtocolos: boolean;
+  aplicarRecibos: boolean;
+  ativo: boolean;
+}
+
+export interface LogoConfig {
+  imagemUrl?: string;
+  nomeEmpresa: string;
+  subtitulo: string;
+  ativo: boolean;
 }
 
 export type VesselStatus = 'aberta' | 'concluida';
@@ -97,12 +131,38 @@ export interface FinancialEntry {
   id: string;
   embarcacaoId: string;
   embarcacaoNome: string;
+  clienteNome?: string;
   data: string;
   valor: number;
   tipo: 'sinal' | 'parcela' | 'quitacao' | 'despesa';
   formaPagamento: 'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque' | 'Dinheiro';
   observacao: string;
   lancadoPorNome: string;
+  notaFiscalNumero?: string;
+  notaFiscalUrl?: string;
+  notaFiscalNome?: string;
+  notaFiscalDataEmissao?: string;
+  reciboNumero?: string;
+  reciboEmitidoEm?: string;
+}
+
+export interface Protocol {
+  id: string;
+  numeroProtocolo: string;
+  dataEnvio: string;
+  embarcacaoId: string;
+  embarcacaoNome: string;
+  clienteNome: string;
+  tipoProtocolo: 'capitania_dpc' | 'certificadora' | 'entrega_cliente' | 'outros';
+  destinatario: string;
+  orgaoOuEmpresa: string;
+  documentosIncluidos: string[];
+  responsavelEnvioNome: string;
+  status: 'em_trânsito' | 'protocolado' | 'exigencia' | 'concluido';
+  codigoRastreio?: string;
+  comprovanteNome?: string;
+  comprovanteUrl?: string;
+  observacoes?: string;
 }
 
 export interface CriticalPending {

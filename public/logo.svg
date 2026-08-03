@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" width="800" height="280">
+  <!-- Navy N and Blue Boat Hull Icon -->
+  <g id="logo-mark">
+    <!-- Capital N Shape in Dark Navy (#001738) -->
+    <path d="M 160 98 L 208 98 L 208 178 L 284 98 L 316 98 L 316 230 L 268 230 L 268 145 L 192 230 L 160 230 Z" fill="#001738" />
+    <!-- Curved Blue Hull Wave (#1E40AF -> #2563EB) -->
+    <path d="M 160 205 C 200 205 235 228 270 228 C 305 228 325 210 360 216 C 320 236 280 248 240 248 C 200 248 175 238 160 230 Z" fill="#2563EB" />
+  </g>
+  <!-- Typography -->
+  <g id="logo-text">
+    <text x="380" y="180" font-family="'Montserrat', 'Helvetica Neue', Arial, sans-serif" font-size="70" font-weight="800" letter-spacing="4" fill="#001738">NAUTILUS</text>
+    <text x="382" y="222" font-family="'Montserrat', 'Helvetica Neue', Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="12" fill="#001738">ENGENHARIA NAVAL</text>
+  </g>
+</svg>

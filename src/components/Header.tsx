@@ -1,11 +1,12 @@
 import React from 'react';
-import { User } from '../types';
+import { User, LogoConfig } from '../types';
 import { NautilusLogo } from './NautilusLogo';
 import { Bell, Search, UserCheck, Menu } from 'lucide-react';
 
 interface HeaderProps {
   currentUser: User;
   users: User[];
+  logoConfig?: LogoConfig;
   onSelectUser: (user: User) => void;
   onToggleMobileMenu: () => void;
   searchQuery: string;
@@ -17,6 +18,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
   users,
+  logoConfig,
   onSelectUser,
   onToggleMobileMenu,
   searchQuery,
@@ -37,16 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
             <Menu className="w-6 h-6" />
           </button>
           
-          <div className="flex items-center gap-2">
-            <NautilusLogo variant="white" size="sm" showSubtitle={false} />
-            <span className="hidden sm:inline-block text-[10px] font-bold tracking-widest text-blue-400 bg-blue-900/40 border border-blue-700/50 px-2 py-0.5 rounded uppercase">
-              Projetos Navais
-            </span>
+          <div className="flex items-center gap-3">
+            <NautilusLogo variant="white" size="sm" showSubtitle={true} hideTextOnMobile={true} logoConfig={logoConfig} />
           </div>
         </div>
 
         {/* Center: Search input */}
-        <div className="flex-1 max-w-md hidden md:block">
+        <div className="flex-1 max-w-md hidden md:block min-w-0">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
             <input
@@ -64,7 +63,11 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Quick User Role Switcher for Testing/Demonstration */}
           <div className="relative group hidden sm:block">
             <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 hover:border-blue-500/50 px-3 py-1.5 rounded-lg cursor-pointer transition">
-              <UserCheck className="w-4 h-4 text-blue-400" />
+              {currentUser.avatarUrl ? (
+                <img src={currentUser.avatarUrl} alt="Avatar" className="w-5 h-5 rounded-full object-cover shrink-0 border border-blue-400" />
+              ) : (
+                <UserCheck className="w-4 h-4 text-blue-400 shrink-0" />
+              )}
               <div className="text-left">
                 <p className="text-xs font-bold text-slate-200 leading-none">{currentUser.nome}</p>
                 <p className="text-[10px] text-blue-300 uppercase tracking-wider font-mono">
@@ -73,22 +76,54 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            {/* Dropdown for instant user role switching */}
-            <div className="absolute right-0 top-full mt-1 w-64 bg-[#0B192C] border border-slate-700 rounded-lg shadow-xl py-2 hidden group-hover:block z-50">
+            {/* Dropdown for instant profile editing or user role switching */}
+            <div className="absolute right-0 top-full mt-1 w-64 bg-[#0B192C] border border-slate-700 rounded-xl shadow-2xl py-2 hidden group-hover:block z-50">
               <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 mb-1">
-                Alternar Perfil da Equipe:
+                Sua Conta:
+              </div>
+
+              {onToggleProfile && (
+                <button
+                  onClick={onToggleProfile}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center gap-2.5 font-bold text-cyan-300 bg-cyan-950/40 hover:bg-cyan-900/60 border-b border-slate-800 transition cursor-pointer"
+                >
+                  <div className="w-6 h-6 rounded-full bg-cyan-600/30 border border-cyan-400/50 flex items-center justify-center text-white shrink-0 overflow-hidden">
+                    {currentUser.avatarUrl ? (
+                      <img src={currentUser.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      currentUser.nome.charAt(0)
+                    )}
+                  </div>
+                  <div>
+                    <p className="leading-tight">Editar Meu Perfil</p>
+                    <p className="text-[10px] text-slate-400 font-normal">Foto, e-mail e senha</p>
+                  </div>
+                </button>
+              )}
+
+              <div className="px-3 py-1 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 mb-1">
+                Alternar Usuário da Equipe:
               </div>
               {users.map((u) => (
                 <button
                   key={u.id}
                   onClick={() => onSelectUser(u)}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-800 transition ${
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-800 transition cursor-pointer ${
                     u.id === currentUser.id ? 'bg-blue-900/30 text-blue-300 font-bold' : 'text-slate-300'
                   }`}
                 >
-                  <div>
-                    <p className="font-semibold">{u.nome}</p>
-                    <p className="text-[10px] text-slate-400">{u.cargo}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white shrink-0 overflow-hidden">
+                      {u.avatarUrl ? (
+                        <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        u.nome.charAt(0)
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-semibold leading-tight">{u.nome}</p>
+                      <p className="text-[10px] text-slate-400 leading-tight">{u.cargo}</p>
+                    </div>
                   </div>
                   <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase ${
                     u.role === 'admin' ? 'bg-amber-500/20 text-amber-300' :

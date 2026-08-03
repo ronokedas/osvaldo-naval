@@ -1,9 +1,11 @@
 import React from 'react';
-import { Proposal } from '../types';
+import { Proposal, SignatureConfig, LogoConfig } from '../types';
 import { NautilusLogo } from './NautilusLogo';
 
 interface ProposalPdfTemplateProps {
   proposal: Proposal;
+  signatureConfig?: SignatureConfig;
+  logoConfig?: LogoConfig;
   onDownloadPdf?: () => void;
   onPrint?: () => void;
   onClose?: () => void;
@@ -11,6 +13,8 @@ interface ProposalPdfTemplateProps {
 
 export const ProposalPdfTemplate: React.FC<ProposalPdfTemplateProps> = ({
   proposal,
+  signatureConfig,
+  logoConfig,
   onDownloadPdf,
   onPrint,
   onClose,
@@ -71,7 +75,7 @@ export const ProposalPdfTemplate: React.FC<ProposalPdfTemplateProps> = ({
         {/* Company Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start border-b border-slate-200 pb-6 gap-4">
           <div>
-            <NautilusLogo variant="dark" size="lg" />
+            <NautilusLogo variant="dark" size="lg" logoConfig={logoConfig} />
             <p className="text-xs text-slate-500 font-medium mt-2">
               Nautilus Projetos Navais LTDA — CNPJ: 20.671.499/0001-76
             </p>
@@ -218,12 +222,31 @@ export const ProposalPdfTemplate: React.FC<ProposalPdfTemplateProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-12 text-xs">
             {/* Prepared By Signature */}
-            <div className="text-center space-y-2">
-              <div className="border-b border-slate-400 h-16 flex items-end justify-center pb-1">
-                <span className="font-serif italic text-blue-900 text-base">{proposal.elaboradoPor}</span>
+            <div className="text-center space-y-1">
+              <div className="border-b border-slate-400 min-h-[4rem] flex flex-col items-center justify-end pb-1">
+                {signatureConfig?.ativo && signatureConfig?.aplicarPropostas && signatureConfig?.imagemUrl ? (
+                  <img
+                    src={signatureConfig.imagemUrl}
+                    alt="Assinatura Digital"
+                    className="max-h-12 max-w-full object-contain mix-blend-multiply"
+                  />
+                ) : (
+                  <span className="font-serif italic text-blue-900 text-base">{proposal.elaboradoPor}</span>
+                )}
               </div>
-              <p className="font-bold text-slate-900">{proposal.elaboradoPor}</p>
-              <p className="text-slate-500">Nautilus Projetos Navais LTDA</p>
+              <p className="font-bold text-slate-900 mt-1">
+                {signatureConfig?.ativo && signatureConfig?.aplicarPropostas && signatureConfig?.nomeSignatario
+                  ? signatureConfig.nomeSignatario
+                  : proposal.elaboradoPor}
+              </p>
+              <p className="text-slate-500 text-[11px]">
+                {signatureConfig?.ativo && signatureConfig?.aplicarPropostas && signatureConfig?.cargoSignatario
+                  ? signatureConfig.cargoSignatario
+                  : 'Nautilus Projetos Navais LTDA'}
+              </p>
+              {signatureConfig?.ativo && signatureConfig?.aplicarPropostas && signatureConfig?.creaOrRegistro && (
+                <p className="text-slate-400 text-[10px] font-mono">{signatureConfig.creaOrRegistro}</p>
+              )}
             </div>
 
             {/* Client Acceptance Signature */}

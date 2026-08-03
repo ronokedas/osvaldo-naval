@@ -1,10 +1,13 @@
 import React from 'react';
+import { LogoConfig } from '../types';
 
 interface NautilusLogoProps {
   variant?: 'light' | 'dark' | 'white';
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showSubtitle?: boolean;
   className?: string;
+  logoConfig?: LogoConfig;
+  hideTextOnMobile?: boolean;
 }
 
 export const NautilusLogo: React.FC<NautilusLogoProps> = ({
@@ -12,60 +15,102 @@ export const NautilusLogo: React.FC<NautilusLogoProps> = ({
   size = 'md',
   showSubtitle = true,
   className = '',
+  logoConfig,
+  hideTextOnMobile = false,
 }) => {
   // Height scale mapping
   const heightMap = {
     sm: 'h-8',
-    md: 'h-11',
-    lg: 'h-16',
-    xl: 'h-24',
+    md: 'h-10',
+    lg: 'h-14',
+    xl: 'h-20',
   };
 
-  // Text color mapping
-  const primaryTextColor = variant === 'white' ? 'text-white' : 'text-[#061224]';
-  const secondaryTextColor = variant === 'white' ? 'text-slate-300' : 'text-[#0B192C]';
+  const companyName = logoConfig?.nomeEmpresa || 'NAUTILUS';
+  const subtitle = logoConfig?.subtitulo || 'ENGENHARIA NAVAL';
+  const customImg = logoConfig?.imagemUrl;
+
+  // Determine if we are on a dark background (e.g. Header bar)
+  const isDarkBg = variant === 'white' || variant === 'light';
+
+  // Text color classes
+  const primaryTextColor = isDarkBg ? 'text-white' : 'text-[#001738]';
+  const secondaryTextColor = isDarkBg ? 'text-slate-200' : 'text-[#001738]';
+
+  // If a custom uploaded base64/URL image is provided (and it's NOT the default /logo.svg)
+  if (customImg && customImg !== '/logo.svg') {
+    if (isDarkBg) {
+      // On dark background header, wrap custom uploaded images in a clean white badge so dark text logos are 100% visible
+      return (
+        <div className={`flex items-center select-none ${className}`}>
+          <div className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-md border border-white/20 flex items-center justify-center">
+            <img
+              src={customImg}
+              alt={companyName}
+              className={`${heightMap[size]} w-auto object-contain shrink-0`}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`flex items-center select-none ${className}`}>
+        <img
+          src={customImg}
+          alt={companyName}
+          className={`${heightMap[size]} w-auto object-contain shrink-0`}
+        />
+      </div>
+    );
+  }
+
+  // Vector SVG rendering with adaptive colors (pure white on dark bg, dark navy on light bg)
+  const mainColor = isDarkBg ? '#FFFFFF' : '#001738';
+  const waveColor = isDarkBg ? '#3B82F6' : '#2563EB';
 
   return (
     <div className={`flex items-center gap-3 select-none ${className}`}>
-      {/* Visual Icon: Styled N with Navy Hull and Vibrant Wave */}
+      {/* Visual Mark: Solid N with Navy/White Hull & Vibrant Royal Blue Wave */}
       <svg
         className={`${heightMap[size]} w-auto object-contain shrink-0`}
-        viewBox="0 0 240 100"
+        viewBox="0 0 180 120"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {/* Dark Navy Capital N / Hull Element */}
+        {/* Capital N Shape */}
         <path
-          d="M 15 15 L 45 15 L 45 65 L 115 15 L 140 15 L 140 85 L 115 85 L 115 42 L 52 85 L 15 85 Z"
-          fill={variant === 'white' ? '#FFFFFF' : '#0B192C'}
+          d="M 20 18 L 56 18 L 56 75 L 124 18 L 160 18 L 160 102 L 124 102 L 124 45 L 56 102 L 20 102 Z"
+          fill={mainColor}
         />
-        {/* Vibrant Royal Blue Curved Wave Boat Base */}
+        {/* Curved Wave / Hull */}
         <path
-          d="M 15 65 C 50 65 80 82 110 82 C 145 82 170 60 200 68 C 170 88 130 92 100 90 C 65 88 35 75 15 75 Z"
-          fill="#1D4ED8"
+          d="M 20 78 C 55 78 85 96 120 96 C 148 96 165 86 180 80 C 160 106 130 114 98 114 C 62 114 38 102 20 92 Z"
+          fill={waveColor}
         />
       </svg>
 
       {/* Typography */}
-      <div className="flex flex-col justify-center">
+      <div className={`flex flex-col justify-center ${hideTextOnMobile ? 'hidden sm:flex' : ''}`}>
         <span
-          className={`font-extrabold tracking-wider leading-none uppercase ${primaryTextColor} ${
-            size === 'sm' ? 'text-base' : size === 'md' ? 'text-xl' : size === 'lg' ? 'text-3xl' : 'text-4xl'
+          className={`font-black tracking-wider leading-none uppercase ${primaryTextColor} ${
+            size === 'sm' ? 'text-lg' : size === 'md' ? 'text-2xl' : size === 'lg' ? 'text-3xl' : 'text-5xl'
           }`}
-          style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+          style={{ fontFamily: "'Montserrat', 'Inter', system-ui, sans-serif" }}
         >
-          NAUTILUS
+          {companyName}
         </span>
         {showSubtitle && (
           <span
-            className={`font-semibold tracking-[0.22em] leading-tight uppercase ${secondaryTextColor} mt-1 ${
+            className={`font-bold tracking-[0.22em] leading-tight uppercase ${secondaryTextColor} mt-1 ${
               size === 'sm' ? 'text-[9px]' : size === 'md' ? 'text-[11px]' : size === 'lg' ? 'text-xs' : 'text-sm'
             }`}
           >
-            ENGENHARIA NAVAL
+            {subtitle}
           </span>
         )}
       </div>
     </div>
   );
 };
+

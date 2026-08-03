@@ -9,6 +9,10 @@ import {
   CriticalPending,
   TaskStatus,
   Certificadora,
+  Protocol,
+  EmailConfig,
+  SignatureConfig,
+  LogoConfig,
 } from './types';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
@@ -19,9 +23,11 @@ import { ProposalsList } from './components/ProposalsList';
 import { MyTasks } from './components/MyTasks';
 import { FinancialView } from './components/FinancialView';
 import { TeamView } from './components/TeamView';
-import { DeployConfigView } from './components/DeployConfigView';
+import { ProtocolsView } from './components/ProtocolsView';
+import { SettingsView } from './components/SettingsView';
 import { GlobalDocumentSearch } from './components/GlobalDocumentSearch';
 import { UserProfileModal } from './components/UserProfileModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import {
   INITIAL_USERS,
   INITIAL_CLIENTS,
@@ -30,6 +36,10 @@ import {
   INITIAL_TASKS,
   INITIAL_FINANCIAL_ENTRIES,
   INITIAL_CRITICAL_PENDINGS,
+  INITIAL_PROTOCOLS,
+  DEFAULT_EMAIL_CONFIG,
+  DEFAULT_SIGNATURE_CONFIG,
+  DEFAULT_LOGO_CONFIG,
 } from './data/initialData';
 
 export default function App() {
@@ -42,6 +52,10 @@ export default function App() {
   const [tasks, setTasks] = useState<DocumentTask[]>(INITIAL_TASKS);
   const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>(INITIAL_FINANCIAL_ENTRIES);
   const [criticalPendings, setCriticalPendings] = useState<CriticalPending[]>(INITIAL_CRITICAL_PENDINGS);
+  const [protocols, setProtocols] = useState<Protocol[]>(INITIAL_PROTOCOLS);
+  const [emailConfig, setEmailConfig] = useState<EmailConfig>(DEFAULT_EMAIL_CONFIG);
+  const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(DEFAULT_SIGNATURE_CONFIG);
+  const [logoConfig, setLogoConfig] = useState<LogoConfig>(DEFAULT_LOGO_CONFIG);
 
   // UI States
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -67,6 +81,10 @@ export default function App() {
         if (data.tasks) setTasks(data.tasks);
         if (data.financialEntries) setFinancialEntries(data.financialEntries);
         if (data.criticalPendings) setCriticalPendings(data.criticalPendings);
+        if (data.protocols) setProtocols(data.protocols);
+        if (data.emailConfig) setEmailConfig(data.emailConfig);
+        if (data.signatureConfig) setSignatureConfig(data.signatureConfig);
+        if (data.logoConfig) setLogoConfig(data.logoConfig);
       })
       .catch((err) => {
         console.warn('Using local fallback state:', err);
@@ -180,6 +198,43 @@ export default function App() {
     // Update vessel total value if it's attached
     if (proposal.embarcacaoId) {
        setVessels(prev => prev.map(v => v.id === proposal.embarcacaoId ? { ...v, valorTotal: proposal.valorTotal } : v));
+       
+       // Auto-generate DocumentTasks (processos) from proposal items
+       const newTasks: DocumentTask[] = proposal.itens.map((item, index) => {
+         const descLower = item.descricao.toLowerCase();
+         let tipo: 'ultrassom' | 'desenho' | 'art' | 'homologacao' | 'outro' = 'outro';
+         if (descLower.includes('ultrassom') || descLower.includes('espessura')) tipo = 'ultrassom';
+         else if (descLower.includes('desenho') || descLower.includes('plano')) tipo = 'desenho';
+         else if (descLower.includes('art')) tipo = 'art';
+         else if (descLower.includes('homologa')) tipo = 'homologacao';
+
+         // Find a technician to assign
+         const technician = users.find(u => u.role === 'tecnico') || currentUser;
+
+         return {
+           id: `task-${Date.now()}-${index}`,
+           embarcacaoId: proposal.embarcacaoId,
+           embarcacaoNome: proposal.embarcacaoNome,
+           clienteNome: proposal.clienteNome,
+           orcamentoId: proposal.id,
+           tipo,
+           titulo: item.descricao,
+           responsavelId: technician.id,
+           responsavelNome: technician.nome,
+           responsavelCargo: technician.cargo,
+           status: 'pendente',
+           certificadora: 'DPC', // Default
+           prazo: 'A definir',
+           observacoes: `Criado automaticamente a partir da proposta ${proposal.numero}`,
+           historicoNotas: [],
+           atualizadoEm: new Date().toISOString().split('T')[0],
+         };
+       });
+
+       if (newTasks.length > 0) {
+         setTasks(prev => [...newTasks, ...prev]);
+         newTasks.forEach(t => apiPost('/api/tasks', t));
+       }
     }
 
     // Auto-generate sinal
@@ -333,16 +388,23 @@ export default function App() {
 
   // Financial Actions
   const handleAddPayment = (paymentData: Partial<FinancialEntry>) => {
+    const vessel = vessels.find((v) => v.id === paymentData.embarcacaoId);
     const newEntry: FinancialEntry = {
       id: `fin-${Date.now()}`,
       embarcacaoId: paymentData.embarcacaoId || '',
       embarcacaoNome: paymentData.embarcacaoNome || '',
-      data: new Date().toISOString().split('T')[0],
+      clienteNome: vessel?.clienteNome || paymentData.clienteNome || '',
+      data: paymentData.data || new Date().toISOString().split('T')[0],
       valor: paymentData.valor || 0,
       tipo: paymentData.tipo || 'parcela',
       formaPagamento: paymentData.formaPagamento || 'PIX',
       observacao: paymentData.observacao || '',
       lancadoPorNome: currentUser.nome,
+      notaFiscalNumero: paymentData.notaFiscalNumero,
+      notaFiscalUrl: paymentData.notaFiscalUrl,
+      notaFiscalNome: paymentData.notaFiscalNome,
+      notaFiscalDataEmissao: paymentData.notaFiscalDataEmissao,
+      reciboNumero: paymentData.reciboNumero || `REC-${Date.now().toString().slice(-6)}`,
     };
 
     setFinancialEntries([newEntry, ...financialEntries]);
@@ -369,25 +431,113 @@ export default function App() {
     }
   };
 
+  const handleUpdatePayment = (entryId: string, updatedFields: Partial<FinancialEntry>) => {
+    setFinancialEntries((prev) =>
+      prev.map((e) => (e.id === entryId ? { ...e, ...updatedFields } : e))
+    );
+    apiPut(`/api/finance/${entryId}`, updatedFields);
+  };
+
+  // Protocol Actions
+  const handleCreateProtocol = (protocolData: Partial<Protocol>) => {
+    const newProt: Protocol = {
+      id: `prot-${Date.now()}`,
+      numeroProtocolo: protocolData.numeroProtocolo || `PROT-${Date.now().toString().slice(-4)}`,
+      dataEnvio: protocolData.dataEnvio || new Date().toISOString().split('T')[0],
+      embarcacaoId: protocolData.embarcacaoId || '',
+      embarcacaoNome: protocolData.embarcacaoNome || '',
+      clienteNome: protocolData.clienteNome || '',
+      tipoProtocolo: protocolData.tipoProtocolo || 'capitania_dpc',
+      destinatario: protocolData.destinatario || 'Seção de Análise',
+      orgaoOuEmpresa: protocolData.orgaoOuEmpresa || 'Marinha do Brasil',
+      documentosIncluidos: protocolData.documentosIncluidos || ['Documento Técnico'],
+      responsavelEnvioNome: currentUser.nome,
+      status: protocolData.status || 'em_trânsito',
+      codigoRastreio: protocolData.codigoRastreio,
+      observacoes: protocolData.observacoes,
+    };
+
+    setProtocols((prev) => [newProt, ...prev]);
+    apiPost('/api/protocols', newProt);
+  };
+
+  const handleUpdateProtocol = (id: string, updatedFields: Partial<Protocol>) => {
+    setProtocols((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updatedFields } : p))
+    );
+    apiPut(`/api/protocols/${id}`, updatedFields);
+  };
+
   // Count active tasks assigned to current user
   const myTasksCount = tasks.filter(
     (t) => t.responsavelId === currentUser.id && t.status !== 'baixado'
   ).length;
 
-  const handleUpdateProfile = (avatarUrl: string) => {
-    const updatedUser = { ...currentUser, avatarUrl };
+  const handleUpdateProfile = (updatedFields: Partial<User>) => {
+    const updatedUser = { ...currentUser, ...updatedFields };
     setCurrentUser(updatedUser);
-    setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
-    apiPut(`/api/users/${currentUser.id}`, updatedUser);
-    setIsProfileModalOpen(false);
+    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
+    apiPut(`/api/users/${currentUser.id}`, updatedFields);
+  };
+
+  // Settings & Employee Management Handlers
+  const handleCreateUser = (userData: Partial<User>) => {
+    const newUser: User = {
+      id: `user-${Date.now()}`,
+      nome: userData.nome || 'Novo Funcionário',
+      email: userData.email || '',
+      cargo: userData.cargo || 'Técnico',
+      role: userData.role || 'tecnico',
+      ativo: true,
+      acessoAtivo: userData.acessoAtivo !== false,
+      tarefasAtivas: 0,
+    };
+    setUsers((prev) => [...prev, newUser]);
+    apiPost('/api/users', newUser);
+  };
+
+  const handleUpdateUser = (userId: string, updatedFields: Partial<User>) => {
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...updatedFields } : u)));
+    apiPut(`/api/users/${userId}`, updatedFields);
+  };
+
+  const handleUpdateEmailConfig = (config: EmailConfig) => {
+    setEmailConfig(config);
+    apiPut('/api/settings/email', config);
+  };
+
+  const handleUpdateSignatureConfig = (config: SignatureConfig) => {
+    setSignatureConfig(config);
+    apiPut('/api/settings/signature', config);
+  };
+
+  const handleUpdateLogoConfig = (config: LogoConfig) => {
+    setLogoConfig(config);
+    apiPut('/api/settings/logo', config);
+  };
+
+  const handleTestEmailDispatch = async (targetEmail: string) => {
+    try {
+      const res = await fetch('/api/settings/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmail }),
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { ok: false, error: e?.message || 'Erro ao testar SMTP' };
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col">
+    <div 
+      className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
+    >
       {/* Top Header */}
       <Header
         currentUser={currentUser}
         users={users}
+        logoConfig={logoConfig}
         onSelectUser={handleSelectUser}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
@@ -406,6 +556,7 @@ export default function App() {
           isMobileOpen={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
           myTasksCount={myTasksCount}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
         />
 
         {/* Dynamic View Panel */}
@@ -449,6 +600,8 @@ export default function App() {
               proposals={proposals}
               vessels={vessels}
               currentUser={currentUser}
+              signatureConfig={signatureConfig}
+              logoConfig={logoConfig}
               onCreateProposal={handleCreateProposal}
               onUpdateProposal={handleUpdateProposal}
               onFormalAcceptance={handleFormalAcceptance}
@@ -460,7 +613,22 @@ export default function App() {
               vessels={vessels}
               financialEntries={financialEntries}
               currentUser={currentUser}
+              signatureConfig={signatureConfig}
+              logoConfig={logoConfig}
               onAddPayment={handleAddPayment}
+              onUpdatePayment={handleUpdatePayment}
+            />
+          )}
+
+          {activeTab === 'protocols' && (
+            <ProtocolsView
+              protocols={protocols}
+              vessels={vessels}
+              currentUser={currentUser}
+              signatureConfig={signatureConfig}
+              logoConfig={logoConfig}
+              onCreateProtocol={handleCreateProtocol}
+              onUpdateProtocol={handleUpdateProtocol}
             />
           )}
 
@@ -481,7 +649,22 @@ export default function App() {
             <GlobalDocumentSearch tasks={tasks} vessels={vessels} />
           )}
 
-          {activeTab === 'deploy' && <DeployConfigView />}
+          {activeTab === 'settings' && (
+            <SettingsView
+              currentUser={currentUser}
+              users={users}
+              emailConfig={emailConfig}
+              signatureConfig={signatureConfig}
+              logoConfig={logoConfig}
+              onCreateUser={handleCreateUser}
+              onUpdateUser={handleUpdateUser}
+              onUpdateEmailConfig={handleUpdateEmailConfig}
+              onUpdateSignatureConfig={handleUpdateSignatureConfig}
+              onUpdateLogoConfig={handleUpdateLogoConfig}
+              onTestEmailDispatch={handleTestEmailDispatch}
+              onOpenProfile={() => setIsProfileModalOpen(true)}
+            />
+          )}
         </main>
       </div>
 
@@ -512,9 +695,17 @@ export default function App() {
         <UserProfileModal
           currentUser={currentUser}
           onClose={() => setIsProfileModalOpen(false)}
-          onUpdateProfile={handleUpdateProfile}
+          onSaveProfile={handleUpdateProfile}
         />
       )}
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        currentUser={currentUser}
+        myTasksCount={myTasksCount}
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   X,
   ChevronRight,
   Search,
+  Send,
 } from 'lucide-react';
 
 export type TabType =
@@ -21,8 +22,9 @@ export type TabType =
   | 'tasks'
   | 'proposals'
   | 'financial'
+  | 'protocols'
   | 'team'
-  | 'deploy'
+  | 'settings'
   | 'documents';
 
 interface SidebarProps {
@@ -32,6 +34,7 @@ interface SidebarProps {
   isMobileOpen: boolean;
   onCloseMobile: () => void;
   myTasksCount: number;
+  onOpenProfile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile,
   myTasksCount,
+  onOpenProfile,
 }) => {
   const navItems = [
     {
@@ -75,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro'],
     },
     {
+      id: 'protocols' as TabType,
+      label: 'Protocolos & Entregas',
+      icon: Send,
+      roles: ['admin', 'financeiro', 'tecnico'],
+    },
+    {
       id: 'team' as TabType,
       label: 'Equipe & Carga',
       icon: Users,
@@ -87,9 +97,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro', 'tecnico'],
     },
     {
-      id: 'deploy' as TabType,
-      label: 'VPS, Docker & Backup',
-      icon: Server,
+      id: 'settings' as TabType,
+      label: 'Configurações do Sistema',
+      icon: Settings,
       roles: ['admin', 'financeiro', 'tecnico'],
     },
   ];
@@ -113,7 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed md:static top-0 left-0 bottom-0 w-64 bg-[#0B192C] text-slate-300 border-r border-slate-800 flex flex-col justify-between z-50 transition-transform duration-300 ease-in-out ${
+        className={`fixed md:sticky md:top-16 md:h-[calc(100vh-4rem)] left-0 bottom-0 w-64 shrink-0 bg-[#0B192C] text-slate-300 border-r border-slate-800 flex flex-col justify-between z-40 transition-transform duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -130,19 +140,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* User Profile Mini Badge */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-base flex items-center justify-center shrink-0 overflow-hidden">
-              {currentUser.avatarUrl ? (
-                <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                currentUser.nome.charAt(0)
-              )}
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            className="w-full bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/50 rounded-xl p-3 flex items-center justify-between gap-3 text-left transition cursor-pointer group"
+            title="Clique para editar seu perfil, foto e senha"
+          >
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="w-10 h-10 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-base flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition">
+                {currentUser.avatarUrl ? (
+                  <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  currentUser.nome.charAt(0)
+                )}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs font-bold text-white group-hover:text-cyan-300 truncate transition">{currentUser.nome}</p>
+                <p className="text-[10px] text-slate-400 truncate">{currentUser.cargo}</p>
+              </div>
             </div>
-            <div className="overflow-hidden">
-              <p className="text-xs font-bold text-white truncate">{currentUser.nome}</p>
-              <p className="text-[10px] text-slate-400 truncate">{currentUser.cargo}</p>
-            </div>
-          </div>
+            <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded font-mono shrink-0 group-hover:bg-blue-600 group-hover:text-white transition">
+              Perfil
+            </span>
+          </button>
 
           {/* Navigation Links */}
           <nav className="space-y-1">

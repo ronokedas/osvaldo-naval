@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Proposal, Vessel, ScopeItem, User } from '../types';
+import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig } from '../types';
 import { ProposalPdfTemplate } from './ProposalPdfTemplate';
 import { generateProposalPdf } from '../utils/pdfGenerator';
 import { INITIAL_STANDARD_OBSERVATIONS } from '../data/initialData';
@@ -21,6 +21,8 @@ interface ProposalsListProps {
   proposals: Proposal[];
   vessels: Vessel[];
   currentUser: User;
+  signatureConfig?: SignatureConfig;
+  logoConfig?: LogoConfig;
   onCreateProposal: (proposalData: Partial<Proposal>) => void;
   onUpdateProposal: (proposalId: string, updatedData: Partial<Proposal>) => void;
   onFormalAcceptance: (proposalId: string, aceiteNome: string, aceiteData: string, autoGenerateSinal: boolean) => void;
@@ -30,6 +32,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   proposals,
   vessels,
   currentUser,
+  signatureConfig,
+  logoConfig,
   onCreateProposal,
   onUpdateProposal,
   onFormalAcceptance,
@@ -273,8 +277,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
           <div className="max-w-4xl mx-auto my-6 relative">
             <ProposalPdfTemplate
               proposal={selectedProposal}
+              signatureConfig={signatureConfig}
+              logoConfig={logoConfig}
               onDownloadPdf={() => {
-                window.open(`/api/generate-proposal-pdf/${selectedProposal.id}`, '_blank');
+                generateProposalPdf(selectedProposal, logoConfig);
               }}
               onPrint={() => window.print()}
               onClose={() => setSelectedProposal(null)}
