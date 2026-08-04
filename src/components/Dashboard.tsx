@@ -241,49 +241,73 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Ship className="w-6 h-6" />
+        <div 
+          onClick={() => onNavigateTab('vessels')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <Ship className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-slate-900 font-mono">{openVessels.length}</p>
+              <p className="text-xs text-slate-500 font-medium group-hover:text-blue-600 transition-colors">embarcações abertas</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-black text-slate-900 font-mono">{openVessels.length}</p>
-            <p className="text-xs text-slate-500 font-medium">embarcações abertas</p>
-          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
         </div>
 
         {/* Metric 2 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <Clock className="w-6 h-6" />
+        <div 
+          onClick={() => onNavigateTab('tasks')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-emerald-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-slate-900 font-mono">{tasksInExecution.length}</p>
+              <p className="text-xs text-slate-500 font-medium group-hover:text-emerald-600 transition-colors">documentos em execução</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-black text-slate-900 font-mono">{tasksInExecution.length}</p>
-            <p className="text-xs text-slate-500 font-medium">documentos em execução</p>
-          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 transition-colors shrink-0" />
         </div>
 
         {/* Metric 3 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <Award className="w-6 h-6" />
+        <div 
+          onClick={() => onNavigateTab('tasks')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-indigo-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <Award className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-black text-slate-900 font-mono">{tasksWaitingCertifier.length}</p>
+              <p className="text-xs text-slate-500 font-medium group-hover:text-indigo-600 transition-colors">aguardando certificadora</p>
+            </div>
           </div>
-          <div>
-            <p className="text-2xl font-black text-slate-900 font-mono">{tasksWaitingCertifier.length}</p>
-            <p className="text-xs text-slate-500 font-medium">aguardando certificadora</p>
-          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
         </div>
 
         {/* Metric 4 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
-            <DollarSign className="w-6 h-6" />
+        <div 
+          onClick={() => onNavigateTab('financial')}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-teal-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xl font-black text-slate-900 font-mono">
+                R$ {totalToReceive.toLocaleString('pt-BR')}
+              </p>
+              <p className="text-xs text-slate-500 font-medium group-hover:text-teal-600 transition-colors">a receber por embarcação</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xl font-black text-slate-900 font-mono">
-              R$ {totalToReceive.toLocaleString('pt-BR')}
-            </p>
-            <p className="text-xs text-slate-500 font-medium">a receber por embarcação</p>
-          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-teal-500 transition-colors shrink-0" />
         </div>
       </div>
 
