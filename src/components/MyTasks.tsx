@@ -51,22 +51,38 @@ export const MyTasks: React.FC<MyTasksProps> = ({
     return true;
   });
 
-  const handleSimulatedFileUpload = (taskId: string) => {
-    const defaultFileName = simulatedFile ? simulatedFile.name : `laudo_${selectedTask?.embarcacaoNome || 'vessel'}_v2.pdf`;
-    const defaultUrl = `/uploads/${Date.now()}_${defaultFileName}`;
-
-    onUploadTaskFile(taskId, defaultFileName, defaultUrl);
-
-    if (selectedTask) {
-      setSelectedTask({
-        ...selectedTask,
-        arquivoNome: defaultFileName,
-        arquivoUrl: defaultUrl,
-      });
+  
+  const handleSimulatedFileUpload = async (taskId: string) => {
+    if (!simulatedFile) {
+      alert("Selecione um arquivo primeiro.");
+      return;
     }
-
-    setSimulatedFile(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", simulatedFile);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      
+      onUploadTaskFile(taskId, data.fileName, data.url);
+      
+      if (selectedTask) {
+        setSelectedTask({
+          ...selectedTask,
+          arquivoNome: data.fileName,
+          arquivoUrl: data.url,
+        });
+      }
+      setSimulatedFile(null);
+    } catch (err) {
+      alert("Falha no upload do arquivo");
+      console.error(err);
+    }
   };
+
 
   const handleAddNoteSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -28,34 +28,24 @@ import { SettingsView } from './components/SettingsView';
 import { GlobalDocumentSearch } from './components/GlobalDocumentSearch';
 import { UserProfileModal } from './components/UserProfileModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
-import {
-  INITIAL_USERS,
-  INITIAL_CLIENTS,
-  INITIAL_VESSELS,
-  INITIAL_PROPOSALS,
-  INITIAL_TASKS,
-  INITIAL_FINANCIAL_ENTRIES,
-  INITIAL_CRITICAL_PENDINGS,
-  INITIAL_PROTOCOLS,
-  DEFAULT_EMAIL_CONFIG,
-  DEFAULT_SIGNATURE_CONFIG,
-  DEFAULT_LOGO_CONFIG,
-} from './data/initialData';
+import { LoginView } from './components/LoginView';
+
 
 export default function App() {
   // State variables
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]); // Default Osvaldo (Admin)
-  const [clients, setClients] = useState(INITIAL_CLIENTS);
-  const [vessels, setVessels] = useState<Vessel[]>(INITIAL_VESSELS);
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
-  const [tasks, setTasks] = useState<DocumentTask[]>(INITIAL_TASKS);
-  const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>(INITIAL_FINANCIAL_ENTRIES);
-  const [criticalPendings, setCriticalPendings] = useState<CriticalPending[]>(INITIAL_CRITICAL_PENDINGS);
-  const [protocols, setProtocols] = useState<Protocol[]>(INITIAL_PROTOCOLS);
-  const [emailConfig, setEmailConfig] = useState<EmailConfig>(DEFAULT_EMAIL_CONFIG);
-  const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(DEFAULT_SIGNATURE_CONFIG);
-  const [logoConfig, setLogoConfig] = useState<LogoConfig>(DEFAULT_LOGO_CONFIG);
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState([]);
+  const [vessels, setVessels] = useState<Vessel[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [tasks, setTasks] = useState<DocumentTask[]>([]);
+  const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>([]);
+  const [criticalPendings, setCriticalPendings] = useState<CriticalPending[]>([]);
+  const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [emailConfig, setEmailConfig] = useState<EmailConfig>(({} as EmailConfig));
+  const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(({} as SignatureConfig));
+  const [logoConfig, setLogoConfig] = useState<LogoConfig>(({} as LogoConfig));
 
   // UI States
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -66,53 +56,92 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Fetch initial data from server API on mount
+  
   useEffect(() => {
     requestNotificationPermission();
     
-    fetch('/api/state')
-      .then((res) => {
-        if (res.ok) return res.json();
-        throw new Error('API server offline');
-      })
-      .then((data) => {
-        if (data.users) setUsers(data.users);
-        if (data.vessels) setVessels(data.vessels);
-        if (data.proposals) setProposals(data.proposals);
-        if (data.tasks) setTasks(data.tasks);
-        if (data.financialEntries) setFinancialEntries(data.financialEntries);
-        if (data.criticalPendings) setCriticalPendings(data.criticalPendings);
-        if (data.protocols) setProtocols(data.protocols);
-        if (data.emailConfig) setEmailConfig(data.emailConfig);
-        if (data.signatureConfig) setSignatureConfig(data.signatureConfig);
-        if (data.logoConfig) setLogoConfig(data.logoConfig);
-      })
-      .catch((err) => {
-        console.warn('Using local fallback state:', err);
-      });
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const user = await res.json();
+          setCurrentUser(user);
+        }
+      } catch (e) {
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const fetchData = async () => {
+      try {
+        const [vRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
+          fetch('/api/vessels'),
+          fetch('/api/proposals'),
+          fetch('/api/tasks'),
+          fetch('/api/finance'),
+          fetch('/api/protocols'),
+          fetch('/api/critical-pendings'),
+          fetch('/api/settings/email'),
+          fetch('/api/settings/signature'),
+          fetch('/api/settings/logo'),
+        ]);
+        
+        if (vRes.ok) setVessels(await vRes.json());
+        if (pRes.ok) setProposals(await pRes.json());
+        if (tRes.ok) setTasks(await tRes.json());
+        if (fRes.ok) setFinancialEntries(await fRes.json());
+        if (prRes.ok) setProtocols(await prRes.json());
+        if (cRes.ok) setCriticalPendings(await cRes.json());
+        if (emRes.ok) setEmailConfig(await emRes.json());
+        if (sigRes.ok) setSignatureConfig(await sigRes.json());
+        if (logRes.ok) setLogoConfig(await logRes.json());
+        
+        if (currentUser.role !== 'tecnico') {
+           const uRes = await fetch('/api/users');
+           if (uRes.ok) setUsers(await uRes.json());
+        }
+      } catch (e) {
+        console.error('Error fetching data:', e);
+      }
+    };
+    fetchData();
+  }, [currentUser]);
+
 
   // Sync state changes with server API helper
   const apiPost = async (endpoint: string, payload: any) => {
-    try {
-      await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (e) {
-      console.error('API Post Error:', e);
-    }
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('API Post Error');
+    return res.json();
   };
 
   const apiPut = async (endpoint: string, payload: any) => {
+    const res = await fetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('API Put Error');
+    return res.json();
+  };
+
+
+  const handleLogout = async () => {
     try {
-      await fetch(endpoint, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setCurrentUser(null);
     } catch (e) {
-      console.error('API Put Error:', e);
+      console.error('Logout error', e);
     }
   };
 
@@ -529,6 +558,9 @@ export default function App() {
     }
   };
 
+  if (loading) return <div className="flex items-center justify-center min-h-screen">Carregando...</div>;
+  if (!currentUser) return <LoginView onLogin={setCurrentUser} />;
+
   return (
     <div 
       className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
@@ -544,6 +576,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
         pendingAlertsCount={criticalPendings.length}
         onToggleProfile={() => setIsProfileModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main App Body */}
@@ -557,6 +590,7 @@ export default function App() {
           onCloseMobile={() => setIsMobileMenuOpen(false)}
           myTasksCount={myTasksCount}
           onOpenProfile={() => setIsProfileModalOpen(true)}
+          onLogout={handleLogout}
         />
 
         {/* Dynamic View Panel */}

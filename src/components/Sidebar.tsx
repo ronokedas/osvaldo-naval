@@ -203,8 +203,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
+
         {/* Footer info & Company Details */}
         <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 text-[11px] text-slate-500 space-y-1">
+          <button
+            onClick={onLogout}
+            className="w-full text-center px-3 py-2 mb-2 text-xs font-bold text-red-400 bg-red-950/30 rounded-lg hover:bg-red-900/50 transition cursor-pointer"
+          >
+            Sair do Sistema
+          </button>
           <p className="font-semibold text-slate-400 truncate">Nautilus Projetos Navais</p>
           <p className="text-[10px]">Belém/PA — (91) 3247-3278</p>
           <div className="pt-2 flex items-center justify-between text-[10px] text-slate-600">
