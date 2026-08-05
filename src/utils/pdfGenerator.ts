@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Proposal, Protocol, FinancialEntry, Vessel, LogoConfig, DocumentTask } from '../types';
+import { numberToWords } from './numberToWords';
 
 const PRIMARY_DARK = [6, 18, 36];
 const PRIMARY_BLUE = [25, 50, 90];
@@ -75,7 +76,7 @@ const drawSectionTitle = (doc: jsPDF, number: string, text: string, y: number) =
   doc.text(text, 29, y);
 };
 
-export const generateProposalPdf = (proposal: Proposal, logoConfig?: LogoConfig) => {
+export const generateProposalPdf = (proposal: Proposal, logoConfig?: LogoConfig): Blob => {
   const doc = new jsPDF();
   
   const dateStr = new Date(proposal.dataEmissao || proposal.criadoEm).toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -335,7 +336,28 @@ export const generateProposalPdf = (proposal: Proposal, logoConfig?: LogoConfig)
   doc.line(115, currentY + 66, 185, currentY + 66);
 
   drawFooter(doc, 2, 2);
-  doc.save(`Proposta_${proposal.numero.replace(/\//g, '-')}.pdf`);
+  return doc.output("blob");
+};
+
+export const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+export const blobToBase64 = async (blob: Blob): Promise<string> => {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 };
 
 export const generateProtocolPdf = (protocol: Protocol, logoConfig?: LogoConfig) => {
@@ -530,9 +552,12 @@ export const generateProtocolPdf = (protocol: Protocol, logoConfig?: LogoConfig)
   doc.save(`Protocolo_${protocol.numeroProtocolo}.pdf`);
 };
 
-export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfig) => {
+export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfig): Blob => {
   const doc = new jsPDF();
   const dateStr = new Date(entry.data).toLocaleDateString('pt-BR');
+  
+  const isQuitacao = entry.tipo === 'quitacao';
+  const reciboTitle = isQuitacao ? "Recibo de\nquitação" : "Recibo de\npagamento parcial";
   
   drawHeader(doc, `RECIBO OFICIAL\nREC-${entry.reciboNumero || entry.id.substring(0,6).toUpperCase()}/${new Date(entry.data).getFullYear()}`, `EMISSÃO\n${dateStr}`, logoConfig);
 
@@ -547,7 +572,7 @@ export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfi
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
-  doc.text("Recibo de\npagamento", 30, 56);
+  doc.text(reciboTitle, 30, 56);
   
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
@@ -587,7 +612,7 @@ export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfi
   doc.setFont("helvetica", "italic");
   doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
   doc.setFontSize(9);
-  doc.text("(Valor por extenso omitido por simplificação do sistema)", 60, 105);
+  doc.text(numberToWords(entry.valor), 60, 105);
 
   let currentY = 120;
   
@@ -671,7 +696,7 @@ export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfi
   doc.text("Administrativo / Financeiro", 150, currentY + 44, { align: "center" });
 
   drawFooter(doc, 1, 1);
-  doc.save(`Recibo_${entry.reciboNumero || entry.id}.pdf`);
+  return doc.output("blob");
 };
 
 export const generateTechnicalReport = (task: DocumentTask, vessel: Vessel) => {

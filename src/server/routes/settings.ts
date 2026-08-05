@@ -53,13 +53,43 @@ router.put("/:type", requireRole(["admin"]), async (req, res) => {
 });
 
 router.post("/email/test", requireRole(["admin"]), async (req, res) => {
-  // Real implementation would connect to SMTP here using nodemailer
-  // Since we don't have real credentials, we will just simulate success
-  // or return an error to show it requires real SMTP.
-  res.json({
-    success: true,
-    message: "Função de envio real de e-mail requer configuração SMTP válida. (Simulado com sucesso)"
-  });
+  try {
+    const { targetEmail } = req.body;
+    if (!targetEmail) {
+      return res.status(400).json({ ok: false, error: "E-mail de destino é obrigatório" });
+    }
+    const configList = await db.select().from(app_configs).where(eq(app_configs.id, "email"));
+    if (configList.length === 0 || !(configList[0].data as any)?.ativo) {
+      return res.status(400).json({ ok: false, error: "Configuração de e-mail não está ativa." });
+    }
+    const config = configList[0].data as any;
+    if (!config.smtpHost || !config.usuario || !config.senha) {
+      return res.status(400).json({ ok: false, error: "Configuração SMTP incompleta. Verifique host, usuário e senha." });
+    }
+
+    const nodemailer = (await import("nodemailer")).default;
+    const transporter = nodemailer.createTransport({
+      host: config.smtpHost,
+      port: Number(config.smtpPort) || 587,
+      secure: config.usarTlsSsl === true,
+      auth: {
+        user: config.usuario,
+        pass: config.senha,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"${config.nomeRemetente || "Nautilus Projetos Navais"}" <${config.emailRemetente || config.usuario}>`,
+      to: targetEmail,
+      subject: "Teste de Configuração SMTP - Nautilus",
+      text: "Este é um e-mail de teste enviado pelo Sistema Nautilus. Se você recebeu esta mensagem, a configuração SMTP está funcionando corretamente.",
+    });
+
+    res.json({ ok: true, message: "E-mail de teste enviado com sucesso." });
+  } catch (err: any) {
+    console.error("SMTP test error:", err);
+    res.status(502).json({ ok: false, error: err?.message || "Falha ao conectar ao SMTP. Verifique a configuração." });
+  }
 });
 
 export default router;

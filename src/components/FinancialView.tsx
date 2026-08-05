@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
+import { CurrencyInput } from './CurrencyInput';
 
 interface FinancialViewProps {
   vessels: Vessel[];
@@ -46,7 +47,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
   // Modal Form State (New Entry)
   const [selectedVesselId, setSelectedVesselId] = useState(vessels[0]?.id || '');
-  const [payValor, setPayValor] = useState('5000');
+  const [payValor, setPayValor] = useState(5000);
   const [payTipo, setPayTipo] = useState<'sinal' | 'parcela' | 'quitacao' | 'despesa'>('sinal');
   const [payForma, setPayForma] = useState<'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque' | 'Dinheiro'>('PIX');
   const [payObs, setPayObs] = useState('');
@@ -72,8 +73,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
   const handleCreatePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numericVal = parseFloat(payValor);
-    if (isNaN(numericVal) || numericVal <= 0) return;
+    if (payValor <= 0) return;
 
     const vessel = vessels.find((v) => v.id === selectedVesselId);
 
@@ -81,7 +81,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       embarcacaoId: selectedVesselId,
       embarcacaoNome: vessel ? vessel.nome : 'Embarcação',
       clienteNome: vessel ? vessel.clienteNome : '',
-      valor: numericVal,
+      valor: payValor,
       tipo: payTipo,
       formaPagamento: payForma,
       observacao: payObs || `${payTipo === 'sinal' ? 'Sinal' : payTipo === 'despesa' ? 'Despesa/Custo' : 'Pagamento'} ${vessel?.nome}`,
@@ -410,11 +410,10 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Valor (R$) *</label>
-                <input
-                  type="number"
+                <CurrencyInput
                   required
                   value={payValor}
-                  onChange={(e) => setPayValor(e.target.value)}
+                  onValueChange={setPayValor}
                   className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
                 />
               </div>

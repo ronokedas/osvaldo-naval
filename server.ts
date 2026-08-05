@@ -7,6 +7,7 @@ import { createServer as createViteServer } from "vite";
 
 import authRoutes from "./src/server/routes/auth.js";
 import usersRoutes from "./src/server/routes/users.js";
+import clientsRoutes from "./src/server/routes/clients.js";
 import vesselsRoutes from "./src/server/routes/vessels.js";
 import proposalsRoutes from "./src/server/routes/proposals.js";
 import tasksRoutes from "./src/server/routes/tasks.js";
@@ -15,6 +16,8 @@ import protocolsRoutes from "./src/server/routes/protocols.js";
 import pendingsRoutes from "./src/server/routes/critical_pendings.js";
 import settingsRoutes from "./src/server/routes/settings.js";
 import uploadsRoutes from "./src/server/routes/uploads.js";
+import serviceOrdersRoutes from "./src/server/routes/service-orders.js";
+import receivablesRoutes from "./src/server/routes/receivables.js";
 import { pool } from "./src/db/index.js";
 
 
@@ -63,12 +66,16 @@ async function startServer() {
 
   app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
 
-  // Serve uploads dir statically
-  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+  // Signed acceptance documents have their own authenticated route below.
+  app.use("/uploads", (req, res, next) => {
+    if (req.path.startsWith("/acceptances/")) return res.status(404).end();
+    return express.static(path.join(process.cwd(), "uploads"))(req, res, next);
+  });
 
   // API Routes
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
+  app.use("/api/clients", clientsRoutes);
   app.use("/api/vessels", vesselsRoutes);
   app.use("/api/proposals", proposalsRoutes);
   app.use("/api/tasks", tasksRoutes);
@@ -77,6 +84,8 @@ async function startServer() {
   app.use("/api/critical-pendings", pendingsRoutes);
   app.use("/api/settings", settingsRoutes);
   app.use("/api/upload", uploadsRoutes);
+  app.use("/api/service-orders", serviceOrdersRoutes);
+  app.use("/api/receivables", receivablesRoutes);
 
   // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

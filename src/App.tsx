@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { requestNotificationPermission, simulatePushNotification } from './utils/pushNotifications';
 import {
   User,
+  Client,
   Vessel,
   Proposal,
   DocumentTask,
@@ -30,6 +31,9 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { LoginView } from './components/LoginView';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
+import { ServiceOrdersView } from './components/ServiceOrdersView';
+import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
+import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 // The PostgreSQL API uses database field names while the existing UI uses
 // presentation-oriented names. Keep the conversion at the application edge so
@@ -88,7 +92,7 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [clients, setClients] = useState([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasks, setTasks] = useState<DocumentTask[]>([]);
@@ -106,6 +110,13 @@ export default function App() {
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // OS flow state
+  const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
+  const [selectedOsId, setSelectedOsId] = useState<string | null>(null);
+  const [selectedOsDetail, setSelectedOsDetail] = useState<ServiceOrderDetail | null>(null);
+  const [notifications, setNotifications] = useState<InternalNotification[]>([]);
+  const [osFilterStatus, setOsFilterStatus] = useState<string | null>(null);
 
   // Fetch initial data from server API on mount
   
@@ -132,8 +143,9 @@ export default function App() {
     
     const fetchData = async () => {
       try {
-        const [vRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
+        const [vRes, clRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
           fetch('/api/vessels'),
+          fetch('/api/clients'),
           fetch('/api/proposals'),
           fetch('/api/tasks'),
           fetch('/api/finance'),
@@ -149,6 +161,7 @@ export default function App() {
         const vesselById = new Map<string, Vessel>(normalizedVessels.map((v) => [v.id, v]));
 
         if (vRes.ok) setVessels(normalizedVessels);
+        if (clRes.ok) setClients(await clRes.json());
         if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
         if (tRes.ok) setTasks((await tRes.json()).map((task: any) => normalizeTask(task, vesselById)));
         if (fRes.ok) setFinancialEntries((await fRes.json()).map(normalizeFinancialEntry));
@@ -167,7 +180,27 @@ export default function App() {
       }
     };
     fetchData();
-  }, [currentUser]);
+
+    // Fetch service orders + notifications
+    const fetchOs = async () => {
+      try {
+        const [osRes, notifRes] = await Promise.all([
+          fetch('/api/service-orders'),
+          fetch('/api/service-orders/notifications'),
+        ]);
+        if (osRes.ok) setServiceOrders(await osRes.json());
+        if (notifRes.ok) setNotifications(await notifRes.json());
+        // Fetch detail if one is selected
+        if (selectedOsId) {
+          const detRes = await fetch(`/api/service-orders/${selectedOsId}`);
+          if (detRes.ok) setSelectedOsDetail(await detRes.json());
+        }
+      } catch (e) {
+        console.error('Error fetching OS data:', e);
+      }
+    };
+    fetchOs();
+  }, [currentUser, selectedOsId]);
 
 
   // Sync state changes with server API helper
@@ -212,10 +245,18 @@ export default function App() {
 
   // Vessel Actions
   const handleCreateVessel = async (vesselData: Partial<Vessel>, generateTasks: boolean = false) => {
+    let resolvedClientId = vesselData.clienteId || '';
+    let resolvedClientName = vesselData.clienteNome || 'Cliente';
+    if (!resolvedClientId && resolvedClientName.trim()) {
+      const client = await apiPost('/api/clients', { nome: resolvedClientName });
+      resolvedClientId = client.id;
+      resolvedClientName = client.nome;
+      setClients((prev) => prev.some((item) => item.id === client.id) ? prev : [...prev, client]);
+    }
     const newV: Vessel = {
       id: '',
-      clienteId: 'cli-1',
-      clienteNome: vesselData.clienteNome || 'Cliente',
+      clienteId: resolvedClientId,
+      clienteNome: resolvedClientName,
       nome: vesselData.nome || 'Nova Embarcação',
       tipo: vesselData.tipo || 'Empurrador',
       registro: vesselData.registro || 'PA-00000-X',
@@ -270,68 +311,52 @@ export default function App() {
   };
 
   // Proposal Actions
-  const handleFormalAcceptance = (proposalId: string, aceiteNome: string, aceiteData: string, autoGenerateSinal: boolean) => {
+  const handleFormalAcceptance = async (
+    proposalId: string,
+    payload: any,
+    file?: File | null
+  ) => {
     const proposal = proposals.find(p => p.id === proposalId);
     if (!proposal) return;
 
-    // Update proposal
-    const updatedProps = proposals.map((p) => p.id === proposalId ? { ...p, status: 'aprovado' as any, aceiteData, aceiteAssinaturaNome: aceiteNome } : p);
-    setProposals(updatedProps);
-    apiPut(`/api/proposals/${proposalId}`, { status: 'aprovado', aceiteData, aceiteAssinaturaNome: aceiteNome });
+    const formData = new FormData();
+    formData.append('meio', payload.meio || 'outro');
+    formData.append('responsavelNome', payload.responsavelNome || '');
+    formData.append('data', payload.data || new Date().toISOString().split('T')[0]);
+    if (payload.observacao) formData.append('observacao', payload.observacao);
+    formData.append('situacaoFinanceira', payload.situacaoFinanceira || 'pendente');
+    if (payload.valorRecebido !== undefined) formData.append('valorRecebido', String(payload.valorRecebido));
+    if (payload.dataPagamento) formData.append('dataPagamento', payload.dataPagamento);
+    if (payload.formaPagamento) formData.append('formaPagamento', payload.formaPagamento);
+    if (file) formData.append('documento', file);
 
-    // Update vessel total value if it's attached
-    if (proposal.embarcacaoId) {
-       setVessels(prev => prev.map(v => v.id === proposal.embarcacaoId ? { ...v, valorTotal: proposal.valorTotal } : v));
-       
-       // Auto-generate DocumentTasks (processos) from proposal items
-       const newTasks: DocumentTask[] = proposal.itens.map((item, index) => {
-         const descLower = item.descricao.toLowerCase();
-         let tipo: 'ultrassom' | 'desenho' | 'art' | 'homologacao' | 'outro' = 'outro';
-         if (descLower.includes('ultrassom') || descLower.includes('espessura')) tipo = 'ultrassom';
-         else if (descLower.includes('desenho') || descLower.includes('plano')) tipo = 'desenho';
-         else if (descLower.includes('art')) tipo = 'art';
-         else if (descLower.includes('homologa')) tipo = 'homologacao';
+    try {
+      const res = await fetch(`/api/proposals/${proposalId}/accept`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const result = await res.json();
+        // Refresh proposals
+        const pRes = await fetch('/api/proposals');
+        if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
 
-         // Find a technician to assign
-         const technician = users.find(u => u.role === 'tecnico') || currentUser;
-
-         return {
-           id: `task-${Date.now()}-${index}`,
-           embarcacaoId: proposal.embarcacaoId,
-           embarcacaoNome: proposal.embarcacaoNome,
-           clienteNome: proposal.clienteNome,
-           orcamentoId: proposal.id,
-           tipo,
-           titulo: item.descricao,
-           responsavelId: technician.id,
-           responsavelNome: technician.nome,
-           responsavelCargo: technician.cargo,
-           status: 'pendente',
-           certificadora: 'DPC', // Default
-           prazo: 'A definir',
-           observacoes: `Criado automaticamente a partir da proposta ${proposal.numero}`,
-           historicoNotas: [],
-           atualizadoEm: new Date().toISOString().split('T')[0],
-         };
-       });
-
-       if (newTasks.length > 0) {
-         setTasks(prev => [...newTasks, ...prev]);
-         newTasks.forEach(t => apiPost('/api/tasks', t));
-       }
-    }
-
-    // Auto-generate sinal
-    if (autoGenerateSinal && proposal.embarcacaoId) {
-       const halfValue = proposal.valorTotal / 2; // Assuming standard 50% sinal
-       handleAddPayment({
-         embarcacaoId: proposal.embarcacaoId,
-         embarcacaoNome: proposal.embarcacaoNome,
-         valor: halfValue,
-         tipo: 'sinal',
-         formaPagamento: 'PIX',
-         observacao: `Sinal automático gerado na aprovação da Proposta ${proposal.numero}`,
-       });
+        // Redirect to OS scheduling
+        if (result.os?.id && result.redirecionarAgendamento) {
+          setSelectedOsId(result.os.id);
+          setActiveTab('service-orders');
+          const detRes = await fetch(`/api/service-orders/${result.os.id}`);
+          if (detRes.ok) setSelectedOsDetail(await detRes.json());
+          refreshOsList();
+        }
+        return result;
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Erro ao registrar aceite' }));
+        throw new Error(err.error || 'Erro ao registrar aceite');
+      }
+    } catch (e) {
+      console.error('Erro ao criar OS no aceite:', e);
+      throw e;
     }
   };
 
@@ -609,6 +634,84 @@ export default function App() {
     }
   };
 
+  // ===== OS Flow Handlers =====
+  const openOsDetail = async (osId: string) => {
+    setSelectedOsId(osId);
+    setActiveTab('service-orders');
+    try {
+      const res = await fetch(`/api/service-orders/${osId}`);
+      if (res.ok) setSelectedOsDetail(await res.json());
+    } catch (e) {
+      console.error('Erro ao abrir OS:', e);
+    }
+  };
+
+  const refreshOsList = async () => {
+    try {
+      const res = await fetch('/api/service-orders');
+      if (res.ok) setServiceOrders(await res.json());
+    } catch (e) {
+      console.error('Erro ao atualizar OS:', e);
+    }
+  };
+
+  const handleOsSchedule = async (data: any) => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/schedule`, data);
+  };
+
+  const handleOsVistoria = async (data: any) => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/vistoria`, data);
+  };
+
+  const handleOsUploadVersion = async (docId: string, file: File, data: any) => {
+    // Upload file first
+    const formData = new FormData();
+    formData.append('file', file);
+    const upRes = await fetch('/api/upload', { method: 'POST', body: formData });
+    if (!upRes.ok) throw new Error('Falha no upload do arquivo');
+    const up = await upRes.json();
+    // Register version
+    if (!selectedOsId) throw new Error('Ordem de Serviço não selecionada');
+    await apiPost(`/api/service-orders/documents/${docId}/versions`, {
+      arquivoNomeFisico: up.url.replace('/uploads/', ''),
+      arquivoNomeOriginal: up.fileName,
+      tamanho: file.size,
+      tipoMime: file.type,
+      comentario: data.comentario,
+      origem: data.origem,
+    });
+  };
+
+  const handleOsReviewDoc = async (docId: string, aprovado: boolean) => {
+    await apiPost(`/api/service-orders/documents/${docId}/review`, { aprovado });
+  };
+
+  const handleOsApproveDoc = async (docId: string) => {
+    await apiPost(`/api/service-orders/documents/${docId}/approve`, {});
+  };
+
+  const handleOsSubmitExternal = async (data: any) => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/submit-external`, data);
+  };
+
+  const handleOsExternalResponse = async (data: any) => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/external-response`, data);
+  };
+
+  const handleOsDeliver = async (data: any) => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/deliver`, data);
+  };
+
+  const handleOsComplete = async () => {
+    if (!selectedOsId) return;
+    await apiPost(`/api/service-orders/${selectedOsId}/complete`, {});
+  };
+
   if (loading) return <div className="flex items-center justify-center min-h-screen">Carregando...</div>;
   if (!currentUser) return <LoginView onLogin={setCurrentUser} />;
 
@@ -660,6 +763,7 @@ export default function App() {
               vessels={vessels}
               tasks={tasks}
               proposals={proposals}
+              financialEntries={financialEntries}
               criticalPendings={criticalPendings}
               onSelectVessel={(v) => setSelectedVessel(v)}
               onNavigateTab={(tab) => setActiveTab(tab)}
@@ -697,6 +801,16 @@ export default function App() {
               onCreateProposal={handleCreateProposal}
               onUpdateProposal={handleUpdateProposal}
               onFormalAcceptance={handleFormalAcceptance}
+            />
+          )}
+
+          {activeTab === 'service-orders' && (
+            <ServiceOrdersView
+              serviceOrders={serviceOrders}
+              currentUser={currentUser}
+              onOpenOrder={openOsDetail}
+              onRefresh={refreshOsList}
+              filteredStatus={osFilterStatus}
             />
           )}
 
@@ -758,6 +872,32 @@ export default function App() {
           </RouteErrorBoundary>
         </main>
       </div>
+
+      {/* OS Detail Modal Overlay */}
+      {selectedOsDetail && (
+        <ServiceOrderDetailView
+          detail={selectedOsDetail}
+          currentUser={currentUser}
+          users={users}
+          onClose={() => { setSelectedOsDetail(null); setSelectedOsId(null); }}
+          onRefresh={async () => {
+            if (selectedOsId) {
+              const res = await fetch(`/api/service-orders/${selectedOsId}`);
+              if (res.ok) setSelectedOsDetail(await res.json());
+            }
+            refreshOsList();
+          }}
+          onSchedule={handleOsSchedule}
+          onVistoria={handleOsVistoria}
+          onUploadVersion={handleOsUploadVersion}
+          onReviewDoc={handleOsReviewDoc}
+          onApproveDoc={handleOsApproveDoc}
+          onSubmitExternal={handleOsSubmitExternal}
+          onExternalResponse={handleOsExternalResponse}
+          onDeliver={handleOsDeliver}
+          onComplete={handleOsComplete}
+        />
+      )}
 
       {/* Vessel Detail Modal Overlay */}
       {selectedVessel && (

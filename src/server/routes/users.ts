@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "../auth.js";
 import { serializeUser } from "../serializers.js";
 
 const router = Router();
+const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim());
 
 // Only admin can list all users for management
 router.get("/", requireRole(["admin", "financeiro", "tecnico"]), async (req, res) => {
@@ -22,6 +23,7 @@ router.post("/", requireRole(["admin"]), async (req, res) => {
   try {
     const { nome, email, role, senha, avatarUrl, cargo, ativo } = req.body;
     if (!nome?.trim() || !email?.trim() || !senha) return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios" });
+    if (!isValidEmail(email)) return res.status(400).json({ error: "Informe um e-mail válido" });
     const hashedPassword = await argon2.hash(senha || "123456");
     const newUser = await db.insert(users).values({
       nome,
@@ -47,7 +49,10 @@ router.put("/:id", requireRole(["admin"]), async (req, res) => {
     
     const updateData: any = {};
     if (nome) updateData.nome = nome;
-    if (email) updateData.email = email;
+    if (email) {
+      if (!isValidEmail(email)) return res.status(400).json({ error: "Informe um e-mail válido" });
+      updateData.email = email.trim().toLowerCase();
+    }
     if (role) updateData.role = role;
     if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
     if (cargo !== undefined) updateData.cargo = cargo;

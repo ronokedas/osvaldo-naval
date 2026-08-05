@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { User } from '../types';
+import { isValidEmail } from '../utils/input-formatters';
 import {
   User as UserIcon,
   Mail,
@@ -73,7 +74,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       return;
     }
 
-    if (!email.trim() || !email.includes('@')) {
+    if (!isValidEmail(email)) {
       setErrorMessage('Por favor, informe um e-mail válido.');
       return;
     }

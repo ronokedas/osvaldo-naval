@@ -23,7 +23,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
+  fileFilter: (req, file, cb) => {
+    const allowed = /\.(pdf|doc|docx|xls|xlsx|dwg|dxf|png|jpe?g|gif|bmp|tiff?)$/i;
+    const ext = path.extname(file.originalname);
+    if (allowed.test(ext)) return cb(null, true);
+    cb(new Error('Tipo de arquivo não permitido. Aceitos: PDF, DOC/DOCX, XLS/XLSX, DWG/DXF e imagens.'));
+  },
 });
 
 router.post("/", requireAuth, upload.single("file"), (req, res) => {

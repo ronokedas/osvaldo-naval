@@ -2,7 +2,8 @@ import React from 'react';
 import { FinancialEntry, Vessel, SignatureConfig, LogoConfig } from '../types';
 import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
-import { generateReceiptPdf } from '../utils/pdfGenerator';
+import { generateReceiptPdf, downloadBlob } from '../utils/pdfGenerator';
+import { numberToWords } from '../utils/numberToWords';
 
 interface PaymentReceiptModalProps {
   entry: FinancialEntry;
@@ -27,13 +28,11 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   };
 
   const handleDownload = () => {
-    generateReceiptPdf(entry, logoConfig);
+    const blob = generateReceiptPdf(entry, logoConfig);
+    downloadBlob(blob, `Recibo_${receiptNum.replace(/\//g, '-')}.pdf`);
   };
 
-  // Helper to convert number to words in PT-BR (simulated or simplified text)
-  const formatExtenso = (val: number) => {
-    return `${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} reais`;
-  };
+  const receiptTitle = entry.tipo === 'quitacao' ? 'Comprovante de Quitação' : 'Recibo de Pagamento';
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto">
@@ -86,7 +85,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
             <div className="text-right sm:text-right border-l sm:border-l-2 border-slate-200 pl-4 py-1 print:border-slate-400">
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase px-2 py-0.5 rounded border border-emerald-300 print:bg-transparent print:border-black print:text-black">
-                Comprovante de Quitação
+                {receiptTitle}
               </span>
               <h2 className="text-base font-black font-mono text-slate-900 mt-1 print:text-black">
                 {receiptNum}
@@ -120,7 +119,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
             <p>
               Recebemos de <strong className="text-slate-900 uppercase font-bold">{clientName}</strong> a quantia de{' '}
               <strong className="text-slate-900 font-bold font-mono">
-                R$ {entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({formatExtenso(entry.valor)})
+                R$ {entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({numberToWords(entry.valor)})
               </strong>, correspondente ao pagamento de{' '}
               <strong className="text-slate-900 uppercase font-bold">{entry.tipo}</strong> relativo aos serviços de engenharia naval da embarcação{' '}
               <strong className="text-slate-900 font-bold">{entry.embarcacaoNome}</strong>.

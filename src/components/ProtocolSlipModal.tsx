@@ -122,7 +122,7 @@ export const ProtocolSlipModal: React.FC<ProtocolSlipModalProps> = ({
               <p className="text-slate-600 font-medium">Cliente: {protocol.clienteNome}</p>
               {vessel && (
                 <p className="text-[10px] font-mono text-slate-500">
-                  Tipo/Inscrição: {vessel.tipo} • {vessel.inscricaoSistemar || 'Em trânsito'}
+                  Tipo/Inscrição: {vessel.tipo} • {vessel.registro || 'Em trânsito'}
                 </p>
               )}
             </div>

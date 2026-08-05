@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig } from '../types';
+import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable } from '../types';
 import { ProposalPdfTemplate } from './ProposalPdfTemplate';
-import { generateProposalPdf } from '../utils/pdfGenerator';
+import { generateProposalPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
 import { INITIAL_STANDARD_OBSERVATIONS } from '../data/initialData';
+import { CurrencyInput } from './CurrencyInput';
 import {
   FileText,
   Plus,
@@ -15,6 +16,11 @@ import {
   X,
   Edit,
   Eye,
+  Mail,
+  MessageCircle,
+  FileCheck,
+  Upload,
+  ExternalLink,
 } from 'lucide-react';
 
 interface ProposalsListProps {
@@ -25,7 +31,7 @@ interface ProposalsListProps {
   logoConfig?: LogoConfig;
   onCreateProposal: (proposalData: Partial<Proposal>) => void;
   onUpdateProposal: (proposalId: string, updatedData: Partial<Proposal>) => void;
-  onFormalAcceptance: (proposalId: string, aceiteNome: string, aceiteData: string, autoGenerateSinal: boolean) => void;
+  onFormalAcceptance: (proposalId: string, payload: any, file?: File | null) => Promise<any>;
 }
 
 export const ProposalsList: React.FC<ProposalsListProps> = ({
@@ -42,6 +48,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isFormalAcceptanceModalOpen, setIsFormalAcceptanceModalOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
   // Proposal Form State
   const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
@@ -69,7 +77,32 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   // Formal Acceptance Modal State
   const [aceiteNome, setAceiteNome] = useState('');
   const [aceiteData, setAceiteData] = useState(new Date().toISOString().split('T')[0]);
-  const [autoGenerateSinal, setAutoGenerateSinal] = useState(true);
+  const [aceiteMeio, setAceiteMeio] = useState<'presencial' | 'email' | 'whatsapp' | 'outro'>('presencial');
+  const [aceiteObs, setAceiteObs] = useState('');
+  const [aceiteDocumento, setAceiteDocumento] = useState<File | null>(null);
+  const [situacaoFinanceira, setSituacaoFinanceira] = useState<'pendente' | 'parcial' | 'integral'>('pendente');
+  const [valorRecebido, setValorRecebido] = useState(0);
+  const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().split('T')[0]);
+  const [formaPagamento, setFormaPagamento] = useState('PIX');
+  const [acceptStage, setAcceptStage] = useState<'info' | 'financeiro'>('info');
+  const [noDocumentWarning, setNoDocumentWarning] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState('');
+
+  // Acceptance info display
+  const [acceptanceInfo, setAcceptanceInfo] = useState<{ acceptance: ProposalAcceptance | null; receivable: AccountReceivable | null; os: any | null } | null>(null);
+
+  // Email Modal State
+  const [emailDest, setEmailDest] = useState('');
+  const [emailAssunto, setEmailAssunto] = useState('');
+  const [emailMensagem, setEmailMensagem] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState('');
+
+  // WhatsApp Modal State
+  const [whatsNumero, setWhatsNumero] = useState('');
+  const [whatsMensagem, setWhatsMensagem] = useState('');
+  const [whatsSharing, setWhatsSharing] = useState(false);
 
   const filteredProposals = proposals.filter(
     (p) =>
@@ -165,21 +198,199 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     setIsEditorOpen(false);
   };
 
-  const handleConfirmFormalAcceptance = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProposal || !aceiteNome.trim()) return;
-
-    onFormalAcceptance(selectedProposal.id, aceiteNome, aceiteData, autoGenerateSinal);
-
-    setSelectedProposal({
-      ...selectedProposal,
-      status: 'aprovado',
-      aceiteData: aceiteData,
-      aceiteAssinaturaNome: aceiteNome,
-    });
-
-    setIsFormalAcceptanceModalOpen(false);
+  // ---------- PDF Download ----------
+  const handleDownloadPdf = async (proposal: Proposal) => {
+    const blob = generateProposalPdf(proposal, logoConfig);
+    downloadBlob(blob, `Proposta_${proposal.numero.replace(/\//g, '-')}.pdf`);
   };
+
+  // ---------- Email ----------
+  const openEmailModal = (proposal: Proposal) => {
+    const vessel = vessels.find((v) => v.id === proposal.embarcacaoId);
+    setEmailDest(vessel?.emailContato || '');
+    setEmailAssunto(`Proposta ${proposal.numero} - Nautilus Projetos Navais`);
+    setEmailMensagem(`Prezado(a),\n\nSegue em anexo a proposta ${proposal.numero} referente à embarcação ${proposal.embarcacaoNome}.\n\nAtenciosamente,\n${currentUser.nome}`);
+    setEmailResult('');
+    setIsEmailModalOpen(true);
+  };
+
+  const handleSendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProposal) return;
+    setEmailSending(true);
+    setEmailResult('');
+    try {
+      const blob = generateProposalPdf(selectedProposal, logoConfig);
+      const pdfBase64 = await blobToBase64(blob);
+      const res = await fetch(`/api/proposals/${selectedProposal.id}/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinatarioEmail: emailDest,
+          assunto: emailAssunto,
+          mensagem: emailMensagem,
+          pdfBase64,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmailResult('E-mail enviado com sucesso!');
+        setTimeout(() => setIsEmailModalOpen(false), 1500);
+      } else {
+        setEmailResult(data.error || 'Falha ao enviar e-mail');
+      }
+    } catch (err: any) {
+      setEmailResult(err?.message || 'Erro ao enviar e-mail');
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  // ---------- WhatsApp ----------
+  const openWhatsAppModal = (proposal: Proposal) => {
+    const vessel = vessels.find((v) => v.id === proposal.embarcacaoId);
+    const phone = vessel?.telefoneContato || proposal.destinatario.replace(/^A\/C:\s*/, '').split(' ')[0] || '';
+    const msg = `Olá! Segue a proposta ${proposal.numero} referente à embarcação ${proposal.embarcacaoNome} no valor de R$ ${proposal.valorTotal.toLocaleString('pt-BR')}.`;
+    setWhatsNumero(phone);
+    setWhatsMensagem(msg);
+    setIsWhatsAppModalOpen(true);
+  };
+
+  const handleWhatsAppShare = async () => {
+    if (!selectedProposal) return;
+    setWhatsSharing(true);
+    try {
+      const blob = generateProposalPdf(selectedProposal, logoConfig);
+      const file = new File([blob], `Proposta_${selectedProposal.numero.replace(/\//g, '-')}.pdf`, { type: 'application/pdf' });
+
+      // Try Web Share API with file
+      const nav = navigator as any;
+      if (nav.share && nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({
+          files: [file],
+          title: `Proposta ${selectedProposal.numero}`,
+          text: whatsMensagem,
+        });
+        // Register delivery attempt
+        await fetch(`/api/proposals/${selectedProposal.id}/deliveries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ canal: 'whatsapp', destinatario: whatsNumero, status: 'enviado' }),
+        });
+        setIsWhatsAppModalOpen(false);
+      } else {
+        // Desktop fallback: download PDF and open WhatsApp conversation
+        downloadBlob(blob, `Proposta_${selectedProposal.numero.replace(/\//g, '-')}.pdf`);
+        const cleanPhone = whatsNumero.replace(/\D/g, '');
+        const internationalPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+        window.open(`https://wa.me/${internationalPhone}?text=${encodeURIComponent(whatsMensagem + '\n\n(Arquivo PDF baixado; anexe-o antes de enviar.)')}`, '_blank');
+        await fetch(`/api/proposals/${selectedProposal.id}/deliveries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ canal: 'whatsapp', destinatario: whatsNumero, status: 'preparado' }),
+        });
+        setIsWhatsAppModalOpen(false);
+      }
+    } catch (err) {
+      console.error('WhatsApp share error:', err);
+    } finally {
+      setWhatsSharing(false);
+    }
+  };
+
+  // ---------- Acceptance ----------
+  const openAcceptanceModal = (proposal: Proposal) => {
+    setAceiteNome(proposal.destinatario.replace(/^A\/C:\s*/, ''));
+    setAceiteData(new Date().toISOString().split('T')[0]);
+    setAceiteMeio('presencial');
+    setAceiteObs('');
+    setAceiteDocumento(null);
+    setSituacaoFinanceira('pendente');
+    setValorRecebido(0);
+    setDataPagamento(new Date().toISOString().split('T')[0]);
+    setFormaPagamento('PIX');
+    setAcceptStage('info');
+    setNoDocumentWarning(false);
+    setAcceptError('');
+    setAccepting(false);
+    setIsFormalAcceptanceModalOpen(true);
+  };
+
+  const handleConfirmFormalAcceptance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProposal) return;
+
+    if (acceptStage === 'info') {
+      if (!aceiteDocumento) {
+        setNoDocumentWarning(true);
+      }
+      setAcceptStage('financeiro');
+      setValorRecebido(selectedProposal.valorTotal);
+      return;
+    }
+
+    if (!aceiteNome.trim()) {
+      setAcceptError('Nome do responsável é obrigatório');
+      return;
+    }
+
+    setAccepting(true);
+    setAcceptError('');
+    try {
+      const payload = {
+        meio: aceiteMeio,
+        responsavelNome: aceiteNome,
+        data: aceiteData,
+        observacao: aceiteObs,
+        situacaoFinanceira: situacaoFinanceira === 'integral' ? 'integral' : situacaoFinanceira,
+        valorRecebido: situacaoFinanceira === 'pendente' ? undefined : valorRecebido,
+        dataPagamento: situacaoFinanceira === 'pendente' ? undefined : dataPagamento,
+        formaPagamento: situacaoFinanceira === 'pendente' ? undefined : formaPagamento,
+      };
+      const result: any = await onFormalAcceptance(selectedProposal.id, payload, aceiteDocumento);
+      setIsFormalAcceptanceModalOpen(false);
+
+      // Load acceptance info for display
+      const accRes = await fetch(`/api/proposals/${selectedProposal.id}/acceptance`);
+      if (accRes.ok) {
+        const accData = await accRes.json();
+        setAcceptanceInfo({
+          acceptance: accData.acceptance,
+          receivable: accData.receivable,
+          os: accData.os,
+        });
+      }
+
+      // Update selected proposal status
+      setSelectedProposal({
+        ...selectedProposal,
+        status: 'aprovado',
+        aceiteData: aceiteData,
+        aceiteAssinaturaNome: aceiteNome,
+      });
+    } catch (err: any) {
+      setAcceptError(err?.message || 'Erro ao registrar aceite');
+      setAccepting(false);
+    }
+  };
+
+  const handleLoadAcceptance = async (proposal: Proposal) => {
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}/acceptance`);
+      if (res.ok) {
+        const data = await res.json();
+        setAcceptanceInfo({
+          acceptance: data.acceptance,
+          receivable: data.receivable,
+          os: data.os,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const canAccept = currentUser.role !== 'tecnico';
 
   return (
     <div className="space-y-6 pb-12">
@@ -258,7 +469,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </td>
                   <td className="p-3.5 text-center">
                     <button
-                      onClick={() => setSelectedProposal(p)}
+                      onClick={() => {
+                        setSelectedProposal(p);
+                        handleLoadAcceptance(p);
+                      }}
                       className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition"
                     >
                       <Eye className="w-3.5 h-3.5" /> Visualizar / PDF
@@ -279,31 +493,90 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
               proposal={selectedProposal}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}
-              onDownloadPdf={() => {
-                generateProposalPdf(selectedProposal, logoConfig);
-              }}
+              onDownloadPdf={() => handleDownloadPdf(selectedProposal)}
               onPrint={() => window.print()}
               onClose={() => setSelectedProposal(null)}
             />
 
-            {/* Formal Acceptance Button Banner */}
-            {selectedProposal.status !== 'aprovado' && currentUser.role !== 'tecnico' && (
-              <div className="bg-emerald-900 text-white p-4 rounded-xl flex items-center justify-between mt-4 shadow-xl">
+            {/* Action Buttons */}
+            {selectedProposal.status !== 'aprovado' && canAccept && (
+              <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 mt-4 shadow-xl">
                 <div>
-                  <p className="font-bold text-sm">Registrar Aceite Formal do Cliente</p>
-                  <p className="text-xs text-emerald-200">
-                    O aceite formal do cliente transforma esta proposta em Ordem de Serviço com orçamentos e prazos ativados.
+                  <p className="font-bold text-sm text-blue-400">Proposta {selectedProposal.numero}</p>
+                  <p className="text-xs text-slate-300">
+                    Compartilhe ou registre o aceite. O documento assinado é opcional.
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    setAceiteNome(selectedProposal.destinatario.replace(/^A\/C:\s*/, ''));
-                    setIsFormalAcceptanceModalOpen(true);
-                  }}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-lg text-xs transition cursor-pointer"
-                >
-                  Confirmar Aceite Formal
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleDownloadPdf(selectedProposal)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Baixar PDF
+                  </button>
+                  <button
+                    onClick={() => openEmailModal(selectedProposal)}
+                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5" /> E-mail
+                  </button>
+                  <button
+                    onClick={() => openWhatsAppModal(selectedProposal)}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                  </button>
+                  <button
+                    onClick={() => openAcceptanceModal(selectedProposal)}
+                    className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-black inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <FileCheck className="w-3.5 h-3.5" /> Registrar Aceite
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Acceptance Info Display */}
+            {acceptanceInfo?.acceptance && (
+              <div className="bg-emerald-900 text-white p-4 rounded-xl mt-4 shadow-xl space-y-2">
+                <p className="font-bold text-sm text-emerald-300">Aceite Registrado</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <p className="text-emerald-400 text-[10px] uppercase font-bold">Responsável</p>
+                    <p className="font-bold">{acceptanceInfo.acceptance.responsavelNome}</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-400 text-[10px] uppercase font-bold">Data</p>
+                    <p className="font-bold">{acceptanceInfo.acceptance.data}</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-400 text-[10px] uppercase font-bold">Meio</p>
+                    <p className="font-bold uppercase">{acceptanceInfo.acceptance.meio}</p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-400 text-[10px] uppercase font-bold">Situação Financeira</p>
+                    <p className="font-bold uppercase">{acceptanceInfo.receivable?.status || 'pendente'}</p>
+                  </div>
+                </div>
+                {acceptanceInfo.acceptance.documentoUrl && (
+                  <div>
+                    <a
+                      href={acceptanceInfo.acceptance.documentoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-emerald-300 underline font-bold"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      {acceptanceInfo.acceptance.documentoNome || 'Documento assinado'}
+                    </a>
+                  </div>
+                )}
+                {acceptanceInfo.os && (
+                  <div>
+                    <p className="text-emerald-400 text-[10px] uppercase font-bold">Ordem de Serviço</p>
+                    <p className="font-bold">{acceptanceInfo.os.numero}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -379,7 +652,6 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                 />
               </div>
 
-              {/* Scope Items Table Editor */}
               <div className="space-y-2 border-t pt-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-800 text-sm">Escopo dos Serviços & Valores</span>
@@ -408,11 +680,11 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                         onChange={(e) => handleItemChange(item.id, 'quantidade', Number(e.target.value))}
                         className="w-16 px-2 py-1 border rounded bg-white font-mono text-center"
                       />
-                      <input
-                        type="number"
+                      <CurrencyInput
                         value={item.valorUnitario}
-                        onChange={(e) => handleItemChange(item.id, 'valorUnitario', Number(e.target.value))}
-                        className="w-24 px-2 py-1 border rounded bg-white font-mono text-right"
+                        onValueChange={(value) => handleItemChange(item.id, 'valorUnitario', value)}
+                        aria-label={`Valor unitário do item ${idx + 1}`}
+                        className="w-32 px-2 py-1 border rounded bg-white font-mono text-right"
                       />
                       <button
                         type="button"
@@ -467,60 +739,304 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         </div>
       )}
 
-      {/* Modal Confirm Formal Acceptance */}
-      {isFormalAcceptanceModalOpen && (
+      {/* Modal: Email */}
+      {isEmailModalOpen && selectedProposal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Registrar Aceite Formal</h3>
-            <form onSubmit={handleConfirmFormalAcceptance} className="space-y-3 text-xs">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-blue-600" /> Enviar Proposta por E-mail
+            </h3>
+            <form onSubmit={handleSendEmail} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Nome do Responsável / Armador *</label>
+                <label className="block font-bold text-slate-700 mb-1">Destinatário *</label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={aceiteNome}
-                  onChange={(e) => setAceiteNome(e.target.value)}
+                  value={emailDest}
+                  onChange={(e) => setEmailDest(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Data do Aceite Formal *</label>
+                <label className="block font-bold text-slate-700 mb-1">Assunto *</label>
                 <input
-                  type="date"
+                  type="text"
                   required
-                  value={aceiteData}
-                  onChange={(e) => setAceiteData(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg font-mono"
+                  value={emailAssunto}
+                  onChange={(e) => setEmailAssunto(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
-
-              <div className="flex items-center gap-2 p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
-                <input
-                  type="checkbox"
-                  id="autoSinal"
-                  checked={autoGenerateSinal}
-                  onChange={(e) => setAutoGenerateSinal(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mensagem</label>
+                <textarea
+                  rows={4}
+                  value={emailMensagem}
+                  onChange={(e) => setEmailMensagem(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
                 />
-                <label htmlFor="autoSinal" className="text-xs font-bold text-emerald-900 cursor-pointer select-none">
-                  Gerar automaticamente cobrança de "Sinal" (50% do valor total) no painel financeiro.
-                </label>
               </div>
-
+              <p className="text-[10px] text-slate-400">
+                O PDF da proposta será anexado automaticamente. O envio requer SMTP configurado.
+              </p>
+              {emailResult && (
+                <p className={`text-xs font-bold ${emailResult.includes('sucesso') ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {emailResult}
+                </p>
+              )}
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
                   type="button"
-                  onClick={() => setIsFormalAcceptanceModalOpen(false)}
+                  onClick={() => setIsEmailModalOpen(false)}
                   className="px-3 py-1.5 border rounded-lg"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-lg">
-                  Confirmar Aceite
+                <button
+                  type="submit"
+                  disabled={emailSending}
+                  className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded-lg disabled:opacity-50"
+                >
+                  {emailSending ? 'Enviando...' : 'Enviar E-mail'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: WhatsApp */}
+      {isWhatsAppModalOpen && selectedProposal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-emerald-600" /> Enviar por WhatsApp
+            </h3>
+            <form onSubmit={(e) => { e.preventDefault(); handleWhatsAppShare(); }} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Telefone (com DDI/DDD) *</label>
+                <input
+                  type="tel"
+                  required
+                  value={whatsNumero}
+                  onChange={(e) => setWhatsNumero(e.target.value)}
+                  placeholder="Ex: 5591982412345"
+                  className="w-full px-3 py-2 border rounded-lg font-mono"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mensagem</label>
+                <textarea
+                  rows={3}
+                  value={whatsMensagem}
+                  onChange={(e) => setWhatsMensagem(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Em dispositivos compatíveis, o PDF será compartilhado diretamente. No computador, o PDF será baixado e a conversa aberta com a mensagem pronta.
+              </p>
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsWhatsAppModalOpen(false)}
+                  className="px-3 py-1.5 border rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={whatsSharing}
+                  className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-lg disabled:opacity-50"
+                >
+                  {whatsSharing ? 'Compartilhando...' : 'Compartilhar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Accept */}
+      {isFormalAcceptanceModalOpen && selectedProposal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FileCheck className="w-5 h-5 text-emerald-600" />
+              {acceptStage === 'info' ? 'Registrar Aceite Formal' : 'Situação Financeira'}
+            </h3>
+
+            {acceptStage === 'info' ? (
+              <form onSubmit={handleConfirmFormalAcceptance} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Meio do Aceite *</label>
+                  <select
+                    value={aceiteMeio}
+                    onChange={(e) => setAceiteMeio(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-lg text-xs"
+                  >
+                    <option value="presencial">Presencial</option>
+                    <option value="email">Por E-mail</option>
+                    <option value="whatsapp">Por WhatsApp</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nome do Responsável / Armador *</label>
+                  <input
+                    type="text"
+                    required
+                    value={aceiteNome}
+                    onChange={(e) => setAceiteNome(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Data do Aceite *</label>
+                  <input
+                    type="date"
+                    required
+                    value={aceiteData}
+                    onChange={(e) => setAceiteData(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Observação</label>
+                  <textarea
+                    rows={2}
+                    value={aceiteObs}
+                    onChange={(e) => setAceiteObs(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                    Documento Assinado (Opcional, até 25MB)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                    onChange={(e) => {
+                      setAceiteDocumento(e.target.files?.[0] || null);
+                      setNoDocumentWarning(false);
+                    }}
+                    className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700"
+                  />
+                  {noDocumentWarning && (
+                    <p className="text-[11px] text-amber-600 font-bold mt-1">
+                      ⚠ Você não anexou um documento assinado. O aceite será registrado sem comprovante.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormalAcceptanceModalOpen(false)}
+                    className="px-3 py-1.5 border rounded-lg"
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-lg">
+                    Continuar
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleConfirmFormalAcceptance} className="space-y-3 text-xs">
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                  <p className="font-bold text-slate-800">
+                    {selectedProposal.numero} — R$ {selectedProposal.valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Total da proposta. Informe a situação financeira real.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Situação Financeira *</label>
+                  <select
+                    value={situacaoFinanceira}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setSituacaoFinanceira(val);
+                      if (val === 'integral') setValorRecebido(selectedProposal.valorTotal);
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg text-xs"
+                  >
+                    <option value="pendente">Pendente — Nenhum valor recebido</option>
+                    <option value="parcial">Parcial — Recebimento parcial no aceite</option>
+                    <option value="integral">Pago integralmente — Valor total recebido</option>
+                  </select>
+                </div>
+
+                {situacaoFinanceira !== 'pendente' && (
+                  <>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Valor Recebido (R$) *</label>
+                      <CurrencyInput
+                        required
+                        value={valorRecebido}
+                        onValueChange={setValorRecebido}
+                        className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Data do Pagamento</label>
+                        <input
+                          type="date"
+                          value={dataPagamento}
+                          onChange={(e) => setDataPagamento(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Forma de Pagamento</label>
+                        <select
+                          value={formaPagamento}
+                          onChange={(e) => setFormaPagamento(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-xs"
+                        >
+                          <option value="PIX">PIX / Transferência</option>
+                          <option value="Dinheiro">Dinheiro Físico</option>
+                          <option value="Boleto">Boleto Bancário</option>
+                          <option value="Cheque">Cheque</option>
+                          <option value="Transferência Bancária">Transferência Bancária</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {acceptError && (
+                  <p className="text-xs font-bold text-red-600">{acceptError}</p>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setAcceptStage('info')}
+                    className="px-3 py-1.5 border rounded-lg"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={accepting}
+                    className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-lg disabled:opacity-50"
+                  >
+                    {accepting ? 'Registrando...' : 'Confirmar Aceite'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

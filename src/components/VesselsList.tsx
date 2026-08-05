@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Vessel, Client, Certificadora } from '../types';
 import { Ship, Search, Plus, Filter, ArrowRight, DollarSign, Award, CheckCircle2 } from 'lucide-react';
+import { CurrencyInput } from './CurrencyInput';
 
 interface VesselsListProps {
   vessels: Vessel[];
@@ -28,8 +29,8 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   const [newTipo, setNewTipo] = useState('Empurrador Fluvial');
   const [newRegistro, setNewRegistro] = useState('');
   const [newCertificadora, setNewCertificadora] = useState<Certificadora>('Amazon Naval');
-  const [newValorTotal, setNewValorTotal] = useState('18500');
-  const [newValorSinal, setNewValorSinal] = useState('5000');
+  const [newValorTotal, setNewValorTotal] = useState(18500);
+  const [newValorSinal, setNewValorSinal] = useState(5000);
   const [newDescricao, setNewDescricao] = useState('');
   const [generateStandardTasks, setGenerateStandardTasks] = useState(true);
 
@@ -54,9 +55,9 @@ export const VesselsList: React.FC<VesselsListProps> = ({
       tipo: newTipo,
       registro: newRegistro || 'PA-00000-X',
       certificadoraPrincipal: newCertificadora,
-      valorTotal: parseFloat(newValorTotal) || 0,
-      valorSinal: parseFloat(newValorSinal) || 0,
-      valorRecebido: parseFloat(newValorSinal) || 0,
+      valorTotal: newValorTotal,
+      valorSinal: newValorSinal,
+      valorRecebido: newValorSinal,
       descricao: newDescricao,
       status: 'aberta',
     }, generateStandardTasks);
@@ -317,19 +318,17 @@ export const VesselsList: React.FC<VesselsListProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Valor Total Estimado (R$)</label>
-                  <input
-                    type="number"
+                  <CurrencyInput
                     value={newValorTotal}
-                    onChange={(e) => setNewValorTotal(e.target.value)}
+                    onValueChange={setNewValorTotal}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
                   />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Sinal de Entrada (R$)</label>
-                  <input
-                    type="number"
+                  <CurrencyInput
                     value={newValorSinal}
-                    onChange={(e) => setNewValorSinal(e.target.value)}
+                    onValueChange={setNewValorSinal}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
                   />
                 </div>

@@ -15,6 +15,20 @@
       "when": 1785871000000,
       "tag": "0001_restore_ai_studio_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785872000000,
+      "tag": "0002_os_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785873000000,
+      "tag": "0003_proposal_flow",
+      "breakpoints": true
     }
   ]
 }

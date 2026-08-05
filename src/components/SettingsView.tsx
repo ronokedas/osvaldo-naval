@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { User, EmailConfig, SignatureConfig, LogoConfig, UserRole } from '../types';
+import { isValidEmail } from '../utils/input-formatters';
 import { NautilusLogo } from './NautilusLogo';
 import {
   Settings,
@@ -97,6 +98,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.nome.trim() || !newUser.email.trim() || newUser.senha.length < 6) return;
+    if (!isValidEmail(newUser.email)) {
+      alert('Informe um e-mail válido, como nome@empresa.com.');
+      return;
+    }
 
     try {
       await onCreateUser({
@@ -120,6 +125,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handle Save Email Config
   const handleSaveEmail = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidEmail(localEmailConfig.emailRemetente)) {
+      alert('Informe um e-mail remetente válido.');
+      return;
+    }
     onUpdateEmailConfig(localEmailConfig);
     setEmailSavedToast(true);
     setTimeout(() => setEmailSavedToast(false), 3000);
@@ -127,6 +136,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Handle Test Email
   const handleTestEmail = async () => {
+    if (!isValidEmail(testEmailAddress)) {
+      setTestResult({ success: false, message: 'Informe um e-mail de teste válido.' });
+      return;
+    }
     setTestingEmail(true);
     setTestResult(null);
     try {

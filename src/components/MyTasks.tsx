@@ -11,9 +11,8 @@ import {
   RotateCcw,
   Send,
   Calendar,
-  MessageSquare,
-  ArrowRight,
   FileText,
+  ExternalLink,
 } from 'lucide-react';
 
 interface MyTasksProps {
@@ -35,6 +34,7 @@ export const MyTasks: React.FC<MyTasksProps> = ({
   const [selectedTask, setSelectedTask] = useState<DocumentTask | null>(null);
   const [noteText, setNoteText] = useState('');
   const [simulatedFile, setSimulatedFile] = useState<File | null>(null);
+  const [taskToSendToCertifier, setTaskToSendToCertifier] = useState<DocumentTask | null>(null);
 
   // Filter tasks assigned to user or all if admin
   const userTasks = currentUser.role === 'tecnico'
@@ -196,9 +196,20 @@ export const MyTasks: React.FC<MyTasksProps> = ({
 
             {/* Attached file if present */}
             {t.arquivoNome && (
-              <div className="flex items-center gap-2 text-xs font-mono text-blue-800 bg-blue-50/60 p-2.5 rounded-xl border border-blue-100">
+              <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-2.5 text-xs font-mono text-blue-800">
                 <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
                 <span className="truncate">{t.arquivoNome}</span>
+                {t.arquivoUrl && (
+                  <a
+                    href={t.arquivoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 font-sans font-bold text-blue-700 shadow-sm transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title={`Visualizar ${t.arquivoNome}`}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Ver
+                  </a>
+                )}
               </div>
             )}
 
@@ -229,7 +240,7 @@ export const MyTasks: React.FC<MyTasksProps> = ({
               </button>
 
               <button
-                onClick={() => onUpdateTaskStatus(t.id, 'enviado')}
+                onClick={() => setTaskToSendToCertifier(t)}
                 className={`py-2 rounded-xl border transition flex items-center justify-center gap-1 cursor-pointer ${
                   t.status === 'enviado'
                     ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
@@ -277,6 +288,23 @@ export const MyTasks: React.FC<MyTasksProps> = ({
             </div>
 
             {/* Upload File Zone */}
+            {selectedTask.arquivoNome && selectedTask.arquivoUrl && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+                <div className="flex min-w-0 items-center gap-2 text-blue-900">
+                  <Paperclip className="h-4 w-4 shrink-0 text-blue-600" />
+                  <span className="truncate font-bold">{selectedTask.arquivoNome}</span>
+                </div>
+                <a
+                  href={selectedTask.arquivoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-3 py-2 font-bold text-blue-700 shadow-sm hover:bg-blue-100"
+                >
+                  <ExternalLink className="h-4 w-4" /> Visualizar
+                </a>
+              </div>
+            )}
+
             <div className="border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 rounded-2xl text-center space-y-3">
               <Upload className="w-8 h-8 text-blue-600 mx-auto" />
               <div>
@@ -316,6 +344,45 @@ export const MyTasks: React.FC<MyTasksProps> = ({
                 className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl"
               >
                 Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taskToSendToCertifier && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="certifier-confirmation-title">
+          <div className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <Send className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 id="certifier-confirmation-title" className="text-lg font-bold text-slate-900">Confirmar envio à certificadora?</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Esta ação registra no sistema que <strong>{taskToSendToCertifier.titulo}</strong> foi enviado para <strong>{taskToSendToCertifier.certificadora}</strong> e altera a tarefa para “Na certificadora”.
+              </p>
+            </div>
+            {!taskToSendToCertifier.arquivoUrl ? (
+              <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <span>Anexe o documento antes de registrar o envio.</span>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <strong className="block text-slate-800">Importante:</strong> o sistema registra o envio e o status; ele não transmite o arquivo automaticamente ao órgão externo.
+              </div>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button onClick={() => setTaskToSendToCertifier(null)} className="rounded-xl px-4 py-2.5 font-bold text-slate-600 hover:bg-slate-100">Cancelar</button>
+              <button
+                disabled={!taskToSendToCertifier.arquivoUrl}
+                onClick={() => {
+                  onUpdateTaskStatus(taskToSendToCertifier.id, 'enviado');
+                  setTaskToSendToCertifier(null);
+                }}
+                className="rounded-xl bg-indigo-600 px-4 py-2.5 font-bold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Confirmar registro
               </button>
             </div>
           </div>

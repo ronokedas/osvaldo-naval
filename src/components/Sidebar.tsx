@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Search,
   Send,
+  ClipboardList,
 } from 'lucide-react';
 
 export type TabType =
@@ -21,6 +22,7 @@ export type TabType =
   | 'vessels'
   | 'tasks'
   | 'proposals'
+  | 'service-orders'
   | 'financial'
   | 'protocols'
   | 'team'
@@ -73,6 +75,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Propostas (DS 0XX/AA)',
       icon: FileText,
       roles: ['admin', 'financeiro'],
+    },
+    {
+      id: 'service-orders' as TabType,
+      label: 'Ordens de Serviço',
+      icon: ClipboardList,
+      roles: ['admin', 'financeiro', 'tecnico'],
     },
     {
       id: 'financial' as TabType,

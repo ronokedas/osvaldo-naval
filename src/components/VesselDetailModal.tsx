@@ -20,6 +20,7 @@ import {
   FilePlus,
 } from 'lucide-react';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
+import { CurrencyInput } from './CurrencyInput';
 
 interface VesselDetailModalProps {
   vessel: Vessel;
@@ -65,7 +66,7 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   // New payment modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedReceiptEntry, setSelectedReceiptEntry] = useState<FinancialEntry | null>(null);
-  const [payValor, setPayValor] = useState('5000');
+  const [payValor, setPayValor] = useState(5000);
   const [payTipo, setPayTipo] = useState<'sinal' | 'parcela' | 'quitacao'>('parcela');
   const [payForma, setPayForma] = useState<'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque'>('PIX');
   const [payObs, setPayObs] = useState('');
@@ -113,13 +114,12 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
 
   const handleAddPaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numericValue = parseFloat(payValor);
-    if (isNaN(numericValue) || numericValue <= 0) return;
+    if (payValor <= 0) return;
 
     onAddPayment({
       embarcacaoId: vessel.id,
       embarcacaoNome: vessel.nome,
-      valor: numericValue,
+      valor: payValor,
       tipo: payTipo,
       formaPagamento: payForma,
       observacao: payObs || `${payTipo === 'sinal' ? 'Sinal' : 'Pagamento'} da embarcação ${vessel.nome}`,
@@ -620,11 +620,10 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
             <form onSubmit={handleAddPaymentSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Valor Recebido (R$) *</label>
-                <input
-                  type="number"
+                <CurrencyInput
                   required
                   value={payValor}
-                  onChange={(e) => setPayValor(e.target.value)}
+                  onValueChange={setPayValor}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
                 />
               </div>
