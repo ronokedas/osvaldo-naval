@@ -2,23 +2,22 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { financial_entries, vessels } from "../../db/schema.js";
 import { eq, desc, sql } from "drizzle-orm";
-import { requireAuth } from "../auth.js";
+import { requireRole } from "../auth.js";
+import { serializeFinancialEntry } from "../serializers.js";
 
 const router = Router();
+const requireFinanceAccess = requireRole(["admin", "financeiro"]);
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireFinanceAccess, async (req, res) => {
   try {
     const all = await db.select().from(financial_entries).orderBy(desc(financial_entries.createdAt));
-    res.json(all.map(f => ({
-      ...f,
-      valor: Number(f.valor)
-    })));
+    res.json(all.map(serializeFinancialEntry));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireFinanceAccess, async (req, res) => {
   try {
     const data = req.body;
     
@@ -51,17 +50,14 @@ router.post("/", requireAuth, async (req, res) => {
       return newEntry;
     });
     
-    res.json({
-      ...result,
-      valor: Number(result.valor)
-    });
+    res.json(serializeFinancialEntry(result));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requireFinanceAccess, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -69,7 +65,11 @@ router.put("/:id", requireAuth, async (req, res) => {
     const updateData: any = { updatedAt: new Date() };
     if (data.valor !== undefined) updateData.valor = data.valor.toString();
     if (data.tipo !== undefined) updateData.tipo = data.tipo;
-    // ...
+    if (data.formaPagamento !== undefined) updateData.formaPagamento = data.formaPagamento;
+    if (data.observacao !== undefined) updateData.observacao = data.observacao;
+    if (data.notaFiscalNumero !== undefined) updateData.notaFiscalNumero = data.notaFiscalNumero;
+    if (data.notaFiscalNome !== undefined) updateData.notaFiscalNome = data.notaFiscalNome;
+    if (data.notaFiscalUrl !== undefined) updateData.notaFiscalUrl = data.notaFiscalUrl;
     
     const result = await db.transaction(async (tx) => {
       const updated = await tx.update(financial_entries).set(updateData).where(eq(financial_entries.id, id)).returning();
@@ -92,10 +92,7 @@ router.put("/:id", requireAuth, async (req, res) => {
     
     if (!result) return res.status(404).json({ error: "Not found" });
     
-    res.json({
-      ...result,
-      valor: Number(result.valor)
-    });
+    res.json(serializeFinancialEntry(result));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

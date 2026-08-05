@@ -4,6 +4,7 @@ import { db } from "../../db/index.js";
 import { users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../auth.js";
+import { serializeUser } from "../serializers.js";
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.post("/login", async (req, res) => {
     }
 
     const user = userList[0];
+    if (user.ativo === false) return res.status(403).json({ error: "Acesso bloqueado" });
     const isValid = await argon2.verify(user.senha, password);
     if (!isValid) {
       return res.status(401).json({ error: "Invalid credentials" });
@@ -28,13 +30,7 @@ router.post("/login", async (req, res) => {
     req.session.userId = user.id;
     req.session.userRole = user.role;
 
-    res.json({
-      id: user.id,
-      nome: user.nome,
-      email: user.email,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-    });
+    res.json(serializeUser(user));
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ error: "Server error" });
@@ -56,13 +52,7 @@ router.get("/me", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
     const user = userList[0];
-    res.json({
-      id: user.id,
-      nome: user.nome,
-      email: user.email,
-      role: user.role,
-      avatarUrl: user.avatarUrl,
-    });
+    res.json(serializeUser(user));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

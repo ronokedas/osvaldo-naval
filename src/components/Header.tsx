@@ -12,6 +12,7 @@ interface HeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   pendingAlertsCount: number;
+  onGoHome: () => void;
   onToggleProfile?: () => void;
   onLogout: () => void;
 }
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   pendingAlertsCount,
+  onGoHome,
   onToggleProfile,
   onLogout,
 }) => {
@@ -41,9 +43,15 @@ export const Header: React.FC<HeaderProps> = ({
             <Menu className="w-6 h-6" />
           </button>
           
-          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onGoHome}
+            aria-label="Voltar para a tela inicial"
+            title="Voltar para a tela inicial"
+            className="flex items-center gap-3 rounded-xl cursor-pointer transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          >
             <NautilusLogo variant="white" size="sm" showSubtitle={true} hideTextOnMobile={true} logoConfig={logoConfig} />
-          </div>
+          </button>
         </div>
 
         {/* Center: Search input */}

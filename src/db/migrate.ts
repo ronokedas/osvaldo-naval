@@ -8,6 +8,7 @@ async function run() {
     console.log("Migrations complete!");
   } catch (error) {
     console.error("Migration failed:", error);
+    process.exitCode = 1;
   } finally {
     pool.end();
   }

@@ -6,7 +6,7 @@ interface TeamViewProps {
   users: User[];
   tasks: DocumentTask[];
   onUpdateUserRole: (userId: string, role: any) => void;
-  onResetUserPassword: (userId: string) => void;
+  onResetUserPassword: (userId: string) => Promise<string>;
 }
 
 export const TeamView: React.FC<TeamViewProps> = ({
@@ -17,10 +17,14 @@ export const TeamView: React.FC<TeamViewProps> = ({
 }) => {
   const [resetMsg, setResetMsg] = useState<string | null>(null);
 
-  const handleReset = (user: User) => {
-    onResetUserPassword(user.id);
-    setResetMsg(`Senha do usuário ${user.nome} resetada para "Nautilus2026!" com sucesso.`);
-    setTimeout(() => setResetMsg(null), 5000);
+  const handleReset = async (user: User) => {
+    try {
+      const password = await onResetUserPassword(user.id);
+      setResetMsg(`Senha do usuário ${user.nome} resetada para "${password}" com sucesso.`);
+      setTimeout(() => setResetMsg(null), 5000);
+    } catch {
+      setResetMsg('Não foi possível redefinir a senha.');
+    }
   };
 
   return (

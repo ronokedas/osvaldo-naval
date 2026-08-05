@@ -2,23 +2,22 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { proposals, vessels } from "../../db/schema.js";
 import { eq, desc, and, sql } from "drizzle-orm";
-import { requireAuth } from "../auth.js";
+import { requireRole } from "../auth.js";
+import { serializeProposal } from "../serializers.js";
 
 const router = Router();
+const requireProposalAccess = requireRole(["admin", "financeiro"]);
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireProposalAccess, async (req, res) => {
   try {
     const all = await db.select().from(proposals).orderBy(desc(proposals.createdAt));
-    res.json(all.map(p => ({
-      ...p,
-      valorTotal: Number(p.valorTotal)
-    })));
+    res.json(all.map(serializeProposal));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireProposalAccess, async (req, res) => {
   try {
     const data = req.body;
     
@@ -43,11 +42,15 @@ router.post("/", requireAuth, async (req, res) => {
       destinatario: data.destinatario,
       assunto: data.assunto,
       prazoEntregaDias: data.prazoEntregaDias,
-      condicoesPagamento: data.condicoesPagamento,
+      condicoesPagamento: data.condicaoPagamento || data.condicoesPagamento,
       status: data.status || "rascunho",
       itens: data.itens || [],
       valorTotal: data.valorTotal ? data.valorTotal.toString() : "0",
-      observacoes: data.observacoes
+      observacoes: data.observacoesGerais || data.observacoes,
+      ano: data.ano,
+      elaboradoPor: data.elaboradoPor,
+      aceiteData: data.aceiteData,
+      aceiteAssinaturaNome: data.aceiteAssinaturaNome,
     }).returning();
     
     // Update vessel valor total if aprovado
@@ -55,17 +58,14 @@ router.post("/", requireAuth, async (req, res) => {
       await db.update(vessels).set({ valorTotal: inserted[0].valorTotal }).where(eq(vessels.id, inserted[0].embarcacaoId));
     }
     
-    res.json({
-      ...inserted[0],
-      valorTotal: Number(inserted[0].valorTotal)
-    });
+    res.json(serializeProposal(inserted[0]));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requireProposalAccess, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -74,7 +74,14 @@ router.put("/:id", requireAuth, async (req, res) => {
     if (data.status !== undefined) updateData.status = data.status;
     if (data.valorTotal !== undefined) updateData.valorTotal = data.valorTotal.toString();
     if (data.itens !== undefined) updateData.itens = data.itens;
-    // ... other fields if needed ...
+    if (data.destinatario !== undefined) updateData.destinatario = data.destinatario;
+    if (data.assunto !== undefined) updateData.assunto = data.assunto;
+    if (data.prazoEntregaDias !== undefined) updateData.prazoEntregaDias = data.prazoEntregaDias;
+    if (data.condicaoPagamento !== undefined) updateData.condicoesPagamento = data.condicaoPagamento;
+    if (data.observacoesGerais !== undefined) updateData.observacoes = data.observacoesGerais;
+    if (data.elaboradoPor !== undefined) updateData.elaboradoPor = data.elaboradoPor;
+    if (data.aceiteData !== undefined) updateData.aceiteData = data.aceiteData;
+    if (data.aceiteAssinaturaNome !== undefined) updateData.aceiteAssinaturaNome = data.aceiteAssinaturaNome;
     
     const updated = await db.update(proposals).set(updateData).where(eq(proposals.id, id)).returning();
     if (updated.length === 0) return res.status(404).json({ error: "Not found" });
@@ -83,10 +90,7 @@ router.put("/:id", requireAuth, async (req, res) => {
       await db.update(vessels).set({ valorTotal: updated[0].valorTotal }).where(eq(vessels.id, updated[0].embarcacaoId));
     }
     
-    res.json({
-      ...updated[0],
-      valorTotal: Number(updated[0].valorTotal)
-    });
+    res.json(serializeProposal(updated[0]));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

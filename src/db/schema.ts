@@ -5,6 +5,8 @@ export const users = pgTable("users", {
   nome: text("nome").notNull(),
   email: text("email").notNull().unique(),
   role: text("role").notNull().default("tecnico"), // admin, tecnico, financeiro
+  cargo: text("cargo"),
+  ativo: boolean("ativo").notNull().default(true),
   senha: text("senha").notNull(),
   avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -38,6 +40,10 @@ export const vessels = pgTable("vessels", {
   valorRecebido: decimal("valor_recebido", { precision: 12, scale: 2 }).default("0"),
   arquivosAssociados: jsonb("arquivos_associados").default([]),
   progresso: integer("progresso").default(0),
+  registro: text("registro"),
+  certificadoraPrincipal: text("certificadora_principal"),
+  valorSinal: decimal("valor_sinal", { precision: 12, scale: 2 }).default("0"),
+  descricao: text("descricao"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -49,6 +55,15 @@ export const tasks = pgTable("tasks", {
   tipo: text("tipo").notNull(), // desenho, memoria, relatorio, ultrassom, art
   status: text("status").notNull().default("pendente"), // pendente, execucao, em_revisao, enviado, exigencia, aprovado
   responsavelNome: text("responsavel_nome"),
+  responsavelId: uuid("responsavel_id").references(() => users.id),
+  responsavelCargo: text("responsavel_cargo"),
+  embarcacaoNome: text("embarcacao_nome"),
+  clienteNome: text("cliente_nome"),
+  certificadora: text("certificadora"),
+  prazo: text("prazo"),
+  arquivoNome: text("arquivo_nome"),
+  arquivoUrl: text("arquivo_url"),
+  atualizadoEm: text("atualizado_em"),
   dataCriacao: text("data_criacao"),
   prazoVencimento: text("prazo_vencimento"),
   anexos: jsonb("anexos").default([]),
@@ -77,6 +92,10 @@ export const proposals = pgTable("proposals", {
   itens: jsonb("itens").default([]),
   valorTotal: decimal("valor_total", { precision: 12, scale: 2 }).default("0"),
   observacoes: text("observacoes"),
+  ano: integer("ano"),
+  elaboradoPor: text("elaborado_por"),
+  aceiteData: text("aceite_data"),
+  aceiteAssinaturaNome: text("aceite_assinatura_nome"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

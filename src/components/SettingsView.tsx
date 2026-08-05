@@ -66,6 +66,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     nome: '',
     email: '',
     cargo: '',
+    senha: '',
     role: 'tecnico' as UserRole,
     acessoAtivo: true,
   });
@@ -93,11 +94,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Handle User Create submit
-  const handleAddUserSubmit = (e: React.FormEvent) => {
+  const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.nome.trim() || !newUser.email.trim()) return;
+    if (!newUser.nome.trim() || !newUser.email.trim() || newUser.senha.length < 6) return;
 
-    onCreateUser({
+    try {
+      await onCreateUser({
       nome: newUser.nome,
       email: newUser.email,
       cargo: newUser.cargo || (newUser.role === 'admin' ? 'Administrador' : newUser.role === 'financeiro' ? 'Financeiro' : 'Técnico Naval'),
@@ -105,16 +107,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ativo: true,
       acessoAtivo: newUser.acessoAtivo,
       tarefasAtivas: 0,
-    });
+      senha: newUser.senha,
+      });
 
-    setNewUser({
-      nome: '',
-      email: '',
-      cargo: '',
-      role: 'tecnico',
-      acessoAtivo: true,
-    });
-    setShowAddUserModal(false);
+      setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true });
+      setShowAddUserModal(false);
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível cadastrar o usuário.');
+    }
   };
 
   // Handle Save Email Config
@@ -1053,6 +1053,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
                   placeholder="ex: Projeta CAD / Inspetor de Campo"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Senha inicial</label>
+                <input
+                  type="password"
+                  value={newUser.senha}
+                  onChange={(e) => setNewUser({ ...newUser, senha: e.target.value })}
+                  placeholder="Mínimo de 6 caracteres"
+                  minLength={6}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800"
+                  required
                 />
               </div>
 

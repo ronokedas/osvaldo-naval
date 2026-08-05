@@ -1,14 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" width="800" height="280">
-  <!-- Navy N and Blue Boat Hull Icon -->
-  <g id="logo-mark">
-    <!-- Capital N Shape in Dark Navy (#001738) -->
-    <path d="M 160 98 L 208 98 L 208 178 L 284 98 L 316 98 L 316 230 L 268 230 L 268 145 L 192 230 L 160 230 Z" fill="#001738" />
-    <!-- Curved Blue Hull Wave (#1E40AF -> #2563EB) -->
-    <path d="M 160 205 C 200 205 235 228 270 228 C 305 228 325 210 360 216 C 320 236 280 248 240 248 C 200 248 175 238 160 230 Z" fill="#2563EB" />
-  </g>
-  <!-- Typography -->
-  <g id="logo-text">
-    <text x="380" y="180" font-family="'Montserrat', 'Helvetica Neue', Arial, sans-serif" font-size="70" font-weight="800" letter-spacing="4" fill="#001738">NAUTILUS</text>
-    <text x="382" y="222" font-family="'Montserrat', 'Helvetica Neue', Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="12" fill="#001738">ENGENHARIA NAVAL</text>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1450 340"
+     role="img"
+     aria-labelledby="title description">
+  <title id="title">Nautilus Engenharia Naval</title>
+  <desc id="description">Logomarca institucional oficial da Nautilus Engenharia Naval</desc>
+  <defs>
+    <linearGradient id="nautilusN" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08285f" />
+      <stop offset="0.55" stop-color="#061b48" />
+      <stop offset="1" stop-color="#020d28" />
+    </linearGradient>
+    <linearGradient id="nautilusWave" x1="0" y1="0" x2="1" y2="0.85">
+      <stop offset="0" stop-color="#2638d7" />
+      <stop offset="0.62" stop-color="#3445d9" />
+      <stop offset="1" stop-color="#2145a8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Símbolo vetorial redesenhado a partir da marca oficial fornecida. -->
+  <path d="M20 20h92l164 139V20h88v222c-32 0-62-5-88-14L112 92v82H20z" fill="url(#nautilusN)" />
+  <path d="M20 181c103-9 181 74 390 78-39 12-67 32-99 59H76z" fill="url(#nautilusWave)" />
+
+  <g fill="#071632" font-family="Montserrat, 'Helvetica Neue', Arial, sans-serif">
+    <text x="445" y="174" font-size="126" font-weight="300" letter-spacing="27">NAUTILUS</text>
+    <text x="449" y="276" font-size="54" font-weight="400" letter-spacing="20">ENGENHARIA NAVAL</text>
   </g>
 </svg>

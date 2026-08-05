@@ -1,5 +1,6 @@
 import express from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import path from "path";
 
 import { createServer as createViteServer } from "vite";
@@ -14,11 +15,22 @@ import protocolsRoutes from "./src/server/routes/protocols.js";
 import pendingsRoutes from "./src/server/routes/critical_pendings.js";
 import settingsRoutes from "./src/server/routes/settings.js";
 import uploadsRoutes from "./src/server/routes/uploads.js";
+import { pool } from "./src/db/index.js";
 
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
+  const isProduction = process.env.NODE_ENV === "production";
+  const sessionSecret = process.env.SESSION_SECRET;
+
+  if (isProduction && !sessionSecret) {
+    throw new Error("SESSION_SECRET must be configured in production.");
+  }
+
+  if (process.env.TRUST_PROXY === "true") {
+    app.set("trust proxy", 1);
+  }
 
   // Middleware
   app.use(express.json({ limit: "50mb" }));
@@ -32,19 +44,24 @@ async function startServer() {
     next();
   });
 
-  // Session
+  const PgSession = connectPgSimple(session);
+
+  // Session data is persisted in PostgreSQL, so login sessions survive restarts.
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "nautilus-super-secret-key-change-in-prod",
+      store: new PgSession({ pool, createTableIfMissing: true, tableName: "user_sessions" }),
+      secret: sessionSecret || "development-only-secret",
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: process.env.NODE_ENV === "production", // requires HTTPS in prod
+        secure: process.env.COOKIE_SECURE === "true",
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       },
     })
   );
+
+  app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
 
   // Serve uploads dir statically
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));

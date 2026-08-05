@@ -4,6 +4,14 @@ import * as argon2 from "argon2";
 import { db, pool } from "./index.js";
 import { users, clients, vessels, tasks, proposals, financial_entries, protocols, critical_pendings, app_configs } from "./schema.js";
 import { v4 as uuidv4 } from "uuid";
+import { count } from "drizzle-orm";
+
+const defaultUsers = [
+  { nome: "Administrador", email: "osvaldo@nautilus.eng.br", role: "admin", cargo: "Administrador" },
+  { nome: "Financeiro", email: "deisy@nautilus.eng.br", role: "financeiro", cargo: "Financeiro" },
+  { nome: "Ultrassonista", email: "ultrassonista1@nautilus.eng.br", role: "tecnico", cargo: "Técnico" },
+  { nome: "Desenhista", email: "desenhista1@nautilus.eng.br", role: "tecnico", cargo: "Técnico" },
+];
 
 async function run() {
   console.log("Seeding database from nautilus_db.json...");
@@ -16,8 +24,14 @@ async function run() {
     }
     
     const dbJson = JSON.parse(fs.readFileSync(dataPath, "utf-8"));
+
+    const [{ value: userCount }] = await db.select({ value: count() }).from(users);
+    if (Number(userCount) > 0) {
+      console.log("Database already contains users; skipping initial seed.");
+      return;
+    }
     
-    // Hash passwords and insert users
+    // Hash passwords and insert users. Legacy JSON exports may not include users.
     if (dbJson.users && dbJson.users.length > 0) {
       console.log(`Importing ${dbJson.users.length} users...`);
       for (const user of dbJson.users) {
@@ -28,8 +42,14 @@ async function run() {
           role: user.role,
           senha: hashedPassword,
           avatarUrl: user.avatarUrl,
+          cargo: user.cargo,
+          ativo: user.ativo !== false,
         });
       }
+    } else {
+      console.log("Creating default user accounts...");
+      const hashedPassword = await argon2.hash("123456");
+      await db.insert(users).values(defaultUsers.map((user) => ({ ...user, senha: hashedPassword })));
     }
 
     // Create a default client for vessels since it wasn't strictly enforced in JSON
@@ -58,6 +78,10 @@ async function run() {
           prazoRenovacao: v.prazoRenovacao,
           valorTotal: v.valorTotal ? v.valorTotal.toString() : "0",
           valorRecebido: v.valorRecebido ? v.valorRecebido.toString() : "0",
+          valorSinal: v.valorSinal ? v.valorSinal.toString() : "0",
+          registro: v.registro,
+          certificadoraPrincipal: v.certificadoraPrincipal,
+          descricao: v.descricao,
           arquivosAssociados: v.arquivosAssociados || [],
           progresso: v.progresso || 0,
         }).returning();
@@ -70,16 +94,22 @@ async function run() {
       console.log(`Importing ${dbJson.tasks.length} tasks...`);
       for (const t of dbJson.tasks) {
         const realVesselId = vesselIdMap.get(t.embarcacaoId);
-        if (!realVesselId) continue;
-        
         await db.insert(tasks).values({
-          embarcacaoId: realVesselId,
+          embarcacaoId: realVesselId || null,
+          embarcacaoNome: t.embarcacaoNome,
+          clienteNome: t.clienteNome,
           titulo: t.titulo,
           tipo: t.tipo,
           status: t.status,
           responsavelNome: t.responsavelNome,
+          responsavelCargo: t.responsavelCargo,
+          certificadora: t.certificadora,
+          prazo: t.prazo,
+          arquivoNome: t.arquivoNome,
+          arquivoUrl: t.arquivoUrl,
+          atualizadoEm: t.atualizadoEm,
           dataCriacao: t.dataCriacao,
-          prazoVencimento: t.prazoVencimento,
+          prazoVencimento: t.prazo || t.prazoVencimento,
           anexos: t.anexos || [],
           protocoloGerado: t.protocoloGerado || false,
           dataConclusao: t.dataConclusao,
@@ -95,23 +125,23 @@ async function run() {
       console.log(`Importing ${dbJson.proposals.length} proposals...`);
       for (const p of dbJson.proposals) {
         const realVesselId = vesselIdMap.get(p.embarcacaoId);
-        if (!realVesselId) continue;
-        
         await db.insert(proposals).values({
           numero: p.numero,
           dataEmissao: p.dataEmissao,
           validadeDias: p.validadeDias,
-          embarcacaoId: realVesselId,
+          embarcacaoId: realVesselId || null,
           embarcacaoNome: p.embarcacaoNome,
           clienteNome: p.clienteNome,
           destinatario: p.destinatario,
           assunto: p.assunto,
           prazoEntregaDias: p.prazoEntregaDias,
-          condicoesPagamento: p.condicoesPagamento,
+          condicoesPagamento: p.condicaoPagamento || p.condicoesPagamento,
           status: p.status,
           itens: p.itens || [],
           valorTotal: p.valorTotal ? p.valorTotal.toString() : "0",
-          observacoes: p.observacoes,
+          observacoes: p.observacoesGerais || p.observacoes,
+          ano: p.ano,
+          elaboradoPor: p.elaboradoPor,
         });
       }
     }
@@ -121,10 +151,8 @@ async function run() {
       console.log(`Importing ${dbJson.financialEntries.length} financial entries...`);
       for (const f of dbJson.financialEntries) {
         const realVesselId = vesselIdMap.get(f.embarcacaoId);
-        if (!realVesselId) continue;
-        
         await db.insert(financial_entries).values({
-          embarcacaoId: realVesselId,
+          embarcacaoId: realVesselId || null,
           embarcacaoNome: f.embarcacaoNome,
           clienteNome: f.clienteNome,
           data: f.data,
@@ -147,12 +175,10 @@ async function run() {
       console.log(`Importing ${dbJson.protocols.length} protocols...`);
       for (const p of dbJson.protocols) {
         const realVesselId = vesselIdMap.get(p.embarcacaoId);
-        if (!realVesselId) continue;
-        
         await db.insert(protocols).values({
           numeroProtocolo: p.numeroProtocolo,
           dataEnvio: p.dataEnvio,
-          embarcacaoId: realVesselId,
+          embarcacaoId: realVesselId || null,
           embarcacaoNome: p.embarcacaoNome,
           clienteNome: p.clienteNome,
           destinatario: p.destinatario,
@@ -196,14 +222,10 @@ async function run() {
       await db.insert(app_configs).values({ id: "logo", data: dbJson.logoConfig });
     }
 
-    // Clear password in JSON (or delete it altogether)
-    console.log("Securing nautilus_db.json (removing users with passwords)...");
-    delete dbJson.users;
-    fs.writeFileSync(dataPath, JSON.stringify(dbJson, null, 2));
-
     console.log("Seeding complete!");
   } catch (err) {
     console.error("Failed to seed database:", err);
+    process.exitCode = 1;
   } finally {
     pool.end();
   }

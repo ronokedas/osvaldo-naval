@@ -29,7 +29,59 @@ import { GlobalDocumentSearch } from './components/GlobalDocumentSearch';
 import { UserProfileModal } from './components/UserProfileModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { LoginView } from './components/LoginView';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
+// The PostgreSQL API uses database field names while the existing UI uses
+// presentation-oriented names. Keep the conversion at the application edge so
+// incomplete legacy records cannot crash a screen during rendering.
+const normalizeVessel = (vessel: any): Vessel => ({
+  ...vessel,
+  registro: vessel.registro || 'Não informado',
+  certificadoraPrincipal: vessel.certificadoraPrincipal || 'A definir',
+  valorTotal: Number(vessel.valorTotal) || 0,
+  valorSinal: Number(vessel.valorSinal) || 0,
+  valorRecebido: Number(vessel.valorRecebido) || 0,
+  criadoEm: vessel.criadoEm || vessel.createdAt || new Date().toISOString(),
+});
+
+const normalizeTask = (task: any, vesselById: Map<string, Vessel>): DocumentTask => {
+  const vessel = vesselById.get(task.embarcacaoId);
+  return {
+    ...task,
+    embarcacaoNome: task.embarcacaoNome || vessel?.nome || 'Embarcação não informada',
+    clienteNome: task.clienteNome || vessel?.clienteNome || 'Cliente não informado',
+    responsavelId: task.responsavelId || '',
+    responsavelNome: task.responsavelNome || 'Não atribuído',
+    certificadora: task.certificadora || vessel?.certificadoraPrincipal || 'A definir',
+    prazo: task.prazo || task.prazoVencimento || 'Não informado',
+    historicoNotas: task.historicoNotas || [],
+    atualizadoEm: task.atualizadoEm || task.updatedAt || task.createdAt || new Date().toISOString(),
+  } as DocumentTask;
+};
+
+const normalizeFinancialEntry = (entry: any): FinancialEntry => ({
+  ...entry,
+  embarcacaoNome: entry.embarcacaoNome || 'Embarcação não informada',
+  clienteNome: entry.clienteNome || '',
+  valor: Number(entry.valor) || 0,
+  observacao: entry.observacao || '',
+  lancadoPorNome: entry.lancadoPorNome || 'Sistema',
+  formaPagamento: entry.formaPagamento || 'PIX',
+});
+
+const normalizeProposal = (proposal: any): Proposal => ({
+  ...proposal,
+  embarcacaoNome: proposal.embarcacaoNome || 'Geral',
+  clienteNome: proposal.clienteNome || 'Não informado',
+  ano: Number(proposal.ano) || new Date(proposal.createdAt || Date.now()).getFullYear(),
+  prazoEntregaDias: Number(proposal.prazoEntregaDias) || 0,
+  condicaoPagamento: proposal.condicaoPagamento || proposal.condicoesPagamento || 'Não informado',
+  observacoesGerais: proposal.observacoesGerais || proposal.observacoes || '',
+  elaboradoPor: proposal.elaboradoPor || 'Nautilus Projetos Navais',
+  itens: proposal.itens || [],
+  valorTotal: Number(proposal.valorTotal) || 0,
+  criadoEm: proposal.criadoEm || proposal.createdAt || new Date().toISOString(),
+});
 
 export default function App() {
   // State variables
@@ -92,10 +144,14 @@ export default function App() {
           fetch('/api/settings/logo'),
         ]);
         
-        if (vRes.ok) setVessels(await vRes.json());
-        if (pRes.ok) setProposals(await pRes.json());
-        if (tRes.ok) setTasks(await tRes.json());
-        if (fRes.ok) setFinancialEntries(await fRes.json());
+        const rawVessels: any[] = vRes.ok ? await vRes.json() : [];
+        const normalizedVessels: Vessel[] = rawVessels.map(normalizeVessel);
+        const vesselById = new Map<string, Vessel>(normalizedVessels.map((v) => [v.id, v]));
+
+        if (vRes.ok) setVessels(normalizedVessels);
+        if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
+        if (tRes.ok) setTasks((await tRes.json()).map((task: any) => normalizeTask(task, vesselById)));
+        if (fRes.ok) setFinancialEntries((await fRes.json()).map(normalizeFinancialEntry));
         if (prRes.ok) setProtocols(await prRes.json());
         if (cRes.ok) setCriticalPendings(await cRes.json());
         if (emRes.ok) setEmailConfig(await emRes.json());
@@ -155,10 +211,9 @@ export default function App() {
   };
 
   // Vessel Actions
-  const handleCreateVessel = (vesselData: Partial<Vessel>, generateTasks: boolean = false) => {
-    const vesselId = `ves-${Date.now()}`;
+  const handleCreateVessel = async (vesselData: Partial<Vessel>, generateTasks: boolean = false) => {
     const newV: Vessel = {
-      id: vesselId,
+      id: '',
       clienteId: 'cli-1',
       clienteNome: vesselData.clienteNome || 'Cliente',
       nome: vesselData.nome || 'Nova Embarcação',
@@ -173,8 +228,8 @@ export default function App() {
       descricao: vesselData.descricao,
     };
 
-    setVessels([newV, ...vessels]);
-    apiPost('/api/vessels', newV);
+    const createdVessel = normalizeVessel(await apiPost('/api/vessels', newV));
+    setVessels((prev) => [createdVessel, ...prev]);
 
     if (generateTasks) {
       const standardTasks = [
@@ -186,9 +241,9 @@ export default function App() {
 
       const newTasks: DocumentTask[] = standardTasks.map((t, idx) => ({
         id: `task-${Date.now()}-${idx}`,
-        embarcacaoId: vesselId,
-        embarcacaoNome: newV.nome,
-        clienteNome: newV.clienteNome,
+        embarcacaoId: createdVessel.id,
+        embarcacaoNome: createdVessel.nome,
+        clienteNome: createdVessel.clienteNome,
         tipo: t.tipo as 'ultrassom' | 'desenho' | 'art' | 'homologacao',
         titulo: t.titulo,
         responsavelId: currentUser.id,
@@ -200,8 +255,8 @@ export default function App() {
         atualizadoEm: new Date().toISOString().replace('T', ' ').substring(0, 16),
       }));
 
-      setTasks((prev) => [...newTasks, ...prev]);
-      newTasks.forEach(t => apiPost('/api/tasks', t));
+      const createdTasks = await Promise.all(newTasks.map((task) => apiPost('/api/tasks', task)));
+      setTasks((prev) => [...createdTasks.map((task) => normalizeTask(task, new Map([[createdVessel.id, createdVessel]]))), ...prev]);
     }
   };
 
@@ -280,14 +335,14 @@ export default function App() {
     }
   };
 
-  const handleCreateProposal = (proposalData: Partial<Proposal>) => {
+  const handleCreateProposal = async (proposalData: Partial<Proposal>) => {
     const currentYear = new Date().getFullYear();
     const yearSuffix = String(currentYear).slice(-2);
     const seq = proposals.length + 51;
     const num = `DS ${String(seq).padStart(3, '0')}/${yearSuffix}`;
 
     const newProp: Proposal = {
-      id: `prop-${Date.now()}`,
+      id: '',
       embarcacaoId: proposalData.embarcacaoId || '',
       embarcacaoNome: proposalData.embarcacaoNome || '',
       clienteNome: proposalData.clienteNome || '',
@@ -306,13 +361,13 @@ export default function App() {
       criadoEm: new Date().toISOString().split('T')[0],
     };
 
-    setProposals([newProp, ...proposals]);
-    apiPost('/api/proposals', newProp);
+    const createdProposal = normalizeProposal(await apiPost('/api/proposals', newProp));
+    setProposals((prev) => [createdProposal, ...prev]);
 
     // Also update vessel's total value if attached
-    if (newProp.embarcacaoId) {
-      setVessels(
-        vessels.map((v) => (v.id === newProp.embarcacaoId ? { ...v, valorTotal: newProp.valorTotal } : v))
+    if (createdProposal.embarcacaoId) {
+      setVessels((prev) =>
+        prev.map((v) => (v.id === createdProposal.embarcacaoId ? { ...v, valorTotal: createdProposal.valorTotal } : v))
       );
     }
   };
@@ -324,9 +379,9 @@ export default function App() {
   };
 
   // Task Actions
-  const handleCreateTask = (taskData: Partial<DocumentTask>) => {
+  const handleCreateTask = async (taskData: Partial<DocumentTask>) => {
     const newTask: DocumentTask = {
-      id: `task-${Date.now()}`,
+      id: '',
       embarcacaoId: taskData.embarcacaoId || '',
       embarcacaoNome: taskData.embarcacaoNome || '',
       clienteNome: taskData.clienteNome || '',
@@ -341,19 +396,19 @@ export default function App() {
       atualizadoEm: new Date().toISOString().replace('T', ' ').substring(0, 16),
     };
 
-    setTasks([newTask, ...tasks]);
-    apiPost('/api/tasks', newTask);
+    const createdTask = normalizeTask(await apiPost('/api/tasks', newTask), new Map(vessels.map((v) => [v.id, v])));
+    setTasks((prev) => [createdTask, ...prev]);
     
     // Dispara notificação push simulada
-    if (newTask.responsavelId !== currentUser.id) {
+    if (createdTask.responsavelId !== currentUser.id) {
       simulatePushNotification(
         'Nova Tarefa Atribuída', 
-        `Você tem uma nova tarefa: "${newTask.titulo}" para a embarcação ${newTask.embarcacaoNome}.`
+        `Você tem uma nova tarefa: "${createdTask.titulo}" para a embarcação ${createdTask.embarcacaoNome}.`
       );
     } else {
       simulatePushNotification(
         'Tarefa Criada', 
-        `Tarefa "${newTask.titulo}" foi criada para a embarcação ${newTask.embarcacaoNome}.`
+        `Tarefa "${createdTask.titulo}" foi criada para a embarcação ${createdTask.embarcacaoNome}.`
       );
     }
   };
@@ -416,10 +471,10 @@ export default function App() {
   };
 
   // Financial Actions
-  const handleAddPayment = (paymentData: Partial<FinancialEntry>) => {
+  const handleAddPayment = async (paymentData: Partial<FinancialEntry>) => {
     const vessel = vessels.find((v) => v.id === paymentData.embarcacaoId);
     const newEntry: FinancialEntry = {
-      id: `fin-${Date.now()}`,
+      id: '',
       embarcacaoId: paymentData.embarcacaoId || '',
       embarcacaoNome: paymentData.embarcacaoNome || '',
       clienteNome: vessel?.clienteNome || paymentData.clienteNome || '',
@@ -436,26 +491,26 @@ export default function App() {
       reciboNumero: paymentData.reciboNumero || `REC-${Date.now().toString().slice(-6)}`,
     };
 
-    setFinancialEntries([newEntry, ...financialEntries]);
-    apiPost('/api/finance', newEntry);
+    const createdEntry = normalizeFinancialEntry(await apiPost('/api/finance', newEntry));
+    setFinancialEntries((prev) => [createdEntry, ...prev]);
 
     // Update vessel's received total
     setVessels((prevVessels) =>
       prevVessels.map((v) => {
-        if (v.id === newEntry.embarcacaoId) {
-          const newReceived = v.valorRecebido + newEntry.valor;
-          const newSinal = newEntry.tipo === 'sinal' ? newEntry.valor : v.valorSinal;
+        if (v.id === createdEntry.embarcacaoId) {
+          const newReceived = v.valorRecebido + createdEntry.valor;
+          const newSinal = createdEntry.tipo === 'sinal' ? createdEntry.valor : v.valorSinal;
           return { ...v, valorRecebido: newReceived, valorSinal: newSinal };
         }
         return v;
       })
     );
 
-    if (selectedVessel && selectedVessel.id === newEntry.embarcacaoId) {
+    if (selectedVessel && selectedVessel.id === createdEntry.embarcacaoId) {
       setSelectedVessel({
         ...selectedVessel,
-        valorRecebido: selectedVessel.valorRecebido + newEntry.valor,
-        valorSinal: newEntry.tipo === 'sinal' ? newEntry.valor : selectedVessel.valorSinal,
+        valorRecebido: selectedVessel.valorRecebido + createdEntry.valor,
+        valorSinal: createdEntry.tipo === 'sinal' ? createdEntry.valor : selectedVessel.valorSinal,
       });
     }
   };
@@ -468,9 +523,9 @@ export default function App() {
   };
 
   // Protocol Actions
-  const handleCreateProtocol = (protocolData: Partial<Protocol>) => {
+  const handleCreateProtocol = async (protocolData: Partial<Protocol>) => {
     const newProt: Protocol = {
-      id: `prot-${Date.now()}`,
+      id: '',
       numeroProtocolo: protocolData.numeroProtocolo || `PROT-${Date.now().toString().slice(-4)}`,
       dataEnvio: protocolData.dataEnvio || new Date().toISOString().split('T')[0],
       embarcacaoId: protocolData.embarcacaoId || '',
@@ -486,8 +541,8 @@ export default function App() {
       observacoes: protocolData.observacoes,
     };
 
-    setProtocols((prev) => [newProt, ...prev]);
-    apiPost('/api/protocols', newProt);
+    const createdProtocol = await apiPost('/api/protocols', newProt);
+    setProtocols((prev) => [createdProtocol, ...prev]);
   };
 
   const handleUpdateProtocol = (id: string, updatedFields: Partial<Protocol>) => {
@@ -499,7 +554,7 @@ export default function App() {
 
   // Count active tasks assigned to current user
   const myTasksCount = tasks.filter(
-    (t) => t.responsavelId === currentUser.id && t.status !== 'baixado'
+    (t) => t.responsavelId === currentUser?.id && t.status !== 'baixado'
   ).length;
 
   const handleUpdateProfile = (updatedFields: Partial<User>) => {
@@ -510,24 +565,20 @@ export default function App() {
   };
 
   // Settings & Employee Management Handlers
-  const handleCreateUser = (userData: Partial<User>) => {
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      nome: userData.nome || 'Novo Funcionário',
-      email: userData.email || '',
-      cargo: userData.cargo || 'Técnico',
-      role: userData.role || 'tecnico',
-      ativo: true,
-      acessoAtivo: userData.acessoAtivo !== false,
-      tarefasAtivas: 0,
-    };
-    setUsers((prev) => [...prev, newUser]);
-    apiPost('/api/users', newUser);
+  const handleCreateUser = async (userData: Partial<User>) => {
+    const created = await apiPost('/api/users', userData);
+    setUsers((prev) => [...prev, created]);
   };
 
   const handleUpdateUser = (userId: string, updatedFields: Partial<User>) => {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...updatedFields } : u)));
     apiPut(`/api/users/${userId}`, updatedFields);
+  };
+
+  const handleResetUserPassword = async (userId: string) => {
+    const result = await apiPost(`/api/users/${userId}/reset-password`, {});
+    setUsers((prev) => prev.map((user) => user.id === userId ? result.user : user));
+    return result.temporaryPassword as string;
   };
 
   const handleUpdateEmailConfig = (config: EmailConfig) => {
@@ -575,6 +626,12 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         pendingAlertsCount={criticalPendings.length}
+        onGoHome={() => {
+          setActiveTab('dashboard');
+          setSelectedVessel(null);
+          setSelectedProposalForView(null);
+          setIsMobileMenuOpen(false);
+        }}
         onToggleProfile={() => setIsProfileModalOpen(true)}
         onLogout={handleLogout}
       />
@@ -595,6 +652,7 @@ export default function App() {
 
         {/* Dynamic View Panel */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+          <RouteErrorBoundary key={activeTab} onRecover={() => setActiveTab('dashboard')}>
           {activeTab === 'dashboard' && (
             <Dashboard
               currentUser={currentUser}
@@ -673,9 +731,7 @@ export default function App() {
               onUpdateUserRole={(id, role) => {
                 setUsers(users.map((u) => (u.id === id ? { ...u, role } : u)));
               }}
-              onResetUserPassword={(id) => {
-                console.log('Password reset for user:', id);
-              }}
+              onResetUserPassword={handleResetUserPassword}
             />
           )}
 
@@ -699,6 +755,7 @@ export default function App() {
               onOpenProfile={() => setIsProfileModalOpen(true)}
             />
           )}
+          </RouteErrorBoundary>
         </main>
       </div>
 

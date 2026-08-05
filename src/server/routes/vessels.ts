@@ -3,17 +3,14 @@ import { db } from "../../db/index.js";
 import { vessels } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth } from "../auth.js";
+import { serializeVessel } from "../serializers.js";
 
 const router = Router();
 
 router.get("/", requireAuth, async (req, res) => {
   try {
     const allVessels = await db.select().from(vessels).orderBy(desc(vessels.createdAt));
-    res.json(allVessels.map(v => ({
-      ...v,
-      valorTotal: Number(v.valorTotal),
-      valorRecebido: Number(v.valorRecebido)
-    })));
+    res.json(allVessels.map(serializeVessel));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
@@ -35,15 +32,15 @@ router.post("/", requireAuth, async (req, res) => {
       prazoRenovacao: data.prazoRenovacao,
       valorTotal: data.valorTotal ? data.valorTotal.toString() : "0",
       valorRecebido: data.valorRecebido ? data.valorRecebido.toString() : "0",
+      valorSinal: data.valorSinal ? data.valorSinal.toString() : "0",
+      registro: data.registro,
+      certificadoraPrincipal: data.certificadoraPrincipal,
+      descricao: data.descricao,
       arquivosAssociados: data.arquivosAssociados || [],
       progresso: data.progresso || 0,
     }).returning();
     
-    res.json({
-      ...newVessel[0],
-      valorTotal: Number(newVessel[0].valorTotal),
-      valorRecebido: Number(newVessel[0].valorRecebido)
-    });
+    res.json(serializeVessel(newVessel[0]));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
@@ -67,17 +64,17 @@ router.put("/:id", requireAuth, async (req, res) => {
     if (data.prazoRenovacao !== undefined) updateData.prazoRenovacao = data.prazoRenovacao;
     if (data.valorTotal !== undefined) updateData.valorTotal = data.valorTotal.toString();
     if (data.valorRecebido !== undefined) updateData.valorRecebido = data.valorRecebido.toString();
+    if (data.valorSinal !== undefined) updateData.valorSinal = data.valorSinal.toString();
+    if (data.registro !== undefined) updateData.registro = data.registro;
+    if (data.certificadoraPrincipal !== undefined) updateData.certificadoraPrincipal = data.certificadoraPrincipal;
+    if (data.descricao !== undefined) updateData.descricao = data.descricao;
     if (data.arquivosAssociados !== undefined) updateData.arquivosAssociados = data.arquivosAssociados;
     if (data.progresso !== undefined) updateData.progresso = data.progresso;
 
     const updated = await db.update(vessels).set(updateData).where(eq(vessels.id, id)).returning();
     if (updated.length === 0) return res.status(404).json({ error: "Not found" });
     
-    res.json({
-      ...updated[0],
-      valorTotal: Number(updated[0].valorTotal),
-      valorRecebido: Number(updated[0].valorRecebido)
-    });
+    res.json(serializeVessel(updated[0]));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

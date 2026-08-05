@@ -7,6 +7,8 @@
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
@@ -17,6 +19,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "argon2": "^0.45.1",
     "bcrypt": "^6.0.0",
+    "connect-pg-simple": "^10.0.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",

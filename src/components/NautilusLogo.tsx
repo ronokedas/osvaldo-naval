@@ -37,8 +37,10 @@ export const NautilusLogo: React.FC<NautilusLogoProps> = ({
   const primaryTextColor = isDarkBg ? 'text-white' : 'text-[#001738]';
   const secondaryTextColor = isDarkBg ? 'text-slate-200' : 'text-[#001738]';
 
-  // If a custom uploaded base64/URL image is provided (and it's NOT the default /logo.svg)
-  if (customImg && customImg !== '/logo.svg') {
+  // Render the configured institutional image, including the official
+  // /logo.svg. The previous exception for that path silently replaced the
+  // configured artwork with a different logo assembled in React.
+  if (customImg) {
     if (isDarkBg) {
       // On dark background header, wrap custom uploaded images in a clean white badge so dark text logos are 100% visible
       return (

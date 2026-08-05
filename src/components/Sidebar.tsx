@@ -35,6 +35,7 @@ interface SidebarProps {
   onCloseMobile: () => void;
   myTasksCount: number;
   onOpenProfile?: () => void;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -45,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   myTasksCount,
   onOpenProfile,
+  onLogout,
 }) => {
   const navItems = [
     {

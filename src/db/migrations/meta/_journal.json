@@ -8,6 +8,13 @@
       "when": 1785870027454,
       "tag": "0000_grey_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785871000000,
+      "tag": "0001_restore_ai_studio_fields",
+      "breakpoints": true
     }
   ]
 }
