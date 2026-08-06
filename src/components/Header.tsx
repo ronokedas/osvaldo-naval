@@ -15,6 +15,7 @@ interface HeaderProps {
   onGoHome: () => void;
   onToggleProfile?: () => void;
   onLogout: () => void;
+  onOpenNotifications?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   onGoHome,
   onToggleProfile,
   onLogout,
+  onOpenNotifications,
 }) => {
   return (
     <header className="bg-[#061224] text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
@@ -122,7 +124,12 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Notifications */}
           <div className="relative">
-            <button className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative">
+            <button 
+              onClick={onOpenNotifications}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative cursor-pointer"
+              aria-label="Ver notificações"
+              title="Notificações e Alertas"
+            >
               <Bell className="w-5 h-5" />
               {pendingAlertsCount > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center animate-pulse">

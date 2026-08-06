@@ -33,6 +33,7 @@ import { LoginView } from './components/LoginView';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { ServiceOrdersView } from './components/ServiceOrdersView';
 import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
+import { NotificationsModal } from './components/NotificationsModal';
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 // The PostgreSQL API uses database field names while the existing UI uses
@@ -110,6 +111,7 @@ export default function App() {
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
 
   // Sincronizar activeTab com a URL para navegação visível no navegador
   React.useEffect(() => {
@@ -745,7 +747,7 @@ export default function App() {
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        pendingAlertsCount={criticalPendings.length}
+        pendingAlertsCount={criticalPendings.length + notifications.filter(n => !n.lida).length}
         onGoHome={() => {
           setActiveTab('dashboard');
           setSelectedVessel(null);
@@ -754,6 +756,7 @@ export default function App() {
         }}
         onToggleProfile={() => setIsProfileModalOpen(true)}
         onLogout={handleLogout}
+        onOpenNotifications={() => setIsNotificationsModalOpen(true)}
       />
 
       {/* Main App Body */}
@@ -946,6 +949,27 @@ export default function App() {
           onSaveProfile={handleUpdateProfile}
         />
       )}
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        isOpen={isNotificationsModalOpen}
+        onClose={() => setIsNotificationsModalOpen(false)}
+        notifications={notifications}
+        criticalPendings={criticalPendings}
+        onMarkAsRead={async (id: string) => {
+          try {
+            await fetch(`/api/service-orders/notifications/${id}/read`, { method: 'POST' });
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
+          } catch (e) {
+            console.error('Erro ao marcar notificação como lida:', e);
+          }
+        }}
+        onNavigateToOS={(osId: string) => {
+          setSelectedOsId(osId);
+          setActiveTab('service-orders');
+          setIsNotificationsModalOpen(false);
+        }}
+      />
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav
