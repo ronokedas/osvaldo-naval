@@ -30,12 +30,15 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         return <AlertTriangle className="w-5 h-5 text-amber-500" />;
       case 'aprovacao':
       case 'entrega':
+      case 'entrega_confirmada':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'documento_anexado':
         return <FileText className="w-5 h-5 text-purple-500" />;
       case 'vistoria_inicio':
       case 'vistoria_conclusao':
         return <Wrench className="w-5 h-5 text-orange-500" />;
+      case 'impressao_confirmada':
+        return <FileText className="w-5 h-5 text-cyan-500" />;
       default:
         return <Info className="w-5 h-5 text-slate-500" />;
     }

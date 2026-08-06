@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, LogoConfig } from '../types';
+import { User, LogoConfig, InternalNotification } from '../types';
 import { NautilusLogo } from './NautilusLogo';
 import { Bell, Search, UserCheck, Menu } from 'lucide-react';
 
@@ -12,6 +12,8 @@ interface HeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   pendingAlertsCount: number;
+  criticalPendings: any[];
+  notifications: InternalNotification[];
   onGoHome: () => void;
   onToggleProfile?: () => void;
   onLogout: () => void;
@@ -27,6 +29,8 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   pendingAlertsCount,
+  criticalPendings,
+  notifications,
   onGoHome,
   onToggleProfile,
   onLogout,
@@ -123,20 +127,60 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Notifications */}
-          <div className="relative">
+          <div className="relative group">
             <button 
               onClick={onOpenNotifications}
               className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative cursor-pointer"
               aria-label="Ver notificações"
               title="Notificações e Alertas"
             >
-              <Bell className="w-5 h-5" />
+              <Bell className={`w-5 h-5 ${pendingAlertsCount > 0 ? 'text-amber-400' : ''}`} />
               {pendingAlertsCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center animate-pulse">
-                  {pendingAlertsCount}
+                <span className={`absolute top-1 right-1 w-4 h-4 ${
+                  pendingAlertsCount > 9 ? 'bg-red-500' : 'bg-amber-500'
+                } text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center animate-pulse`}>
+                  {pendingAlertsCount > 9 ? '9+' : pendingAlertsCount}
                 </span>
               )}
             </button>
+            
+            {/* Tooltip inteligente ao passar o mouse */}
+            {pendingAlertsCount > 0 && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-[#0B192C] border border-slate-700 rounded-xl shadow-2xl py-3 px-4 hidden group-hover:block z-50 pointer-events-none">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Resumo dos Alertas</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                      Críticos
+                    </span>
+                    <span className="font-mono font-bold text-red-400">{criticalPendings.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                      Em Execução
+                    </span>
+                    <span className="font-mono font-bold text-orange-400">
+                      {notifications.filter(n => !n.lida && (n.tipo === 'vistoria_inicio' || n.tipo === 'vistoria_conclusao')).length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                      Documentos
+                    </span>
+                    <span className="font-mono font-bold text-purple-400">
+                      {notifications.filter(n => !n.lida && n.tipo === 'documento_anexado').length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-700">
+                    <span className="text-slate-200 font-bold">Total</span>
+                    <span className="font-mono font-bold text-amber-400">{pendingAlertsCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* User Profile Badge */}

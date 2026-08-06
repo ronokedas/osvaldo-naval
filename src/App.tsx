@@ -748,6 +748,8 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         pendingAlertsCount={criticalPendings.length + notifications.filter(n => !n.lida).length}
+        criticalPendings={criticalPendings}
+        notifications={notifications}
         onGoHome={() => {
           setActiveTab('dashboard');
           setSelectedVessel(null);
