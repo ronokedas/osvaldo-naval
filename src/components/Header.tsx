@@ -1,7 +1,7 @@
 import React from 'react';
 import { User, LogoConfig } from '../types';
 import { NautilusLogo } from './NautilusLogo';
-import { Bell, Search, UserCheck, Menu } from 'lucide-react';
+import { Bell, Search, UserCheck, Menu, AlertTriangle, CheckCircle, Clock, FileText, Wrench } from 'lucide-react';
 
 interface HeaderProps {
   currentUser: User;
@@ -12,6 +12,9 @@ interface HeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   pendingAlertsCount: number;
+  criticalAlertsCount?: number;
+  executionAlertsCount?: number;
+  documentAlertsCount?: number;
   onGoHome: () => void;
   onToggleProfile?: () => void;
   onLogout: () => void;
@@ -27,11 +30,19 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   pendingAlertsCount,
+  criticalAlertsCount = 0,
+  executionAlertsCount = 0,
+  documentAlertsCount = 0,
   onGoHome,
   onToggleProfile,
   onLogout,
   onOpenNotifications,
 }) => {
+  // Calcula total de alertas inteligentes por categoria
+  const hasCriticalAlerts = criticalAlertsCount > 0;
+  const hasExecutionAlerts = executionAlertsCount > 0;
+  const hasDocumentAlerts = documentAlertsCount > 0;
+
   return (
     <header className="bg-[#061224] text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
@@ -122,19 +133,83 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Notifications */}
-          <div className="relative">
+          {/* Notifications Bell with Smart Badges */}
+          <div className="relative group">
             <button 
               onClick={onOpenNotifications}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative cursor-pointer"
+              className={`p-2 rounded-lg transition relative cursor-pointer ${
+                hasCriticalAlerts 
+                  ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30 animate-pulse' 
+                  : hasExecutionAlerts 
+                    ? 'text-orange-400 hover:text-orange-300 hover:bg-orange-900/30'
+                    : hasDocumentAlerts
+                      ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-900/30'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
               aria-label="Ver notificações"
-              title="Notificações e Alertas"
+              title={
+                hasCriticalAlerts ? "⚠️ Alertas Críticos pendentes!" :
+                hasExecutionAlerts ? "🔧 Vistorias em execução!" :
+                hasDocumentAlerts ? "📄 Documentos para revisão!" :
+                "Notificações e Alertas"
+              }
             >
-              <Bell className="w-5 h-5" />
+              <Bell className={`w-5 h-5 ${hasCriticalAlerts ? 'animate-bounce' : ''}`} />
+              
+              {/* Badge principal com total */}
               {pendingAlertsCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center animate-pulse">
-                  {pendingAlertsCount}
+                <span className={`absolute -top-1 -right-1 w-5 h-5 font-mono font-bold text-[10px] rounded-full flex items-center justify-center shadow-lg ${
+                  hasCriticalAlerts 
+                    ? 'bg-red-500 text-white animate-pulse' 
+                    : hasExecutionAlerts 
+                      ? 'bg-orange-500 text-white'
+                      : hasDocumentAlerts
+                        ? 'bg-purple-500 text-white'
+                        : 'bg-amber-500 text-slate-950 animate-pulse'
+                }`}>
+                  {pendingAlertsCount > 9 ? '9+' : pendingAlertsCount}
                 </span>
+              )}
+              
+              {/* Tooltip inteligente com detalhamento por categoria */}
+              {(hasCriticalAlerts || hasExecutionAlerts || hasDocumentAlerts) && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-[#0B192C] border border-slate-700 rounded-xl shadow-2xl py-3 px-4 hidden group-hover:block z-50">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 pb-2 border-b border-slate-800">
+                    Resumo dos Alertas
+                  </div>
+                  <div className="space-y-2">
+                    {hasCriticalAlerts && (
+                      <div className="flex items-center justify-between gap-2 p-2 bg-red-950/30 border border-red-800/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-400" />
+                          <span className="text-xs font-bold text-red-300">Críticos</span>
+                        </div>
+                        <span className="text-sm font-mono font-bold text-red-400">{criticalAlertsCount}</span>
+                      </div>
+                    )}
+                    {hasExecutionAlerts && (
+                      <div className="flex items-center justify-between gap-2 p-2 bg-orange-950/30 border border-orange-800/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="w-4 h-4 text-orange-400" />
+                          <span className="text-xs font-bold text-orange-300">Em Execução</span>
+                        </div>
+                        <span className="text-sm font-mono font-bold text-orange-400">{executionAlertsCount}</span>
+                      </div>
+                    )}
+                    {hasDocumentAlerts && (
+                      <div className="flex items-center justify-between gap-2 p-2 bg-purple-950/30 border border-purple-800/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs font-bold text-purple-300">Documentos</span>
+                        </div>
+                        <span className="text-sm font-mono font-bold text-purple-400">{documentAlertsCount}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-500 text-center">
+                    Clique no sino para ver detalhes
+                  </div>
+                </div>
               )}
             </button>
           </div>

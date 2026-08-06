@@ -734,6 +734,26 @@ export default function App() {
   if (loading) return <div className="flex items-center justify-center min-h-screen">Carregando...</div>;
   if (!currentUser) return <LoginView onLogin={setCurrentUser} />;
 
+  // Calcula alertas inteligentes por categoria para o sino
+  const criticalAlertsCount = criticalPendings.length;
+  
+  // Alertas de execução: OS em andamento atribuídas ao usuário atual
+  const executionAlertsCount = currentUser 
+    ? serviceOrders.filter(os => 
+        os.status === 'em_execucao' && 
+        (os.tecnicoResponsavelId === currentUser.id || os.responsavelId === currentUser.id)
+      ).length
+    : 0;
+  
+  // Alertas de documentos: documentos pendentes de revisão ou aprovação
+  const documentAlertsCount = notifications.filter(n => 
+    !n.lida && 
+    (n.tipo === 'documento_anexado' || n.tipo === 'revisao' || n.tipo === 'aprovacao')
+  ).length;
+  
+  const totalPendingAlerts = criticalAlertsCount + 
+    notifications.filter(n => !n.lida).length;
+
   return (
     <div 
       className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
@@ -747,7 +767,10 @@ export default function App() {
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        pendingAlertsCount={criticalPendings.length + notifications.filter(n => !n.lida).length}
+        pendingAlertsCount={totalPendingAlerts}
+        criticalAlertsCount={criticalAlertsCount}
+        executionAlertsCount={executionAlertsCount}
+        documentAlertsCount={documentAlertsCount}
         onGoHome={() => {
           setActiveTab('dashboard');
           setSelectedVessel(null);
