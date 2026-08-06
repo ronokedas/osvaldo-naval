@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable } from '../types';
 import { ProposalPdfTemplate } from './ProposalPdfTemplate';
 import { generateProposalPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
@@ -50,6 +50,22 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [isFormalAcceptanceModalOpen, setIsFormalAcceptanceModalOpen] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+
+  // Listen for custom event to open a specific proposal from Dashboard
+  useEffect(() => {
+    const handleOpenProposal = (event: CustomEvent<string>) => {
+      const proposalId = event.detail;
+      const proposal = proposals.find((p) => p.id === proposalId);
+      if (proposal) {
+        setSelectedProposal(proposal);
+      }
+    };
+
+    window.addEventListener('open-proposal' as any, handleOpenProposal as any);
+    return () => {
+      window.removeEventListener('open-proposal' as any, handleOpenProposal as any);
+    };
+  }, [proposals]);
 
   // Proposal Form State
   const [editingProposalId, setEditingProposalId] = useState<string | null>(null);

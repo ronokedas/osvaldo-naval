@@ -413,33 +413,82 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
 
                 {/* Sub-Panel when clicking a stage */}
-                {selectedPipelineStage && (
-                  <div className="p-4 bg-slate-50 rounded-xl border border-blue-200 space-y-3 animate-fadeIn">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                        Itens na fase:{' '}
-                        <span className="text-blue-600">
-                          {pipelineStages.find((s) => s.id === selectedPipelineStage)?.title}
-                        </span>
-                      </h4>
-                      <button
-                        onClick={() =>
-                          onNavigateTab(
-                            pipelineStages.find((s) => s.id === selectedPipelineStage)?.targetTab
-                          )
-                        }
-                        className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        Gerenciar na aba dedicada <ArrowRight className="w-3 h-3" />
-                      </button>
-                    </div>
+                {selectedPipelineStage && (() => {
+                  const stage = pipelineStages.find((s) => s.id === selectedPipelineStage);
+                  const isOpenProposals = selectedPipelineStage === 'propostas';
+                  const openProposalsList = isOpenProposals 
+                    ? proposals.filter((p) => p.status === 'enviado' || p.status === 'rascunho')
+                    : [];
 
-                    <p className="text-xs text-slate-500">
-                      Isto reflete diretamente o fluxo oficial da engenharia naval da Nautilus (Proposta → Processo → Vistoria → Laudo → Certificadora → Entrega → Faturamento).
-                    </p>
-                  </div>
-                )}
+                  return (
+                    <div className="p-4 bg-slate-50 rounded-xl border border-blue-200 space-y-3 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          Itens na fase:{' '}
+                          <span className="text-blue-600">
+                            {stage?.title}
+                          </span>
+                        </h4>
+                        {!isOpenProposals && (
+                          <button
+                            onClick={() =>
+                              onNavigateTab(stage?.targetTab)
+                            }
+                            className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            Gerenciar na aba dedicada <ArrowRight className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {isOpenProposals && openProposalsList.length > 0 ? (
+                        <div className="space-y-2 mt-3">
+                          {openProposalsList.map((proposal) => (
+                            <div
+                              key={proposal.id}
+                              onClick={() => {
+                                // Navigate to proposals tab and select this proposal
+                                onNavigateTab('proposals');
+                                // Dispatch custom event to open the specific proposal
+                                window.dispatchEvent(new CustomEvent('open-proposal', { detail: proposal.id }));
+                              }}
+                              className="bg-white p-3 rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition cursor-pointer group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <p className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition">
+                                      Proposta {proposal.numero}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      {proposal.embarcacaoNome} • {proposal.clienteNome}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-slate-900 text-sm">
+                                    R$ {proposal.valorTotal.toLocaleString('pt-BR')}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {proposal.status === 'enviado' ? 'Aguardando aceite' : 'Rascunho'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Isto reflete diretamente o fluxo oficial da engenharia naval da Nautilus (Proposta → Processo → Vistoria → Laudo → Certificadora → Entrega → Faturamento).
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
