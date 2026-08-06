@@ -316,6 +316,7 @@ export const document_versions = pgTable("document_versions", {
   situacaoAprovacao: text("situacao_aprovacao").default("pendente"), // pendente, aprovado, reprovado
   aprovadoPorId: uuid("aprovado_por_id").references(() => users.id),
   aprovadoEm: text("aprovado_em"),
+  pdfUrl: text("pdf_url"), // URL para PDF editado/gerado
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -352,13 +353,15 @@ export const external_responses = pgTable("external_responses", {
 export const deliveries = pgTable("deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
   osId: uuid("os_id").references(() => service_orders.id).notNull(),
-  status: text("status").notNull().default("pendente"), // pendente, entregue
+  status: text("status").notNull().default("pendente"), // pendente, impresso, entregue
   dataEntrega: text("data_entrega"),
   meioEntrega: text("meio_entrega"),
   nomeRecebedor: text("nome_recebedor"),
   comprovanteUrl: text("comprovante_url"),
   comprovanteNome: text("comprovante_nome"),
   entreguePorId: uuid("entregue_por_id").references(() => users.id),
+  dataImpressao: text("data_impressao"), // quando Lucas confirma impressão
+  impressoPorId: uuid("impresso_por_id").references(() => users.id), // quem confirmou impressão
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -379,10 +382,11 @@ export const os_events = pgTable("os_events", {
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   usuarioId: uuid("usuario_id").references(() => users.id).notNull(),
-  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega
+  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada
   titulo: text("titulo").notNull(),
   mensagem: text("mensagem"),
   lida: boolean("lida").notNull().default(false),
   osId: uuid("os_id").references(() => service_orders.id),
+  prioridade: text("prioridade").default("normal"), // normal, alta, critica
   createdAt: timestamp("created_at").defaultNow(),
 });

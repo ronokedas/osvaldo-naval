@@ -272,6 +272,7 @@ export interface DocumentVersion {
   situacaoAprovacao?: string;
   aprovadoPorId?: string;
   aprovadoEm?: string;
+  pdfUrl?: string; // URL para PDF editado/gerado
 }
 
 export interface Document {
@@ -332,11 +333,12 @@ export interface OsEvent {
 export interface InternalNotification {
   id: string;
   usuarioId: string;
-  tipo: string;
+  tipo: string; // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada
   titulo: string;
   mensagem?: string;
   lida: boolean;
   osId?: string;
+  prioridade?: string; // normal, alta, critica
   createdAt?: string;
 }
 
