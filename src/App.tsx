@@ -111,6 +111,23 @@ export default function App() {
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
+  // Sincronizar activeTab com a URL para navegação visível no navegador
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const currentPath = window.location.pathname.slice(1) || 'dashboard';
+      if (['dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial', 'protocols', 'team', 'documents', 'settings'].includes(currentPath)) {
+        setActiveTab(currentPath as TabType);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  React.useEffect(() => {
+    window.history.pushState({}, '', `/${activeTab}`);
+  }, [activeTab]);
+
   // OS flow state
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [selectedOsId, setSelectedOsId] = useState<string | null>(null);

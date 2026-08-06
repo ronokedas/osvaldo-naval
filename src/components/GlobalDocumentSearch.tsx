@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DocumentTask, Vessel } from '../types';
 import { Search, Filter, FileText, Calendar, Ship, Download, ExternalLink, Hash } from 'lucide-react';
+import { PdfViewerModal } from './PdfViewerModal';
 
 interface GlobalDocumentSearchProps {
   tasks: DocumentTask[];
@@ -11,6 +12,7 @@ export const GlobalDocumentSearch: React.FC<GlobalDocumentSearchProps> = ({ task
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [vesselTypeFilter, setVesselTypeFilter] = useState('');
+  const [viewingPdf, setViewingPdf] = useState<{ url: string; title: string } | null>(null);
 
   // Extract all tasks that have an attached file
   const tasksWithFiles = tasks.filter(t => t.arquivoNome || t.arquivoUrl);
@@ -131,15 +133,13 @@ export const GlobalDocumentSearch: React.FC<GlobalDocumentSearchProps> = ({ task
                     </td>
                     <td className="px-6 py-4 text-right">
                       {task.arquivoUrl ? (
-                        <a
-                          href={task.arquivoUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          onClick={() => setViewingPdf({ url: task.arquivoUrl!, title: task.arquivoNome || task.titulo })}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition"
                           title="Visualizar/Baixar"
                         >
                           <ExternalLink className="w-4 h-4" />
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-xs text-slate-400 italic">Link indisp.</span>
                       )}
@@ -161,6 +161,15 @@ export const GlobalDocumentSearch: React.FC<GlobalDocumentSearchProps> = ({ task
           </div>
         )}
       </div>
+
+      {/* PDF Viewer Modal */}
+      {viewingPdf && (
+        <PdfViewerModal
+          pdfUrl={viewingPdf.url}
+          title={viewingPdf.title}
+          onClose={() => setViewingPdf(null)}
+        />
+      )}
     </div>
   );
 };

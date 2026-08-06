@@ -23,8 +23,8 @@ async function logEvent(osId: string, tipo: string, user: any, descricao: string
 }
 
 // Helper: create notification
-async function notify(usuarioId: string, tipo: string, titulo: string, mensagem: string, osId?: string) {
-  await db.insert(notifications).values({ usuarioId, tipo, titulo, mensagem, osId });
+async function notify(usuarioId: string, tipo: string, titulo: string, mensagem: string, osId?: string, prioridade: "normal" | "alta" | "critica" = "normal") {
+  await db.insert(notifications).values({ usuarioId, tipo, titulo, mensagem, osId, prioridade });
 }
 
 // Helper: infer doc type
@@ -219,23 +219,64 @@ router.post("/:id/vistoria", requirePermission([PERMISSIONS.EXECUTAR_VISTORIA]),
     const data = req.body || {};
     const osList = await db.select().from(service_orders).where(eq(service_orders.id, id));
     if (osList.length === 0) return res.status(404).json({ error: "OS não encontrada" });
+    const os = osList[0];
 
+    const prevStatus = os.status;
     const nextStatus = data.concluirVistoria ? "documentacao_em_elaboracao" : "vistoria_em_execucao";
+    
+    // Buscar informações da OS para notificações
+    const proposal = os.propostaId ? (await db.select().from(proposals).where(eq(proposals.id, os.propostaId!)))[0] : null;
+    const vessel = os.embarcacaoId ? (await db.select().from(vessels).where(eq(vessels.id, os.embarcacaoId!)))[0] : null;
+    
     await db.update(service_orders).set({
       status: nextStatus,
       responsavelTecnicoId: req.user.id,
       updatedAt: new Date(),
     }).where(eq(service_orders.id, id));
 
+    const isConcluding = data.concluirVistoria && prevStatus !== "vistoria_em_execucao";
+    
     await logEvent(id, "vistoria", req.user,
-      data.concluirVistoria
+      isConcluding
         ? "Vistoria executada. Iniciando elaboração da documentação."
         : "Vistoria iniciada/em execução.",
       { observacoes: data.observacoes || "" });
 
+    // Notificar Deisy (admin/comercial) quando vistoria for iniciada ou concluída
+    const deisyUsers = await db.select().from(users).where(sql`${users.role} IN ('admin', 'comercial')`);
+    for (const u of deisyUsers) {
+      await notify(
+        u.id,
+        isConcluding ? "vistoria_conclusao" : "vistoria_inicio",
+        isConcluding ? "✅ Vistoria Concluída" : "🔧 Vistoria em Execução",
+        isConcluding
+          ? `Osvaldo concluiu a vistoria da embarcação ${vessel?.nome || "não identificada"}. Documentação em elaboração.`
+          : `Osvaldo iniciou a vistoria da embarcação ${vessel?.nome || "não identificada"}.`,
+        id,
+        "alta" // prioridade alta para vistoria
+      );
+    }
+
+    // Se estiver concluindo a vistoria, criar documentos pendentes automaticamente
+    if (isConcluding && proposal) {
+      const itens = await db.select().from(service_order_items).where(eq(service_order_items.osId, id));
+      for (const item of itens) {
+        const tipoDoc = inferTipo(item.descricao);
+        await db.insert(documents).values({
+          osId: id,
+          titulo: item.descricao,
+          tipo: tipoDoc,
+          status: "em_elaboracao",
+          versaoAtual: 0,
+        });
+      }
+      await logEvent(id, "documento", req.user, "Documentos criados automaticamente após conclusão da vistoria.");
+    }
+
     const osUpdated = (await db.select().from(service_orders).where(eq(service_orders.id, id)))[0];
     res.json(serializeServiceOrder(osUpdated));
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -271,6 +312,7 @@ router.post("/documents/:id/versions", requirePermission([PERMISSIONS.ANEXAR_EDI
       origem: data.origem || "correcao_interna",
       situacaoRevisao: "pendente",
       situacaoAprovacao: "pendente",
+      pdfUrl: data.pdfUrl || null,
     }).returning())[0];
 
     await db.update(documents).set({ status: "em_revisao", updatedAt: new Date() }).where(eq(documents.id, id));
@@ -279,8 +321,22 @@ router.post("/documents/:id/versions", requirePermission([PERMISSIONS.ANEXAR_EDI
     await logEvent(doc.osId, "upload", req.user, `Nova versão V${nextVersion} anexada ao documento "${doc.titulo}".`,
       { documentoId: id, versao: nextVersion, origem: data.origem || "correcao_interna" });
 
+    // Notificar Deisy sobre novo documento anexado
+    const deisyUsers = await db.select().from(users).where(sql`${users.role} IN ('admin', 'comercial')`);
+    for (const u of deisyUsers) {
+      await notify(
+        u.id,
+        "documento_anexado",
+        "📄 Novo Documento Anexado",
+        `Osvaldo anexou a versão V${nextVersion} do documento "${doc.titulo}". Verifique se está OK.`,
+        doc.osId,
+        "alta" // prioridade alta para documento anexado
+      );
+    }
+
     res.json(serializeDocumentVersion(version));
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -432,7 +488,19 @@ router.post("/:id/external-response", requirePermission([PERMISSIONS.REGISTRAR_E
       await logEvent(id, "resposta_externa", req.user, "Aprovação externa registrada.", { versaoAprovada: data.versaoAprovada });
       const lucas = (await db.select().from(users).where(eq(users.email, "lucas@nautilus.eng.br")))[0];
       if (lucas) {
-        await notify(lucas.id, "entrega", "Entrega pendente", `Uma OS alcançou aprovação externa e aguarda entrega.`, id);
+        await notify(lucas.id, "entrega", "📄 Entrega Pendente", `Uma OS alcançou aprovação externa e aguarda entrega.`, id, "alta");
+      }
+      // Notificar Osvaldo e Deisy sobre documento aprovado externamente
+      const osvaldoUsers = await db.select().from(users).where(sql`${users.role} IN ('admin', 'tecnico')`);
+      for (const u of osvaldoUsers) {
+        await notify(
+          u.id,
+          "documento_aprovado_externo",
+          "✅ Documento Aprovado Externamente",
+          `Documento da OS foi aprovado pela empresa externa. Lucas deve imprimir e entregar.`,
+          id,
+          "alta"
+        );
       }
     } else {
       if (sub?.documentoId) {
@@ -449,6 +517,54 @@ router.post("/:id/external-response", requirePermission([PERMISSIONS.REGISTRAR_E
     }
 
     res.json(serializeExternalResponse(resp));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ---------- POST /api/service-orders/:id/print-confirm (Lucas confirma impressão) ----------
+router.post("/:id/print-confirm", requirePermission([PERMISSIONS.ENTREGAR_CONCLUIR]), async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const data = req.body || {};
+    const osList = await db.select().from(service_orders).where(eq(service_orders.id, id));
+    if (osList.length === 0) return res.status(404).json({ error: "OS não encontrada" });
+
+    const existing = await db.select().from(deliveries).where(eq(deliveries.osId, id));
+    let delivery;
+    if (existing.length > 0) {
+      delivery = (await db.update(deliveries).set({
+        status: "impresso",
+        dataImpressao: new Date().toISOString().split("T")[0],
+        impressoPorId: req.user.id,
+        updatedAt: new Date(),
+      }).where(eq(deliveries.id, existing[0].id)).returning())[0];
+    } else {
+      delivery = (await db.insert(deliveries).values({
+        osId: id,
+        status: "impresso",
+        dataImpressao: new Date().toISOString().split("T")[0],
+        impressoPorId: req.user.id,
+      }).returning())[0];
+    }
+
+    await logEvent(id, "impressao", req.user, `Lucas confirmou a impressão dos documentos da OS.`);
+
+    // Notificar Osvaldo e Deisy sobre impressão confirmada
+    const osvaldoUsers = await db.select().from(users).where(sql`${users.role} IN ('admin', 'tecnico')`);
+    for (const u of osvaldoUsers) {
+      await notify(
+        u.id,
+        "impressao_confirmada",
+        "🖨️ Impressão Confirmada",
+        `Lucas confirmou que os documentos da OS foram impressos e estão em andamento para entrega.`,
+        id,
+        "normal"
+      );
+    }
+
+    res.json(serializeDelivery(delivery));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
@@ -495,6 +611,19 @@ router.post("/:id/deliver", requirePermission([PERMISSIONS.ENTREGAR_CONCLUIR]), 
 
     await logEvent(id, "entrega", req.user,
       `Entrega registrada: ${data.meioEntrega} para ${data.nomeRecebedor} em ${data.dataEntrega}${data.comprovanteUrl ? " com comprovante." : " (sem comprovante)."}`);
+
+    // Notificar Osvaldo e Deisy sobre entrega confirmada
+    const osvaldoUsers = await db.select().from(users).where(sql`${users.role} IN ('admin', 'tecnico')`);
+    for (const u of osvaldoUsers) {
+      await notify(
+        u.id,
+        "entrega_confirmada",
+        "✅ Entrega Confirmada",
+        `Lucas confirmou a entrega dos documentos da OS.`,
+        id,
+        "normal"
+      );
+    }
 
     res.json(serializeDelivery(delivery));
   } catch (error) {
