@@ -15,7 +15,8 @@ router.get("/", requireRole(["admin", "financeiro", "tecnico"]), async (req, res
     const allUsers = await db.select().from(users);
     res.json(allUsers.map(serializeUser));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Erro ao buscar usuários" });
   }
 });
 
@@ -34,11 +35,12 @@ router.post("/", requireRole(["admin"]), async (req, res) => {
       cargo,
       ativo: ativo !== false,
     }).returning();
-    
+
     res.status(201).json(serializeUser(newUser[0]));
   } catch (error) {
+    console.error("Error creating user:", error);
     if ((error as any)?.code === "23505") return res.status(409).json({ error: "Este e-mail já está cadastrado" });
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Erro ao criar usuário" });
   }
 });
 
@@ -46,7 +48,7 @@ router.put("/:id", requireRole(["admin"]), async (req, res) => {
   try {
     const { id } = req.params;
     const { nome, email, role, senha, avatarUrl, cargo, ativo } = req.body;
-    
+
     const updateData: any = {};
     if (nome) updateData.nome = nome;
     if (email) {
@@ -61,11 +63,12 @@ router.put("/:id", requireRole(["admin"]), async (req, res) => {
     updateData.updatedAt = new Date();
 
     const updatedUser = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
-    
-    if (updatedUser.length === 0) return res.status(404).json({ error: "Not found" });
+
+    if (updatedUser.length === 0) return res.status(404).json({ error: "Usuário não encontrado" });
     res.json(serializeUser(updatedUser[0]));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Erro ao atualizar usuário" });
   }
 });
 
@@ -75,7 +78,8 @@ router.post("/:id/reset-password", requireRole(["admin"]), async (req, res) => {
     const updated = await db.update(users).set({ senha: await argon2.hash(password), updatedAt: new Date() }).where(eq(users.id, req.params.id)).returning();
     if (updated.length === 0) return res.status(404).json({ error: "Usuário não encontrado" });
     res.json({ user: serializeUser(updated[0]), temporaryPassword: password });
-  } catch {
+  } catch (error) {
+    console.error("Error resetting password:", error);
     res.status(500).json({ error: "Não foi possível redefinir a senha" });
   }
 });
