@@ -193,11 +193,17 @@ export const financial_entries = pgTable("financial_entries", {
   notaFiscalNumero: text("nota_fiscal_numero"),
   notaFiscalNome: text("nota_fiscal_nome"),
   notaFiscalUrl: text("nota_fiscal_url"),
+  nfSeries: text("nf_series"), // Série da Nota Fiscal
+  issuerId: uuid("issuer_id").references(() => clients.id), // Emitente da NF
   reciboNumero: text("recibo_numero"),
   comprovanteDespesaUrl: text("comprovante_despesa_url"),
   propostaId: uuid("proposta_id").references(() => proposals.id),
   osId: uuid("os_id").references(() => service_orders.id),
   contaReceberId: uuid("conta_receber_id").references(() => accounts_receivable.id),
+  isStorno: boolean("is_storno").default(false), // Indica se é um estorno
+  stornoReason: text("storno_reason"), // Motivo do estorno
+  originalPaymentId: uuid("original_payment_id").references((): any => financial_entries.id), // Pagamento original estornado
+  notificationSent: boolean("notification_sent").default(false), // Se notificação foi enviada
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -382,11 +388,46 @@ export const os_events = pgTable("os_events", {
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   usuarioId: uuid("usuario_id").references(() => users.id).notNull(),
-  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada
+  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada, FINANCE_UPDATE
   titulo: text("titulo").notNull(),
   mensagem: text("mensagem"),
   lida: boolean("lida").notNull().default(false),
   osId: uuid("os_id").references(() => service_orders.id),
   prioridade: text("prioridade").default("normal"), // normal, alta, critica
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Tabela para anexos financeiros (Notas Fiscais, Recibos, Boletos)
+export const financial_attachments = pgTable("financial_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  transactionId: uuid("transaction_id").notNull().references(() => financial_entries.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").default(0),
+  mimeType: text("mime_type"),
+  documentType: text("document_type").notNull().default("outro"), // nf, recibo, boleto, comprovante, outro
+  documentNumber: text("document_number"), // Número do documento (NF, recibo, etc)
+  series: text("series"), // Série da NF
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Tabela para histórico de status financeiro
+export const financial_status_history = pgTable("financial_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  embarcacaoId: uuid("embarcacao_id").references(() => vessels.id, { onDelete: "cascade" }),
+  osId: uuid("os_id").references(() => service_orders.id, { onDelete: "cascade" }),
+  previousStatus: text("previous_status"), // PENDENTE, PARCIAL, PAGO
+  newStatus: text("new_status").notNull(), // PENDENTE, PARCIAL, PAGO
+  previousValue: decimal("previous_value", { precision: 12, scale: 2 }).default("0"),
+  newValue: decimal("new_value", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalValue: decimal("total_value", { precision: 12, scale: 2 }).default("0"),
+  percentage: decimal("percentage", { precision: 5, scale: 2 }).default("0"),
+  triggeredBy: uuid("triggered_by").references(() => users.id),
+  triggeredByName: text("triggered_by_name"),
+  entryId: uuid("entry_id").references(() => financial_entries.id),
+  observation: text("observation"),
   createdAt: timestamp("created_at").defaultNow(),
 });
