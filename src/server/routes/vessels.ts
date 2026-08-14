@@ -12,13 +12,23 @@ router.get("/", requireAuth, async (req, res) => {
     const allVessels = await db.select().from(vessels).orderBy(desc(vessels.createdAt));
     res.json(allVessels.map(serializeVessel));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error fetching vessels:", error);
+    res.status(500).json({ error: "Erro ao buscar embarcações" });
   }
 });
 
 router.post("/", requireAuth, async (req, res) => {
   try {
     const data = req.body;
+    
+    // Validation
+    if (!data.nome) {
+      return res.status(400).json({ error: "Nome da embarcação é obrigatório" });
+    }
+    if (!data.tipo) {
+      return res.status(400).json({ error: "Tipo da embarcação é obrigatório" });
+    }
+    
     const newVessel = await db.insert(vessels).values({
       nome: data.nome,
       tipo: data.tipo,
@@ -42,7 +52,8 @@ router.post("/", requireAuth, async (req, res) => {
     
     res.json(serializeVessel(newVessel[0]));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error creating vessel:", error);
+    res.status(500).json({ error: "Erro ao criar embarcação" });
   }
 });
 
@@ -72,11 +83,12 @@ router.put("/:id", requireAuth, async (req, res) => {
     if (data.progresso !== undefined) updateData.progresso = data.progresso;
 
     const updated = await db.update(vessels).set(updateData).where(eq(vessels.id, id)).returning();
-    if (updated.length === 0) return res.status(404).json({ error: "Not found" });
+    if (updated.length === 0) return res.status(404).json({ error: "Embarcação não encontrada" });
     
     res.json(serializeVessel(updated[0]));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error updating vessel:", error);
+    res.status(500).json({ error: "Erro ao atualizar embarcação" });
   }
 });
 

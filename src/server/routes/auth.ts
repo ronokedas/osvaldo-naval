@@ -33,7 +33,7 @@ router.post("/login", async (req, res) => {
     res.json(serializeUser(user));
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Erro interno no servidor" });
   }
 });
 
@@ -54,7 +54,8 @@ router.get("/me", requireAuth, async (req, res) => {
     const user = userList[0];
     res.json(serializeUser(user));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("Error fetching current user:", error);
+    res.status(500).json({ error: "Erro interno no servidor" });
   }
 });
 
