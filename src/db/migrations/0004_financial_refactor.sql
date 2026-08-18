@@ -196,8 +196,3 @@ COMMENT ON COLUMN financial_entries.is_storno IS 'Indica se este lançamento é 
 COMMENT ON COLUMN financial_entries.storno_reason IS 'Motivo do estorno (obrigatório se is_storno=true)';
 COMMENT ON COLUMN financial_entries.original_payment_id IS 'Referência ao pagamento original sendo estornado';
 
--- 9. Grant de permissões
-GRANT ALL ON financial_attachments TO postgres;
-GRANT ALL ON financial_status_history TO postgres;
-GRANT SELECT ON financial_entries TO postgres;
-GRANT SELECT ON vessels TO postgres;
