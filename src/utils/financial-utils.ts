@@ -1,5 +1,5 @@
 import { db } from "../db/index.js";
-import { financial_entries, payments, vessels, service_orders } from "../db/schema.js";
+import { financial_entries, payments, vessels, service_orders, service_order_items } from "../db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
 
 export type FinancialStatus = "PENDENTE" | "PARCIAL" | "PAGO";
@@ -36,17 +36,8 @@ export async function calculateFinancialStatus(
   // Busca valor total da OS ou embarcação
   let totalValue = 0;
   if (type === "os") {
-    const os = await db.query.service_orders.findFirst({
-      where: eq(service_orders.id, orderId),
-      with: {
-        items: true
-      }
-    });
-    if (os) {
-      totalValue = os.items.reduce((sum, item) => {
-        return sum + (parseFloat(item.valorUnitario.toString()) * (item.quantidade || 1));
-      }, 0);
-    }
+    const items = await db.select().from(service_order_items).where(eq(service_order_items.osId, orderId));
+    totalValue = items.reduce((sum, item) => sum + (parseFloat(item.valorUnitario?.toString() || "0") * (item.quantidade || 1)), 0);
   } else {
     const vessel = await db.query.vessels.findFirst({
       where: eq(vessels.id, orderId)
@@ -94,7 +85,7 @@ export async function updateOrderFinancialStatus(
   
   // Atualiza valor recebido e status
   await db.execute(sql`
-    UPDATE ${sql.identifier(tableName.split('"').filter(Boolean))}
+    UPDATE ${sql.identifier(tableName)}
     SET 
       valor_recebido = ${statusData.receivedValue},
       updated_at = NOW()

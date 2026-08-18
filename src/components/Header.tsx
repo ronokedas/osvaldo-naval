@@ -1,4 +1,4 @@
-import React from 'react';
+import React,{useEffect,useRef} from 'react';
 import { User, LogoConfig } from '../types';
 import { NautilusLogo } from './NautilusLogo';
 import { Bell, Search, UserCheck, Menu, AlertTriangle, CheckCircle, Clock, FileText, Wrench } from 'lucide-react';
@@ -11,6 +11,8 @@ interface HeaderProps {
   onToggleMobileMenu: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  searchResults?: { id: string; type: string; title: string; detail?: string }[];
+  onSelectSearchResult?: (result: { id: string; type: string; title: string; detail?: string }) => void;
   pendingAlertsCount: number;
   criticalAlertsCount?: number;
   executionAlertsCount?: number;
@@ -29,6 +31,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileMenu,
   searchQuery,
   onSearchChange,
+  searchResults = [],
+  onSelectSearchResult,
   pendingAlertsCount,
   criticalAlertsCount = 0,
   executionAlertsCount = 0,
@@ -38,6 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onOpenNotifications,
 }) => {
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { const close = (event: MouseEvent) => { if (searchBoxRef.current && !searchBoxRef.current.contains(event.target as Node)) onSearchChange(''); }; document.addEventListener('mousedown', close); return () => document.removeEventListener('mousedown', close); }, [onSearchChange]);
   // Calcula total de alertas inteligentes por categoria
   const hasCriticalAlerts = criticalAlertsCount > 0;
   const hasExecutionAlerts = executionAlertsCount > 0;
@@ -69,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Center: Search input */}
         <div className="flex-1 max-w-md hidden md:block min-w-0">
-          <div className="relative">
+          <div ref={searchBoxRef} className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
             <input
               type="text"
@@ -78,6 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
               onChange={(e) => onSearchChange(e.target.value)}
               className="w-full pl-9 pr-4 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
             />
+            {searchQuery.trim() && <div className="absolute top-full mt-2 left-0 right-0 bg-[#0B192C] border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden"><div className="px-3 py-2 text-[10px] uppercase font-bold tracking-wider text-slate-400 border-b border-slate-700">Resultados encontrados</div>{searchResults.length ? searchResults.map(r=><button type="button" key={`${r.type}-${r.id}`} onClick={()=>{onSelectSearchResult?.(r);onSearchChange('')}} className="w-full text-left px-3 py-2 hover:bg-slate-800"><p className="text-sm font-bold text-white">{r.title}</p><p className="text-xs text-slate-400">{r.type}{r.detail?` · ${r.detail}`:''}</p></button>) : <p className="px-3 py-4 text-sm text-slate-400">Nenhum resultado encontrado.</p>}</div>}
           </div>
         </div>
 

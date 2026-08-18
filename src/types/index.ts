@@ -338,6 +338,7 @@ export interface InternalNotification {
   mensagem?: string;
   lida: boolean;
   osId?: string;
+  compromissoId?: string;
   prioridade?: string; // normal, alta, critica
   createdAt?: string;
 }

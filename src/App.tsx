@@ -34,6 +34,7 @@ import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { ServiceOrdersView } from './components/ServiceOrdersView';
 import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
 import { NotificationsModal } from './components/NotificationsModal';
+import CommitmentsView from './components/CommitmentsView';
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 // The PostgreSQL API uses database field names while the existing UI uses
@@ -112,12 +113,27 @@ export default function App() {
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+  useEffect(() => {
+    const closeOnBackdrop = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target === event.currentTarget) return;
+      if (target.classList.contains('fixed') && target.classList.contains('inset-0')) {
+        setSelectedOsDetail(null);
+        setSelectedOsId(null);
+        setSelectedVessel(null);
+        setIsProfileModalOpen(false);
+        setIsNotificationsModalOpen(false);
+      }
+    };
+    document.addEventListener('click', closeOnBackdrop, true);
+    return () => document.removeEventListener('click', closeOnBackdrop, true);
+  }, []);
 
   // Sincronizar activeTab com a URL para navegação visível no navegador
   React.useEffect(() => {
     const handlePopState = () => {
       const currentPath = window.location.pathname.slice(1) || 'dashboard';
-      if (['dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial', 'protocols', 'team', 'documents', 'settings'].includes(currentPath)) {
+      if (['dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial', 'protocols', 'team', 'documents', 'commitments', 'settings'].includes(currentPath)) {
         setActiveTab(currentPath as TabType);
       }
     };
@@ -219,6 +235,8 @@ export default function App() {
       }
     };
     fetchOs();
+    const notificationTimer = window.setInterval(fetchOs, 30000);
+    return () => window.clearInterval(notificationTimer);
   }, [currentUser, selectedOsId]);
 
 
@@ -229,8 +247,9 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('API Post Error');
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'Não foi possível concluir a operação');
+    return body;
   };
 
   const apiPut = async (endpoint: string, payload: any) => {
@@ -239,8 +258,9 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('API Put Error');
-    return res.json();
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'Não foi possível atualizar os dados');
+    return body;
   };
 
 
@@ -740,8 +760,8 @@ export default function App() {
   // Alertas de execução: OS em andamento atribuídas ao usuário atual
   const executionAlertsCount = currentUser 
     ? serviceOrders.filter(os => 
-        os.status === 'em_execucao' && 
-        (os.tecnicoResponsavelId === currentUser.id || os.responsavelId === currentUser.id)
+        os.status === 'vistoria_em_execucao' &&
+        os.responsavelTecnicoId === currentUser.id
       ).length
     : 0;
   
@@ -753,6 +773,15 @@ export default function App() {
   
   const totalPendingAlerts = criticalAlertsCount + 
     notifications.filter(n => !n.lida).length;
+
+  const q = searchQuery.trim().toLowerCase();
+  const globalSearchResults = q ? [
+    ...clients.filter(c => `${c.nome} ${c.empresa} ${c.email}`.toLowerCase().includes(q)).map(c => ({ id: c.id, type: 'Cliente', title: c.nome, detail: c.empresa })),
+    ...vessels.filter(v => `${v.nome} ${v.tipo} ${v.registro} ${v.clienteNome}`.toLowerCase().includes(q)).map(v => ({ id: v.id, type: 'Embarcação', title: v.nome, detail: v.clienteNome })),
+    ...proposals.filter(p => `${p.numero} ${p.assunto} ${p.embarcacaoNome} ${p.clienteNome}`.toLowerCase().includes(q)).map(p => ({ id: p.id, type: 'Proposta', title: p.numero, detail: p.embarcacaoNome })),
+    ...tasks.filter(t => `${t.titulo} ${t.embarcacaoNome} ${t.arquivoNome || ''}`.toLowerCase().includes(q)).map(t => ({ id: t.id, type: 'Documento', title: t.titulo, detail: t.embarcacaoNome })),
+    ...serviceOrders.filter(o => `${o.numero} ${o.status}`.toLowerCase().includes(q)).map(o => ({ id: o.id, type: 'Ordem de serviço', title: o.numero, detail: o.status })),
+  ].slice(0, 12) : [];
 
   return (
     <div 
@@ -767,6 +796,15 @@ export default function App() {
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        searchResults={globalSearchResults}
+        onSelectSearchResult={(result) => {
+          const tabs: any = { Cliente: 'vessels', Embarcação: 'vessels', Proposta: 'proposals', Documento: 'documents', 'Ordem de serviço': 'service-orders' };
+          if (result.type === 'Embarcação') setSelectedVessel(vessels.find(v => v.id === result.id) || null);
+          if (result.type === 'Proposta') setSelectedProposalForView(proposals.find(p => p.id === result.id) || null);
+          if (result.type === 'Ordem de serviço') setSelectedOsId(result.id);
+          setActiveTab(tabs[result.type] || 'dashboard');
+          setSearchQuery('');
+        }}
         pendingAlertsCount={totalPendingAlerts}
         criticalAlertsCount={criticalAlertsCount}
         executionAlertsCount={executionAlertsCount}
@@ -811,6 +849,23 @@ export default function App() {
               onSelectVessel={(v) => setSelectedVessel(v)}
               onNavigateTab={(tab) => setActiveTab(tab)}
               onCreateProposalClick={() => setActiveTab('proposals')}
+              onCreateCommitmentClick={() => setActiveTab('commitments')}
+              notifications={notifications}
+              onSelectNotification={(n) => {
+                if (n.compromissoId || n.compromisso_id) {
+                  setActiveTab('commitments');
+                } else if (n.osId || n.os_id) {
+                  setSelectedOsId(n.osId || n.os_id); setActiveTab('service-orders');
+                } else {
+                  setIsNotificationsModalOpen(true);
+                }
+              }}
+              onAcknowledgeNotification={(n) => {
+                if (!n.id) return;
+                fetch(`/api/service-orders/notifications/${n.id}/read`, { method: 'POST' })
+                  .then(() => setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, lida: true } : item)))
+                  .catch(() => undefined);
+              }}
             />
           )}
 
@@ -894,6 +949,10 @@ export default function App() {
 
           {activeTab === 'documents' && (
             <GlobalDocumentSearch tasks={tasks} vessels={vessels} />
+          )}
+
+          {activeTab === 'commitments' as any && (
+            <CommitmentsView currentUser={currentUser} vessels={vessels} users={users} onRefresh={() => {}} />
           )}
 
           {activeTab === 'settings' && (
@@ -990,6 +1049,10 @@ export default function App() {
         onNavigateToOS={(osId: string) => {
           setSelectedOsId(osId);
           setActiveTab('service-orders');
+          setIsNotificationsModalOpen(false);
+        }}
+        onNavigateToCommitment={() => {
+          setActiveTab('commitments');
           setIsNotificationsModalOpen(false);
         }}
       />

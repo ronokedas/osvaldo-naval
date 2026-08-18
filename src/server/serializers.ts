@@ -132,6 +132,8 @@ export const serializeOsEvent = (ev: any) => ({
 export const serializeNotification = (n: any) => ({
   ...n,
   lida: n.lida === true,
+  osId: n.osId || n.os_id || undefined,
+  compromissoId: n.compromissoId || n.compromisso_id || undefined,
 });
 
 export const serializeProposalAcceptance = (a: any) => ({

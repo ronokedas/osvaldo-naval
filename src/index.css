@@ -1,1 +1,5 @@
 @import "tailwindcss";
+/* Responsive commitment modal: keep the form usable on short and narrow screens. */
+.commitment-modal-form { max-height: calc(100vh - 1.5rem); overflow-y: auto; }
+@media (max-width: 640px) { .commitment-modal-form { padding: 1rem; border-radius: 1.25rem; } }
+.fixed.inset-0 form { max-height: calc(100vh - 1.5rem); overflow-y: auto; }

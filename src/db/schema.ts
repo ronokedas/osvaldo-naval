@@ -393,6 +393,7 @@ export const notifications = pgTable("notifications", {
   mensagem: text("mensagem"),
   lida: boolean("lida").notNull().default(false),
   osId: uuid("os_id").references(() => service_orders.id),
+  compromissoId: uuid("compromisso_id").references(() => commitments.id),
   prioridade: text("prioridade").default("normal"), // normal, alta, critica
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -414,6 +415,21 @@ export const financial_attachments = pgTable("financial_attachments", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const commitments = pgTable("commitments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  titulo: text("titulo").notNull(),
+  embarcacaoId: uuid("embarcacao_id").references(() => vessels.id).notNull(),
+  responsavelId: uuid("responsavel_id").references(() => users.id).notNull(),
+  vencimento: text("vencimento").notNull(),
+  observacoes: text("observacoes"),
+  prioridade: text("prioridade").notNull().default("normal"),
+  status: text("status").notNull().default("aberto"),
+  criadoPorId: uuid("criado_por_id").references(() => users.id),
+  destinatarios: jsonb("destinatarios").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Tabela para histórico de status financeiro
 export const financial_status_history = pgTable("financial_status_history", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -429,5 +445,17 @@ export const financial_status_history = pgTable("financial_status_history", {
   triggeredByName: text("triggered_by_name"),
   entryId: uuid("entry_id").references(() => financial_entries.id),
   observation: text("observation"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const commitment_attachments = pgTable("commitment_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  compromissoId: uuid("compromisso_id").references(() => commitments.id, { onDelete: "cascade" }).notNull(),
+  nomeOriginal: text("nome_original").notNull(),
+  nomeFisico: text("nome_fisico").notNull(),
+  url: text("url").notNull(),
+  tipoMime: text("tipo_mime"),
+  tamanho: integer("tamanho").default(0),
+  autorId: uuid("autor_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });

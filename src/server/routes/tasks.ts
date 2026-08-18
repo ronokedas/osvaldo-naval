@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { tasks, vessels } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requirePermission } from "../auth.js";
+import { PERMISSIONS } from "../permissions.js";
 import { serializeTask } from "../serializers.js";
 
 const router = Router();
@@ -18,7 +19,7 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requirePermission([PERMISSIONS.EXECUTAR_VISTORIA]), async (req, res) => {
   try {
     const data = req.body;
     const inserted = await db.insert(tasks).values({
@@ -47,7 +48,7 @@ router.post("/", requireAuth, async (req, res) => {
   }
 });
 
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requirePermission([PERMISSIONS.EXECUTAR_VISTORIA]), async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;

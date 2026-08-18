@@ -27,7 +27,8 @@ export type TabType =
   | 'protocols'
   | 'team'
   | 'settings'
-  | 'documents';
+  | 'documents'
+  | 'commitments';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -106,6 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Search,
       roles: ['admin', 'financeiro', 'tecnico'],
     },
+    { id: 'commitments' as TabType, label: 'Pendências e Compromissos', icon: ClipboardList, roles: ['admin', 'financeiro', 'tecnico'] },
     {
       id: 'settings' as TabType,
       label: 'Configurações do Sistema',

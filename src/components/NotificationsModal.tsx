@@ -9,6 +9,7 @@ interface NotificationsModalProps {
   criticalPendings?: any[];
   onMarkAsRead?: (id: string) => void;
   onNavigateToOS?: (osId: string) => void;
+  onNavigateToCommitment?: (id: string) => void;
 }
 
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({
@@ -18,6 +19,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   criticalPendings = [],
   onMarkAsRead,
   onNavigateToOS,
+  onNavigateToCommitment,
 }) => {
   if (!isOpen) return null;
 
@@ -33,6 +35,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'documento_anexado':
         return <FileText className="w-5 h-5 text-purple-500" />;
+      case 'compromisso_criado':
+        return <Bell className="w-5 h-5 text-indigo-500" />;
+      case 'compromisso_status':
+        return <CheckCircle className="w-5 h-5 text-cyan-500" />;
       case 'vistoria_inicio':
       case 'vistoria_conclusao':
         return <Wrench className="w-5 h-5 text-orange-500" />;
@@ -52,7 +58,14 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
     }
   };
 
-  const allItems = [
+  const formatNotificationDate = (value: unknown) => {
+    if (!value) return '';
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const allItems: any[] = [
     ...criticalPendings.map((cp) => ({
       id: cp.id,
       tipo: 'pendencia_critica',
@@ -68,7 +81,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
       ...n,
       isCriticalPending: false,
     })),
-  ].sort((a, b) => {
+  ].sort((a: any, b: any) => {
     const dateA = new Date(a.data || a.createdAt || 0).getTime();
     const dateB = new Date(b.data || b.createdAt || 0).getTime();
     return dateB - dateA;
@@ -118,8 +131,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                   if (!item.isCriticalPending && item.osId && onNavigateToOS) {
                     onNavigateToOS(item.osId);
                   }
-                  if (onMarkAsRead && !item.isCriticalPending) {
-                    onMarkAsRead(item.id);
+                  if (!item.isCriticalPending && item.compromissoId && onNavigateToCommitment) {
+                    onNavigateToCommitment(item.compromissoId);
                   }
                 }}
               >
@@ -146,19 +159,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                         🚢 {item.embarcacaoNome}
                       </p>
                     )}
-                    {(item.data || item.createdAt) && (
+                    {formatNotificationDate(item.data || item.createdAt) && (
                       <div className="flex items-center gap-1 mt-2 text-[10px] text-slate-400">
                         <Clock className="w-3 h-3" />
                         <span>
-                          {new Date(item.data || item.createdAt!).toLocaleDateString('pt-BR', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {formatNotificationDate(item.data || item.createdAt)}
                         </span>
                       </div>
+                    )}
+                    {!item.isCriticalPending && !item.lida && onMarkAsRead && (
+                      <button type="button" onClick={(event) => { event.stopPropagation(); onMarkAsRead(item.id); }} className="mt-2 text-xs font-bold text-blue-600 hover:text-blue-800">
+                        ✓ Confirmar leitura
+                      </button>
                     )}
                   </div>
                 </div>

@@ -34,6 +34,10 @@ interface DashboardProps {
   onSelectVessel: (vessel: Vessel) => void;
   onNavigateTab: (tab: any) => void;
   onCreateProposalClick: () => void;
+  onCreateCommitmentClick?: () => void;
+  notifications?: any[];
+  onSelectNotification?: (notification: any) => void;
+  onAcknowledgeNotification?: (notification: any) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -47,6 +51,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectVessel,
   onNavigateTab,
   onCreateProposalClick,
+  onCreateCommitmentClick,
+  notifications = [],
+  onSelectNotification,
+  onAcknowledgeNotification,
 }) => {
   const [activeTabMode, setActiveTabMode] = useState<'pipeline' | 'smart_actions' | 'chart'>('pipeline');
   const [selectedPipelineStage, setSelectedPipelineStage] = useState<string | null>(null);
@@ -228,6 +236,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {currentUser.role !== 'tecnico' && (
+          <div className="flex items-center">
           <button
             onClick={onCreateProposalClick}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 transition cursor-pointer"
@@ -235,8 +244,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <Plus className="w-5 h-5" />
             Nova Proposta (DS 0XX/AA)
           </button>
+          {currentUser.role === 'admin' && <button onClick={onCreateCommitmentClick} className="ml-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-bold text-white shadow-lg hover:bg-amber-600"><Plus size={20}/> Novo compromisso</button>}
+          </div>
         )}
       </div>
+
+      {notifications.filter(n => !n.lida).length > 0 && <div className="mt-5 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Atualizações recentes</p><h2 className="text-xl font-extrabold text-slate-900">Você tem {notifications.filter(n => !n.lida).length} nova(s) movimentação(ões)</h2><p className="text-sm text-slate-600 mt-1">Abra o aviso e confirme quando já tiver verificado ou concluído.</p></div><div className="rounded-2xl bg-indigo-600 px-4 py-3 text-2xl text-white">🔔</div></div><div className="mt-4 grid gap-2">{notifications.filter(n => !n.lida).slice(0,3).map(n=><div key={n.id} className="rounded-xl bg-white/80 px-4 py-3 border border-indigo-100"><button type="button" onClick={() => onSelectNotification?.(n)} className="w-full text-left hover:text-indigo-700 transition"><p className="font-bold text-slate-900">{n.titulo}</p><p className="text-sm text-slate-600">{n.mensagem}</p><span className="text-xs font-semibold text-indigo-600">Abrir detalhes →</span></button><button type="button" onClick={() => onAcknowledgeNotification?.(n)} className="mt-2 text-xs font-bold text-slate-500 hover:text-indigo-700">✓ Confirmar leitura</button></div>)}</div></div>}
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

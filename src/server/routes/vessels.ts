@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { vessels } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requirePermission } from "../auth.js";
+import { PERMISSIONS } from "../permissions.js";
 import { serializeVessel } from "../serializers.js";
 
 const router = Router();
@@ -16,7 +17,7 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]), async (req, res) => {
   try {
     const data = req.body;
     const newVessel = await db.insert(vessels).values({
@@ -46,7 +47,7 @@ router.post("/", requireAuth, async (req, res) => {
   }
 });
 
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]), async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
