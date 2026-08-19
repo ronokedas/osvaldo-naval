@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { service_orders, documents, deliveries, service_order_items, schedules, os_events, external_submissions, external_responses, document_versions, proposals, vessels, users, notifications } from "../../db/schema.js";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { service_orders, documents, deliveries, service_order_items, schedules, os_events, external_submissions, external_responses, document_versions, proposals, vessels, users, notifications, proposal_acceptances, accounts_receivable, tasks } from "../../db/schema.js";
+import { eq, and, desc, sql, inArray, isNull, gt, lt, or } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
-import { serializeServiceOrder, serializeSchedule, serializeDocument, serializeDocumentVersion, serializeExternalSubmission, serializeExternalResponse, serializeDelivery, serializeOsEvent, serializeNotification } from "../serializers.js";
+import { serializeServiceOrder, serializeSchedule, serializeDocument, serializeDocumentVersion, serializeExternalSubmission, serializeExternalResponse, serializeDelivery, serializeOsEvent, serializeNotification, serializeProposal } from "../serializers.js";
 
 const router = Router();
 
@@ -70,6 +70,82 @@ router.get("/pending-actions", requireAuth, async (req: any, res: any) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ---------- GET /api/service-orders/admin-dashboard (central notifications & pending items) ----------
+router.get("/admin-dashboard", requireAuth, async (req: any, res: any) => {
+  try {
+    const userId = req.session.userId;
+    const now = new Date();
+    
+    // 1. Notificações não lidas do admin
+    const unreadNotifications = await db.select().from(notifications)
+      .where(and(eq(notifications.usuarioId, userId), eq(notifications.lida, false)))
+      .orderBy(desc(notifications.createdAt))
+      .limit(20);
+    
+    // 2. Propostas aguardando aceite (status = enviado)
+    const proposalsPendingAcceptance = await db.select().from(proposals)
+      .where(eq(proposals.status, "enviado"))
+      .orderBy(desc(proposals.createdAt));
+    
+    // 3. OS com serviço concluído esperando revisão (status = aguardando_entrega ou documentos em revisão)
+    const allOS = await db.select().from(service_orders).orderBy(desc(service_orders.createdAt));
+    const allDocs = await db.select().from(documents);
+    const osConcluidasEsperandoRevisao: any[] = [];
+    const osComDocumentosParaRevisar: any[] = [];
+    
+    for (const os of allOS) {
+      const osDocs = allDocs.filter((d) => d.osId === os.id);
+      if (os.status === "aguardando_entrega") {
+        osConcluidasEsperandoRevisao.push(serializeServiceOrder(os));
+      }
+      if (osDocs.some((d) => d.status === "em_revisao")) {
+        osComDocumentosParaRevisar.push(serializeServiceOrder(os));
+      }
+    }
+    
+    // 4. Vencimentos próximos (tarefas com prazo vencendo em 7 dias)
+    const sevenDaysFromNow = new Date(now);
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const tasksWithApproachingDeadlines = await db.select().from(tasks)
+      .where(and(
+        tasks.prazoVencimento,
+        gt(tasks.prazoVencimento, now.toISOString().split('T')[0]),
+        lt(tasks.prazoVencimento, sevenDaysFromNow.toISOString().split('T')[0])
+      ))
+      .orderBy(desc(tasks.prazoVencimento));
+    
+    // 5. Documentos anexados recentemente (últimas 48h) para revisão
+    const twoDaysAgo = new Date(now);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const recentDocuments = await db.select().from(document_versions)
+      .where(gt(document_versions.createdAt, twoDaysAgo))
+      .orderBy(desc(document_versions.createdAt))
+      .limit(10);
+    
+    // 6. Contagens de pendências críticas por tipo
+    const pendingCounts = {
+      propostasAguardandoAceite: proposalsPendingAcceptance.length,
+      osAguardandoRevisao: osConcluidasEsperandoRevisao.length,
+      documentosEmRevisao: osComDocumentosParaRevisar.length,
+      vencimentosProximos: tasksWithApproachingDeadlines.length,
+      notificacoesNaoLidas: unreadNotifications.length,
+    };
+    
+    res.json({
+      notificacoesNaoLidas: unreadNotifications.map(serializeNotification),
+      propostasAguardandoAceite: proposalsPendingAcceptance.map(serializeProposal),
+      osConcluidasEsperandoRevisao,
+      osComDocumentosParaRevisar,
+      vencimentosProximos: tasksWithApproachingDeadlines,
+      documentosRecentes: recentDocuments.map(serializeDocumentVersion),
+      pendingCounts,
+    });
+  } catch (error) {
+    console.error("Error fetching admin dashboard:", error);
+    res.status(500).json({ error: "Não foi possível carregar o painel do admin" });
   }
 });
 
