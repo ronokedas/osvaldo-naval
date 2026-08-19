@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry } from '../types';
+import React, { useState, useEffect } from 'react';
+import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry, InternalNotification, ServiceOrder, DocumentVersion } from '../types';
 import {
   Ship,
   Clock,
@@ -20,8 +20,28 @@ import {
   BarChart2,
   Activity,
   Layers,
+  Bell,
+  FileCheck,
+  ClipboardCheck,
+  Hourglass,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+interface AdminDashboardData {
+  notificacoesNaoLidas: InternalNotification[];
+  propostasAguardandoAceite: Proposal[];
+  osConcluidasEsperandoRevisao: ServiceOrder[];
+  osComDocumentosParaRevisar: ServiceOrder[];
+  vencimentosProximos: any[];
+  documentosRecentes: DocumentVersion[];
+  pendingCounts: {
+    propostasAguardandoAceite: number;
+    osAguardandoRevisao: number;
+    documentosEmRevisao: number;
+    vencimentosProximos: number;
+    notificacoesNaoLidas: number;
+  };
+}
 
 interface DashboardProps {
   currentUser: User;

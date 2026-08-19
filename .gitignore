@@ -1,72 +1,49 @@
-```
+```gitignore
 # Dependencies
 node_modules/
+.pnpm-store/
+.npm/
+.yarn/
 
 # Build outputs
 dist/
 build/
-target/
+coverage/
+.nyc_output/
+.next/
+.nuxt/
+public/dist/
+src-tauri/target/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.python-version
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+# Logs
 *.log
-*.pot
-*.pyc
-*.pyo
-*.pyd
-.MF
-tags
-TAGS
-.idlerc/
-.pytest_cache/
-.mypy_cache/
-.DS_Store
-Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Environment variable configuration file
+# Environment variables
 .env
 .env.local
-.env.dev
-.env.production
-.env.staging
-.env.test
 .env.*
+!.env.example
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
+.DS_Store
+Thumbs.db
 
-# Logs
-*.log
-
-# Coverage directory used by tools like istanbul
+# Testing
 coverage/
-*.lcov
-
-# nyc test coverage
 .nyc_output/
+.jest/
 
-# TypeScript
-*.tsbuildinfo
+# OS generated
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+apidoc/
 ```
