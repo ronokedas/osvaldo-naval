@@ -133,8 +133,10 @@ export default function App() {
   React.useEffect(() => {
     const handlePopState = () => {
       const currentPath = window.location.pathname.slice(1) || 'dashboard';
-      if (['dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial', 'protocols', 'team', 'documents', 'commitments', 'settings'].includes(currentPath)) {
+      if (['dashboard', 'vessels', 'proposals', 'service-orders', 'financial', 'team', 'commitments', 'settings'].includes(currentPath)) {
         setActiveTab(currentPath as TabType);
+      } else if (['tasks', 'protocols', 'documents'].includes(currentPath)) {
+        setActiveTab('dashboard');
       }
     };
 
@@ -276,10 +278,7 @@ export default function App() {
   // User Actions
   const handleSelectUser = (u: User) => {
     setCurrentUser(u);
-    // If technician, switch tab to my tasks default
-    if (u.role === 'tecnico') {
-      setActiveTab('tasks');
-    }
+    setActiveTab('dashboard');
   };
 
   // Vessel Actions
@@ -779,7 +778,6 @@ export default function App() {
     ...clients.filter(c => `${c.nome} ${c.empresa} ${c.email}`.toLowerCase().includes(q)).map(c => ({ id: c.id, type: 'Cliente', title: c.nome, detail: c.empresa })),
     ...vessels.filter(v => `${v.nome} ${v.tipo} ${v.registro} ${v.clienteNome}`.toLowerCase().includes(q)).map(v => ({ id: v.id, type: 'Embarcação', title: v.nome, detail: v.clienteNome })),
     ...proposals.filter(p => `${p.numero} ${p.assunto} ${p.embarcacaoNome} ${p.clienteNome}`.toLowerCase().includes(q)).map(p => ({ id: p.id, type: 'Proposta', title: p.numero, detail: p.embarcacaoNome })),
-    ...tasks.filter(t => `${t.titulo} ${t.embarcacaoNome} ${t.arquivoNome || ''}`.toLowerCase().includes(q)).map(t => ({ id: t.id, type: 'Documento', title: t.titulo, detail: t.embarcacaoNome })),
     ...serviceOrders.filter(o => `${o.numero} ${o.status}`.toLowerCase().includes(q)).map(o => ({ id: o.id, type: 'Ordem de serviço', title: o.numero, detail: o.status })),
   ].slice(0, 12) : [];
 
@@ -798,7 +796,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
         searchResults={globalSearchResults}
         onSelectSearchResult={(result) => {
-          const tabs: any = { Cliente: 'vessels', Embarcação: 'vessels', Proposta: 'proposals', Documento: 'documents', 'Ordem de serviço': 'service-orders' };
+          const tabs: any = { Cliente: 'vessels', Embarcação: 'vessels', Proposta: 'proposals', 'Ordem de serviço': 'service-orders' };
           if (result.type === 'Embarcação') setSelectedVessel(vessels.find(v => v.id === result.id) || null);
           if (result.type === 'Proposta') setSelectedProposalForView(proposals.find(p => p.id === result.id) || null);
           if (result.type === 'Ordem de serviço') setSelectedOsId(result.id);

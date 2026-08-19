@@ -65,13 +65,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro', 'tecnico'],
     },
     {
-      id: 'tasks' as TabType,
-      label: currentUser.role === 'tecnico' ? 'Minhas Tarefas' : 'Tarefas da Equipe',
-      icon: CheckSquare,
-      badge: myTasksCount > 0 ? myTasksCount : undefined,
-      roles: ['admin', 'financeiro', 'tecnico'],
-    },
-    {
       id: 'proposals' as TabType,
       label: 'Propostas (DS 0XX/AA)',
       icon: FileText,
@@ -90,22 +83,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro'],
     },
     {
-      id: 'protocols' as TabType,
-      label: 'Protocolos & Entregas',
-      icon: Send,
-      roles: ['admin', 'financeiro', 'tecnico'],
-    },
-    {
       id: 'team' as TabType,
       label: 'Equipe & Carga',
       icon: Users,
       roles: ['admin'],
-    },
-    {
-      id: 'documents' as TabType,
-      label: 'Busca de Documentos',
-      icon: Search,
-      roles: ['admin', 'financeiro', 'tecnico'],
     },
     { id: 'commitments' as TabType, label: 'Pendências e Compromissos', icon: ClipboardList, roles: ['admin', 'financeiro', 'tecnico'] },
     {
