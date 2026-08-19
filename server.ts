@@ -19,6 +19,7 @@ import uploadsRoutes from "./src/server/routes/uploads.js";
 import serviceOrdersRoutes from "./src/server/routes/service-orders.js";
 import receivablesRoutes from "./src/server/routes/receivables.js";
 import commitmentsRoutes from "./src/server/routes/commitments.js";
+import certifiersRoutes from "./src/server/routes/certifiers.js";
 import { pool } from "./src/db/index.js";
 
 
@@ -92,6 +93,7 @@ async function startServer() {
   app.use("/api/service-orders", serviceOrdersRoutes);
   app.use("/api/receivables", receivablesRoutes);
   app.use("/api/commitments", commitmentsRoutes);
+  app.use("/api/certifiers", certifiersRoutes);
 
   // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -4,12 +4,15 @@ dist/
 build/
 target/
 *.tsbuildinfo
+*.js.map
 
 # Environment and local configuration
 .env
 .env.local
 .env.*
 !*.env.example
+config/local.*
+!config/default.*
 
 # Tooling and editor artifacts
 .vscode/
@@ -28,6 +31,13 @@ __pycache__/
 *.py[cod]
 .mypy_cache/
 .pytest_cache/
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.crt
+*.cert
 
 # Runtime data and local validation artifacts
 backups/

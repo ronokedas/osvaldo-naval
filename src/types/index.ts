@@ -55,7 +55,21 @@ export interface Client {
   nome: string;
   empresa: string;
   telefone: string;
+  whatsapp?: string;
   email: string;
+  cnpjCpf?: string;
+  endereco?: string;
+}
+
+export interface Certifier {
+  id: string;
+  nome: string;
+  codigoRegistro?: string;
+  telefoneContato?: string;
+  email?: string;
+  ativo: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Vessel {
@@ -66,7 +80,11 @@ export interface Vessel {
   tipo: string; // Empurrador, Balsa, Rebocador, Ferry Boat, etc.
   registro: string;
   status: VesselStatus;
-  certificadoraPrincipal: Certificadora;
+  certificadoraPrincipal?: Certificadora;
+  certificadoraId?: string;
+  comprimento?: number;
+  boca?: number;
+  pontal?: number;
   valorTotal: number;
   valorSinal: number;
   valorRecebido: number;

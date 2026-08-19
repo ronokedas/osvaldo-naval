@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { vessels } from "../../db/schema.js";
+import { vessels, certifiers } from "../../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
@@ -35,7 +35,11 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
       valorRecebido: data.valorRecebido ? data.valorRecebido.toString() : "0",
       valorSinal: data.valorSinal ? data.valorSinal.toString() : "0",
       registro: data.registro,
+      certificadoraId: data.certificadoraId || null,
       certificadoraPrincipal: data.certificadoraPrincipal,
+      comprimento: data.comprimento ? data.comprimento.toString() : null,
+      boca: data.boca ? data.boca.toString() : null,
+      pontal: data.pontal ? data.pontal.toString() : null,
       descricao: data.descricao,
       arquivosAssociados: data.arquivosAssociados || [],
       progresso: data.progresso || 0,
@@ -67,6 +71,10 @@ router.put("/:id", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES
     if (data.valorRecebido !== undefined) updateData.valorRecebido = data.valorRecebido.toString();
     if (data.valorSinal !== undefined) updateData.valorSinal = data.valorSinal.toString();
     if (data.registro !== undefined) updateData.registro = data.registro;
+    if (data.certificadoraId !== undefined) updateData.certificadoraId = data.certificadoraId;
+    if (data.comprimento !== undefined) updateData.comprimento = data.comprimento.toString();
+    if (data.boca !== undefined) updateData.boca = data.boca.toString();
+    if (data.pontal !== undefined) updateData.pontal = data.pontal.toString();
     if (data.certificadoraPrincipal !== undefined) updateData.certificadoraPrincipal = data.certificadoraPrincipal;
     if (data.descricao !== undefined) updateData.descricao = data.descricao;
     if (data.arquivosAssociados !== undefined) updateData.arquivosAssociados = data.arquivosAssociados;
