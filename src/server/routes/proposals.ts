@@ -20,6 +20,17 @@ import { sendEmail } from "../mailer.js";
 const router = Router();
 const requireProposalAccess = requireRole(["admin", "financeiro"]);
 const requireCommercialAccess = requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]);
+const serviceOrderNumberFromProposal = (proposalNumber: string) => {
+  const reference = String(proposalNumber || "").trim().replace(/^DS\s*/i, "");
+  return `OS ${reference}`;
+};
+const calculateProposalValues = (items: unknown, requestedDiscount: unknown) => {
+  const subtotal = Array.isArray(items)
+    ? items.reduce((sum, item: any) => sum + Math.max(0, Number(item?.quantidade) || 0) * Math.max(0, Number(item?.valorUnitario) || 0), 0)
+    : 0;
+  const valorDesconto = Math.min(subtotal, Math.max(0, Number(requestedDiscount) || 0));
+  return { valorDesconto, valorTotal: subtotal - valorDesconto };
+};
 
 // Multer config for acceptance documents
 const acceptanceStorage = multer.diskStorage({
@@ -69,12 +80,15 @@ router.post("/", requireCommercialAccess, async (req, res) => {
     const formattedSeq = String(nextSeq).padStart(3, '0');
     const proposalNumber = data.numero || `DS ${formattedSeq}/${yearSuffix}`;
     
+    const itens = Array.isArray(data.itens) ? data.itens : [];
+    const values = calculateProposalValues(itens, data.valorDesconto);
     const inserted = await db.insert(proposals).values({
       numero: proposalNumber,
       dataEmissao: data.dataEmissao || new Date().toISOString().split("T")[0],
       validadeDias: data.validadeDias,
       clienteId: data.clienteId || null,
       embarcacaoId: data.embarcacaoId,
+      embarcacoesIds: Array.isArray(data.embarcacoesIds) ? data.embarcacoesIds : (data.embarcacaoId ? [data.embarcacaoId] : []),
       embarcacaoNome: data.embarcacaoNome,
       clienteNome: data.clienteNome,
       destinatario: data.destinatario,
@@ -82,8 +96,9 @@ router.post("/", requireCommercialAccess, async (req, res) => {
       prazoEntregaDias: data.prazoEntregaDias,
       condicoesPagamento: data.condicaoPagamento || data.condicoesPagamento,
       status: data.status || "rascunho",
-      itens: data.itens || [],
-      valorTotal: data.valorTotal ? data.valorTotal.toString() : "0",
+      itens,
+      valorDesconto: values.valorDesconto.toString(),
+      valorTotal: values.valorTotal.toString(),
       observacoes: data.observacoesGerais || data.observacoes,
       ano: data.ano,
       elaboradoPor: data.elaboradoPor,
@@ -102,16 +117,46 @@ router.post("/", requireCommercialAccess, async (req, res) => {
   }
 });
 
+router.post("/:id/renewal", requireCommercialAccess, async (req: any, res) => {
+  try {
+    const original = (await db.select().from(proposals).where(eq(proposals.id, req.params.id)))[0];
+    if (!original) return res.status(404).json({ error: "Proposta não encontrada" });
+    if (original.status !== "aprovado" || !original.aceiteData) return res.status(400).json({ error: "A renovação só pode ser gerada a partir de uma proposta aceita" });
+    const dueAt = new Date(`${original.aceiteData}T00:00:00`); dueAt.setDate(dueAt.getDate() + 365);
+    if (dueAt > new Date()) return res.status(400).json({ error: "Esta proposta ainda não atingiu o prazo anual de renovação" });
+    const year = new Date().getFullYear(); const total = await db.select().from(proposals);
+    const numero = `DS ${String(total.filter((p) => new Date(p.createdAt || Date.now()).getFullYear() === year).length + 51).padStart(3, "0")}/${String(year).slice(-2)}`;
+    const created = (await db.insert(proposals).values({
+      numero, dataEmissao: new Date().toISOString().slice(0, 10), validadeDias: original.validadeDias,
+      clienteId: original.clienteId, clienteNome: original.clienteNome, embarcacaoId: original.embarcacaoId,
+      embarcacoesIds: original.embarcacoesIds || (original.embarcacaoId ? [original.embarcacaoId] : []), embarcacaoNome: original.embarcacaoNome,
+      destinatario: original.destinatario, assunto: `Renovação anual — ${original.assunto || original.numero}`,
+      prazoEntregaDias: original.prazoEntregaDias, condicoesPagamento: original.condicoesPagamento, itens: original.itens,
+      valorDesconto: original.valorDesconto,
+      valorTotal: original.valorTotal, observacoes: `Renovação gerada da proposta ${original.numero}. ${original.observacoes || ""}`,
+      ano: year, elaboradoPor: req.user?.nome || original.elaboradoPor, status: "rascunho", renovacaoDeId: original.id,
+    }).returning())[0];
+    res.status(201).json(serializeProposal(created));
+  } catch (error) { console.error(error); res.status(500).json({ error: "Não foi possível gerar a proposta de renovação" }); }
+});
+
 router.put("/:id", requireCommercialAccess, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
     
+    const current = (await db.select().from(proposals).where(eq(proposals.id, id)))[0];
+    if (!current) return res.status(404).json({ error: "Not found" });
     const updateData: any = { updatedAt: new Date() };
     if (data.status !== undefined) updateData.status = data.status;
     if (data.clienteId !== undefined) updateData.clienteId = data.clienteId || null;
-    if (data.valorTotal !== undefined) updateData.valorTotal = data.valorTotal.toString();
+    if (data.embarcacoesIds !== undefined) updateData.embarcacoesIds = data.embarcacoesIds;
     if (data.itens !== undefined) updateData.itens = data.itens;
+    if (data.itens !== undefined || data.valorDesconto !== undefined) {
+      const values = calculateProposalValues(data.itens !== undefined ? data.itens : current.itens, data.valorDesconto !== undefined ? data.valorDesconto : current.valorDesconto);
+      updateData.valorDesconto = values.valorDesconto.toString();
+      updateData.valorTotal = values.valorTotal.toString();
+    }
     if (data.destinatario !== undefined) updateData.destinatario = data.destinatario;
     if (data.assunto !== undefined) updateData.assunto = data.assunto;
     if (data.prazoEntregaDias !== undefined) updateData.prazoEntregaDias = data.prazoEntregaDias;
@@ -181,15 +226,14 @@ router.post("/:id/send-email", requireCommercialAccess, async (req: any, res: an
       return res.status(400).json({ error: "Destinatário de e-mail é obrigatório" });
     }
 
-    const pdfBase64 = data.pdfBase64;
-    if (!pdfBase64) {
+    const pdfs = Array.isArray(data.pdfs) && data.pdfs.length
+      ? data.pdfs
+      : data.pdfBase64
+        ? [{ filename: `Proposta_${prop.numero.replace(/\//g, '-')}.pdf`, base64: data.pdfBase64 }]
+        : [];
+    if (!pdfs.length) {
       return res.status(400).json({ error: "PDF da proposta é obrigatório" });
     }
-
-    // Strip data URL prefix if present
-    const base64Data = pdfBase64.includes("base64,")
-      ? pdfBase64.split("base64,")[1]
-      : pdfBase64;
 
     const subject = data.assunto || `Proposta ${prop.numero} - Nautilus Projetos Navais`;
     const message = data.mensagem || `Prezado(a), segue em anexo a proposta ${prop.numero} referente à embarcação ${prop.embarcacaoNome}.`;
@@ -198,11 +242,15 @@ router.post("/:id/send-email", requireCommercialAccess, async (req: any, res: an
       to: data.destinatarioEmail,
       subject,
       text: message,
-      attachments: [{
-        filename: `Proposta_${prop.numero.replace(/\//g, '-')}.pdf`,
-        content: Buffer.from(base64Data, "base64"),
-        contentType: "application/pdf",
-      }],
+      attachments: pdfs.map((pdf: any, index: number) => {
+        const encoded = String(pdf.base64 || "");
+        const base64Data = encoded.includes("base64,") ? encoded.split("base64,")[1] : encoded;
+        return {
+          filename: String(pdf.filename || `Proposta_${prop.numero.replace(/\//g, '-')}_${index + 1}.pdf`),
+          content: Buffer.from(base64Data, "base64"),
+          contentType: "application/pdf",
+        };
+      }),
     });
 
     // Register delivery
@@ -385,25 +433,60 @@ router.post("/:id/accept",
           `);
         }
 
-        // 6. Create OS
-        const year = new Date().getFullYear();
-        const allOs = await tx.select().from(service_orders);
-        const prefix = `OS-${year}-`;
-        const count = allOs.filter((o) => o.numero.startsWith(prefix)).length;
-        const numero = `${prefix}${String(count + 1).padStart(3, "0")}`;
+        // 6. Create one OS per vessel. A single-vessel proposal keeps the clean
+        // commercial reference (DS 055/26 -> OS 055/26); multiple vessels use
+        // deterministic suffixes (OS 055/26-01, OS 055/26-02).
+        const vesselIds = Array.from(new Set([
+          ...(Array.isArray(prop.embarcacoesIds) ? prop.embarcacoesIds : []),
+          ...(prop.embarcacaoId ? [prop.embarcacaoId] : []),
+        ].filter(Boolean))) as string[];
+        const osVessels = vesselIds.length ? vesselIds : [null];
+        const createdOrders: any[] = [];
+        const itens = (prop.itens || []) as any[];
+        for (let orderIndex = 0; orderIndex < osVessels.length; orderIndex += 1) {
+          const vesselId = osVessels[orderIndex];
+          const baseNumber = serviceOrderNumberFromProposal(prop.numero);
+          const numero = osVessels.length > 1 ? `${baseNumber}-${String(orderIndex + 1).padStart(2, "0")}` : baseNumber;
+          const os = (await tx.insert(service_orders).values({
+            numero,
+            propostaId: id,
+            embarcacaoId: vesselId,
+            clienteId: prop.clienteId,
+            status: "aguardando_agendamento",
+            dataAceite: aceiteData,
+            observacoes: `Criado a partir do aceite da proposta ${prop.numero}`,
+          }).returning())[0];
+          createdOrders.push(os);
 
-        const insertedOs = await tx.insert(service_orders).values({
-          numero,
-          propostaId: id,
-          embarcacaoId: prop.embarcacaoId,
-          clienteId: prop.clienteId,
-          status: "aguardando_agendamento",
-          dataAceite: aceiteData,
-          observacoes: `Criado a partir do aceite da proposta ${prop.numero}`,
-        }).returning();
-        const os = insertedOs[0];
+          for (const item of itens) {
+            await tx.insert(service_order_items).values({
+              osId: os.id,
+              descricao: item.descricao || "Item",
+              quantidade: item.quantidade || 1,
+              valorUnitario: (item.valorUnitario || 0).toString(),
+              tipo: inferTipo(item.descricao || ""),
+              status: "pendente",
+            });
+            await tx.insert(documents).values({
+              osId: os.id,
+              titulo: item.descricao || "Documento técnico",
+              tipo: inferTipo(item.descricao || ""),
+              status: "em_elaboracao",
+            });
+          }
 
-        // Link proposal to OS
+          await tx.insert(os_events).values({
+            osId: os.id,
+            tipo: "criacao",
+            autorId: req.user?.id,
+            autorNome: req.user?.nome || "Sistema",
+            descricao: `Ordem de Serviço criada a partir do aceite da proposta ${prop.numero}.`,
+            dados: { meio, situacaoFinanceira, valorRecebido },
+          });
+        }
+        const os = createdOrders[0];
+
+        // Keep the first OS as the proposal's primary shortcut.
         await tx.update(proposals).set({ osId: os.id }).where(eq(proposals.id, id));
 
         // Link account receivable to OS
@@ -411,41 +494,13 @@ router.post("/:id/accept",
           await tx.update(accounts_receivable).set({ osId: os.id, updatedAt: new Date() }).where(eq(accounts_receivable.id, ar.id));
         }
 
-        // Create OS items from proposal items
-        const itens = (prop.itens || []) as any[];
-        for (const item of itens) {
-          await tx.insert(service_order_items).values({
-            osId: os.id,
-            descricao: item.descricao || "Item",
-            quantidade: item.quantidade || 1,
-            valorUnitario: (item.valorUnitario || 0).toString(),
-            tipo: inferTipo(item.descricao || ""),
-            status: "pendente",
-          });
-          await tx.insert(documents).values({
-            osId: os.id,
-            titulo: item.descricao || "Documento técnico",
-            tipo: inferTipo(item.descricao || ""),
-            status: "em_elaboracao",
-          });
-        }
-
-        // Log event
-        await tx.insert(os_events).values({
-          osId: os.id,
-          tipo: "criacao",
-          autorId: req.user?.id,
-          autorNome: req.user?.nome || "Sistema",
-          descricao: `Ordem de Serviço criada a partir do aceite da proposta ${prop.numero}.`,
-          dados: { meio, situacaoFinanceira, valorRecebido },
-        });
-
-        return { os, ar, createdPayment };
+        return { os, ordens: createdOrders, ar, createdPayment };
       });
 
       res.json({
         created: true,
         os: serializeServiceOrder(result.os),
+        ordens: result.ordens.map(serializeServiceOrder),
         redirecionarAgendamento: true,
         receivable: result.ar ? serializeAccountReceivable(result.ar) : null,
         payment: result.createdPayment ? serializePayment(result.createdPayment) : null,
@@ -465,6 +520,16 @@ router.get("/:id/acceptance-document/:file", requireProposalAccess, async (req: 
   const stored = path.basename(acceptance.documentoUrl);
   if (req.params.file !== stored) return res.status(404).json({ error: "Arquivo de aceite não encontrado" });
   return res.sendFile(path.join(process.cwd(), "uploads", "acceptances", stored));
+});
+
+router.get("/renewals/due", requireProposalAccess, async (_req, res) => {
+  try {
+    const limit = new Date(); limit.setDate(limit.getDate() - 365);
+    const due = (await db.select().from(proposals).where(eq(proposals.status, "aprovado")))
+      .filter((proposal) => proposal.aceiteData && new Date(`${proposal.aceiteData}T00:00:00`) <= limit && !proposal.renovacaoDeId)
+      .map((proposal) => ({ ...serializeProposal(proposal), renovacaoDisponivel: true }));
+    res.json(due);
+  } catch (error) { console.error(error); res.status(500).json({ error: "Não foi possível carregar renovações" }); }
 });
 
 function inferTipo(descricao: string): string {

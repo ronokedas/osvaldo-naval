@@ -252,11 +252,7 @@ export async function notifyFinancialUpdate(
 ): Promise<void> {
   try {
     const entry = await db.query.financial_entries.findFirst({
-      where: eq(financial_entries.id, entryId),
-      with: {
-        embarcacao: true,
-        os: true
-      }
+      where: eq(financial_entries.id, entryId)
     });
 
     if (!entry) return;

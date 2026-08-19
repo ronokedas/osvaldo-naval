@@ -102,6 +102,8 @@ export const proposals = pgTable("proposals", {
   dataEmissao: text("data_emissao"),
   validadeDias: integer("validade_dias"),
   embarcacaoId: uuid("embarcacao_id").references(() => vessels.id),
+  embarcacoesIds: jsonb("embarcacoes_ids").default([]),
+  renovacaoDeId: uuid("renovacao_de_id").references((): any => proposals.id),
   embarcacaoNome: text("embarcacao_nome"),
   clienteNome: text("cliente_nome"),
   clienteId: uuid("cliente_id").references(() => clients.id),
@@ -110,6 +112,7 @@ export const proposals = pgTable("proposals", {
   prazoEntregaDias: integer("prazo_entrega_dias"),
   condicoesPagamento: text("condicoes_pagamento"),
   status: text("status").notNull().default("rascunho"), // rascunho, enviado, aprovado, recusado, faturado
+  valorDesconto: decimal("valor_desconto", { precision: 12, scale: 2 }).default("0"),
   itens: jsonb("itens").default([]),
   valorTotal: decimal("valor_total", { precision: 12, scale: 2 }).default("0"),
   observacoes: text("observacoes"),
@@ -209,17 +212,33 @@ export const financial_entries = pgTable("financial_entries", {
   notaFiscalNumero: text("nota_fiscal_numero"),
   notaFiscalNome: text("nota_fiscal_nome"),
   notaFiscalUrl: text("nota_fiscal_url"),
-  nfSeries: text("nf_series"), // Série da Nota Fiscal
-  issuerId: uuid("issuer_id").references(() => clients.id), // Emitente da NF
+  nfSeries: text("nf_series"),
+  issuerId: uuid("issuer_id").references(() => clients.id),
   reciboNumero: text("recibo_numero"),
   comprovanteDespesaUrl: text("comprovante_despesa_url"),
   propostaId: uuid("proposta_id").references(() => proposals.id),
   osId: uuid("os_id").references(() => service_orders.id),
   contaReceberId: uuid("conta_receber_id").references(() => accounts_receivable.id),
-  isStorno: boolean("is_storno").default(false), // Indica se é um estorno
-  stornoReason: text("storno_reason"), // Motivo do estorno
-  originalPaymentId: uuid("original_payment_id").references((): any => financial_entries.id), // Pagamento original estornado
-  notificationSent: boolean("notification_sent").default(false), // Se notificação foi enviada
+  isStorno: boolean("is_storno").default(false),
+  stornoReason: text("storno_reason"),
+  originalPaymentId: uuid("original_payment_id").references(() => financial_entries.id),
+  notificationSent: boolean("notification_sent").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const financial_attachments = pgTable("financial_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  transactionId: uuid("transaction_id").notNull().references(() => financial_entries.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").default(0),
+  mimeType: text("mime_type"),
+  documentType: text("document_type").notNull().default("outro"),
+  documentNumber: text("document_number"),
+  series: text("series"),
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -291,6 +310,14 @@ export const service_order_items = pgTable("service_order_items", {
   valorUnitario: decimal("valor_unitario", { precision: 12, scale: 2 }).default("0"),
   tipo: text("tipo").default("outro"), // ultrassom, desenho, art, relatorio, homologacao, outro
   status: text("status").notNull().default("pendente"), // pendente, em_execucao, concluido
+  tecnicoResponsavelId: uuid("tecnico_responsavel_id").references(() => users.id),
+  relatorioUrl: text("relatorio_url"),
+  relatorioNome: text("relatorio_nome"),
+  dataAgendada: text("data_agendada"),
+  horarioAgendado: text("horario_agendado"),
+  localAgendado: text("local_agendado"),
+  contatoAgendamento: text("contato_agendamento"),
+  observacoesAgendamento: text("observacoes_agendamento"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -404,7 +431,7 @@ export const os_events = pgTable("os_events", {
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   usuarioId: uuid("usuario_id").references(() => users.id).notNull(),
-  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada, FINANCE_UPDATE
+  tipo: text("tipo").notNull(), // atribuicao, revisao, exigencia, aprovacao, entrega, vistoria_inicio, vistoria_conclusao, documento_anexado, impressao_confirmada, entrega_confirmada
   titulo: text("titulo").notNull(),
   mensagem: text("mensagem"),
   lida: boolean("lida").notNull().default(false),
@@ -414,21 +441,23 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Tabela para anexos financeiros (Notas Fiscais, Recibos, Boletos)
-export const financial_attachments = pgTable("financial_attachments", {
+export const services = pgTable("services", {
   id: uuid("id").primaryKey().defaultRandom(),
-  transactionId: uuid("transaction_id").notNull().references(() => financial_entries.id, { onDelete: "cascade" }),
-  fileUrl: text("file_url").notNull(),
-  fileName: text("file_name").notNull(),
-  fileSize: integer("file_size").default(0),
-  mimeType: text("mime_type"),
-  documentType: text("document_type").notNull().default("outro"), // nf, recibo, boleto, comprovante, outro
-  documentNumber: text("document_number"), // Número do documento (NF, recibo, etc)
-  series: text("series"), // Série da NF
-  uploadedBy: uuid("uploaded_by").references(() => users.id),
-  uploadedByName: text("uploaded_by_name"),
+  nome: text("nome").notNull().unique(),
+  valorPadrao: decimal("valor_padrao", { precision: 12, scale: 2 }).notNull().default("0"),
+  ativo: boolean("ativo").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const service_order_item_comments = pgTable("service_order_item_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itemId: uuid("item_id").references(() => service_order_items.id, { onDelete: "cascade" }).notNull(),
+  osId: uuid("os_id").references(() => service_orders.id, { onDelete: "cascade" }).notNull(),
+  autorId: uuid("autor_id").references(() => users.id, { onDelete: "set null" }),
+  autorNome: text("autor_nome").notNull(),
+  texto: text("texto").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const commitments = pgTable("commitments", {
@@ -444,24 +473,6 @@ export const commitments = pgTable("commitments", {
   destinatarios: jsonb("destinatarios").default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Tabela para histórico de status financeiro
-export const financial_status_history = pgTable("financial_status_history", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  embarcacaoId: uuid("embarcacao_id").references(() => vessels.id, { onDelete: "cascade" }),
-  osId: uuid("os_id").references(() => service_orders.id, { onDelete: "cascade" }),
-  previousStatus: text("previous_status"), // PENDENTE, PARCIAL, PAGO
-  newStatus: text("new_status").notNull(), // PENDENTE, PARCIAL, PAGO
-  previousValue: decimal("previous_value", { precision: 12, scale: 2 }).default("0"),
-  newValue: decimal("new_value", { precision: 12, scale: 2 }).notNull().default("0"),
-  totalValue: decimal("total_value", { precision: 12, scale: 2 }).default("0"),
-  percentage: decimal("percentage", { precision: 5, scale: 2 }).default("0"),
-  triggeredBy: uuid("triggered_by").references(() => users.id),
-  triggeredByName: text("triggered_by_name"),
-  entryId: uuid("entry_id").references(() => financial_entries.id),
-  observation: text("observation"),
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const commitment_attachments = pgTable("commitment_attachments", {

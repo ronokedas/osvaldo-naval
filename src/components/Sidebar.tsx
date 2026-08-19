@@ -15,6 +15,8 @@ import {
   Search,
   Send,
   ClipboardList,
+  BellRing,
+  ContactRound,
 } from 'lucide-react';
 
 export type TabType =
@@ -28,7 +30,8 @@ export type TabType =
   | 'team'
   | 'settings'
   | 'documents'
-  | 'commitments';
+  | 'commitments'
+  | 'registrations';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -64,9 +67,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Ship,
       roles: ['admin', 'financeiro', 'tecnico'],
     },
+    { id: 'registrations' as TabType, label: 'Cadastros', icon: ContactRound, roles: ['admin', 'financeiro'] },
+    {
+      id: 'commitments' as TabType,
+      label: 'Pendências e Compromissos',
+      icon: BellRing,
+      roles: ['admin', 'financeiro', 'tecnico'],
+    },
+    {
+      id: 'tasks' as TabType,
+      label: currentUser.role === 'tecnico' ? 'Minhas Tarefas' : 'Tarefas da Equipe',
+      icon: CheckSquare,
+      badge: myTasksCount > 0 ? myTasksCount : undefined,
+      roles: [],
+    },
     {
       id: 'proposals' as TabType,
-      label: 'Propostas (DS 0XX/AA)',
+      label: 'Propostas',
       icon: FileText,
       roles: ['admin', 'financeiro'],
     },
@@ -83,12 +100,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro'],
     },
     {
+      id: 'protocols' as TabType,
+      label: 'Protocolos & Entregas',
+      icon: Send,
+      roles: [],
+    },
+    {
       id: 'team' as TabType,
       label: 'Equipe & Carga',
       icon: Users,
       roles: ['admin'],
     },
-    { id: 'commitments' as TabType, label: 'Pendências e Compromissos', icon: ClipboardList, roles: ['admin', 'financeiro', 'tecnico'] },
+    {
+      id: 'documents' as TabType,
+      label: 'Busca de Documentos',
+      icon: Search,
+      roles: ['admin', 'financeiro', 'tecnico'],
+    },
     {
       id: 'settings' as TabType,
       label: 'Configurações do Sistema',
@@ -179,6 +207,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}`} />
                     <span>{item.label}</span>
                   </div>
+                  {item.badge !== undefined && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                        isActive
+                          ? 'bg-white text-blue-900'
+                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}

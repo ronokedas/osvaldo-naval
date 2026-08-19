@@ -72,6 +72,13 @@ export interface Certifier {
   updatedAt?: string;
 }
 
+export interface RegisteredService {
+  id: string;
+  nome: string;
+  valorPadrao: number;
+  ativo: boolean;
+}
+
 export interface Vessel {
   id: string;
   clienteId: string;
@@ -119,6 +126,7 @@ export interface DocumentTask {
 
 export interface ScopeItem {
   id: string;
+  serviceId?: string;
   descricao: string;
   quantidade: number;
   valorUnitario: number;
@@ -129,6 +137,8 @@ export type ProposalStatus = 'rascunho' | 'enviado' | 'aprovado' | 'recusado';
 export interface Proposal {
   id: string;
   embarcacaoId: string;
+  embarcacoesIds?: string[];
+  renovacaoDeId?: string | null;
   embarcacaoNome: string;
   clienteNome: string;
   numero: string; // Formato: DS 0XX/AA (ex: DS 051/26)
@@ -141,6 +151,7 @@ export interface Proposal {
   condicaoPagamento: string;
   status: ProposalStatus;
   itens: ScopeItem[];
+  valorDesconto?: number;
   valorTotal: number;
   aceiteData?: string | null;
   aceiteAssinaturaNome?: string | null;
@@ -238,6 +249,14 @@ export type OsStatus =
 export interface ServiceOrder {
   id: string;
   numero: string;
+  propostaNumero?: string;
+  embarcacaoNome?: string;
+  clienteNome?: string;
+  quantidadeServicos?: number;
+  servicosSemResponsavel?: number;
+  servicosSemAgendamento?: number;
+  servicos?: ServiceOrderItem[];
+  tecnicosIds?: string[];
   propostaId?: string;
   embarcacaoId?: string;
   clienteId?: string;
@@ -258,6 +277,26 @@ export interface ServiceOrderItem {
   valorUnitario?: number;
   tipo?: string;
   status?: string;
+  tecnicoResponsavelId?: string;
+  relatorioUrl?: string;
+  relatorioNome?: string;
+  dataAgendada?: string;
+  horarioAgendado?: string;
+  localAgendado?: string;
+  contatoAgendamento?: string;
+  observacoesAgendamento?: string;
+  responsavelNome?: string;
+  observacoes?: ServiceOrderItemComment[];
+}
+
+export interface ServiceOrderItemComment {
+  id: string;
+  itemId: string;
+  osId: string;
+  autorId?: string;
+  autorNome: string;
+  texto: string;
+  createdAt?: string;
 }
 
 export interface Schedule {

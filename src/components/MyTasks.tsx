@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDateBR } from '../utils/date-formatters';
 import { DocumentTask, User, TaskStatus, Certificadora } from '../types';
 import {
   CheckSquare,
@@ -186,7 +187,7 @@ export const MyTasks: React.FC<MyTasksProps> = ({
             <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
               <span className="flex items-center gap-1 font-semibold text-slate-700">
                 <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                Prazo: <strong className="text-slate-900">{t.prazo}</strong>
+                Prazo: <strong className="text-slate-900">{formatDateBR(t.prazo)}</strong>
               </span>
               <span className="flex items-center gap-1 font-mono font-bold text-slate-800">
                 <Award className="w-3.5 h-3.5 text-indigo-600" />

@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDateBR } from '../utils/date-formatters';
 import { FinancialEntry, Vessel, SignatureConfig, LogoConfig } from '../types';
 import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
@@ -91,7 +92,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 {receiptNum}
               </h2>
               <p className="text-[11px] font-mono text-slate-500">
-                Data: {entry.data}
+                Data: {formatDateBR(entry.data)}
               </p>
             </div>
           </div>
@@ -202,7 +203,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Documento autêntico gerado eletronicamente via Sistema Nautilus Gestão</span>
             </div>
-            <span>Manaus, AM - {entry.data}</span>
+            <span>Manaus, AM - {formatDateBR(entry.data)}</span>
           </div>
         </div>
 

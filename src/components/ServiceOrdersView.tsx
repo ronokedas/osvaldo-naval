@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ServiceOrder } from '../types';
-import { ClipboardList, ChevronRight, RefreshCw } from 'lucide-react';
+import { ClipboardList, ChevronRight, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
   aguardando_agendamento: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -76,11 +76,27 @@ export const ServiceOrdersView: React.FC<Props> = ({ serviceOrders, currentUser,
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((os) => (
-            <button key={os.id} onClick={() => onOpenOrder(os.id)} className="bg-white rounded-2xl border border-slate-200 hover:shadow-md hover:border-blue-300 transition text-left p-5 cursor-pointer flex flex-col gap-3">
+            <button key={os.id} onClick={() => onOpenOrder(os.id)} className={`bg-white rounded-2xl border hover:shadow-md transition text-left p-5 cursor-pointer flex flex-col gap-3 ${os.servicosSemResponsavel ? 'border-amber-300 hover:border-amber-400' : 'border-slate-200 hover:border-blue-300'}`}>
               <div className="flex items-center justify-between">
                 <span className="font-mono font-bold text-blue-900 text-sm">{os.numero}</span>
                 <ChevronRight className="w-4 h-4 text-slate-300" />
               </div>
+              <div className="space-y-1 text-xs">
+                {os.propostaNumero && <p><span className="font-bold text-slate-500">Proposta:</span> <span className="font-mono font-bold text-slate-800">{os.propostaNumero}</span></p>}
+                <p className="font-bold text-slate-800">{os.embarcacaoNome || 'Embarcação não informada'}</p>
+                <p className="text-slate-500">{os.clienteNome || 'Cliente não informado'}</p>
+                <p className="text-slate-400">{os.quantidadeServicos || 0} serviço(s) contratado(s)</p>
+              </div>
+              {!!os.servicosSemResponsavel && currentUser?.role === 'admin' && (
+                <span className="inline-flex items-center gap-1 self-start px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border border-amber-300 bg-amber-50 text-amber-800">
+                  <AlertTriangle className="w-3 h-3" /> {os.servicosSemResponsavel} sem funcionário
+                </span>
+              )}
+              {!!os.servicosSemAgendamento && currentUser?.role === 'admin' && (
+                <span className="inline-flex items-center gap-1 self-start px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border border-indigo-200 bg-indigo-50 text-indigo-800">
+                  {os.servicosSemAgendamento} sem agendamento
+                </span>
+              )}
               <span className={`inline-block self-start px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${STATUS_COLORS[os.status] || ''}`}>{os.statusLabel || os.status}</span>
             </button>
           ))}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry } from '../types';
+import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry, ServiceOrder } from '../types';
 import {
   Ship,
   Clock,
@@ -20,8 +20,10 @@ import {
   BarChart2,
   Activity,
   Layers,
+  BellRing,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { formatDateBR } from '../utils/date-formatters';
 
 interface DashboardProps {
   currentUser: User;
@@ -31,13 +33,13 @@ interface DashboardProps {
   proposals: Proposal[];
   criticalPendings: CriticalPending[];
   financialEntries: FinancialEntry[];
+  serviceOrders: ServiceOrder[];
   onSelectVessel: (vessel: Vessel) => void;
   onNavigateTab: (tab: any) => void;
   onCreateProposalClick: () => void;
   onCreateCommitmentClick?: () => void;
-  notifications?: any[];
-  onSelectNotification?: (notification: any) => void;
-  onAcknowledgeNotification?: (notification: any) => void;
+  onOpenServiceOrder: (orderId: string) => void;
+  onStartService: (orderId: string, itemId: string) => Promise<void>;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -48,13 +50,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   proposals,
   criticalPendings,
   financialEntries,
+  serviceOrders,
   onSelectVessel,
   onNavigateTab,
   onCreateProposalClick,
   onCreateCommitmentClick,
-  notifications = [],
-  onSelectNotification,
-  onAcknowledgeNotification,
+  onOpenServiceOrder,
+  onStartService,
 }) => {
   const [activeTabMode, setActiveTabMode] = useState<'pipeline' | 'smart_actions' | 'chart'>('pipeline');
   const [selectedPipelineStage, setSelectedPipelineStage] = useState<string | null>(null);
@@ -64,6 +66,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const openVessels = vessels.filter((v) => v.status === 'aberta');
   const tasksInExecution = tasks.filter((t) => t.status === 'execucao' || t.status === 'em_revisao');
   const tasksWaitingCertifier = tasks.filter((t) => t.status === 'enviado' || t.status === 'exigencia');
+  const operationalServices = serviceOrders
+    .flatMap((order) => (order.servicos || []).map((item) => ({ order, item })))
+    .filter(({ item }) => item.status !== 'concluido')
+    .filter(({ item }) => currentUser.role === 'admin' || item.tecnicoResponsavelId === currentUser.id)
+    .sort((a, b) => {
+      if (!a.item.tecnicoResponsavelId && b.item.tecnicoResponsavelId) return -1;
+      if (a.item.tecnicoResponsavelId && !b.item.tecnicoResponsavelId) return 1;
+      if (a.item.status === 'em_execucao' && b.item.status !== 'em_execucao') return -1;
+      return 0;
+    });
 
   // Financial total to receive
   const totalToReceive = vessels.reduce((acc, v) => acc + (v.valorTotal - v.valorRecebido), 0);
@@ -236,20 +248,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {currentUser.role !== 'tecnico' && (
-          <div className="flex items-center">
+          <div className="flex flex-wrap gap-3">
           <button
             onClick={onCreateProposalClick}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 transition cursor-pointer"
           >
             <Plus className="w-5 h-5" />
-            Nova Proposta (DS 0XX/AA)
+            Nova Proposta
           </button>
-          {currentUser.role === 'admin' && <button onClick={onCreateCommitmentClick} className="ml-3 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-bold text-white shadow-lg hover:bg-amber-600"><Plus size={20}/> Novo compromisso</button>}
+          {onCreateCommitmentClick && <button onClick={onCreateCommitmentClick} className="inline-flex items-center gap-2 rounded-xl bg-white border border-blue-200 px-4 py-3 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50">
+            <BellRing className="w-5 h-5" /> Novo compromisso
+          </button>}
           </div>
         )}
       </div>
 
-      {notifications.filter(n => !n.lida).length > 0 && <div className="mt-5 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Atualizações recentes</p><h2 className="text-xl font-extrabold text-slate-900">Você tem {notifications.filter(n => !n.lida).length} nova(s) movimentação(ões)</h2><p className="text-sm text-slate-600 mt-1">Abra o aviso e confirme quando já tiver verificado ou concluído.</p></div><div className="rounded-2xl bg-indigo-600 px-4 py-3 text-2xl text-white">🔔</div></div><div className="mt-4 grid gap-2">{notifications.filter(n => !n.lida).slice(0,3).map(n=><div key={n.id} className="rounded-xl bg-white/80 px-4 py-3 border border-indigo-100"><button type="button" onClick={() => onSelectNotification?.(n)} className="w-full text-left hover:text-indigo-700 transition"><p className="font-bold text-slate-900">{n.titulo}</p><p className="text-sm text-slate-600">{n.mensagem}</p><span className="text-xs font-semibold text-indigo-600">Abrir detalhes →</span></button><button type="button" onClick={() => onAcknowledgeNotification?.(n)} className="mt-2 text-xs font-bold text-slate-500 hover:text-indigo-700">✓ Confirmar leitura</button></div>)}</div></div>}
+      <section className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#0B192C]"><Clock className="h-5 w-5 text-blue-600" /> {currentUser.role === 'admin' ? 'Controle dos serviços das OS' : 'Minhas Ordens de Serviço'}</h2>
+            <p className="mt-1 text-xs text-slate-500">{currentUser.role === 'admin' ? 'Acompanhe atribuições e serviços em execução pela equipe.' : 'Serviços atribuídos a você aparecem aqui até serem concluídos.'}</p>
+          </div>
+          <button onClick={() => onNavigateTab('service-orders')} className="self-start rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">Ver todas as OS</button>
+        </div>
+        {operationalServices.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-5 text-center text-sm text-slate-500">Nenhum serviço ativo atribuído no momento.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {operationalServices.slice(0, 9).map(({ order, item }) => {
+              const isMine = item.tecnicoResponsavelId === currentUser.id;
+              const isUnassigned = !item.tecnicoResponsavelId;
+              const isScheduled = Boolean(item.dataAgendada && item.horarioAgendado);
+              return (
+                <div key={item.id} className={`rounded-xl border bg-white p-4 shadow-sm ${isUnassigned ? 'border-amber-300' : item.status === 'em_execucao' ? 'border-blue-300' : 'border-slate-200'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-bold text-blue-800">{order.numero}</p>
+                      <h3 className="mt-1 truncate text-sm font-bold text-slate-900" title={item.descricao}>{item.descricao}</h3>
+                      <p className="mt-1 text-xs text-slate-500">{order.embarcacaoNome || 'Embarcação não informada'}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold uppercase ${isUnassigned ? 'bg-amber-100 text-amber-800' : item.status === 'em_execucao' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-700'}`}>{isUnassigned ? 'Sem funcionário' : item.status === 'em_execucao' ? 'Em execução' : 'Aguardando início'}</span>
+                  </div>
+                  <p className={`mt-3 text-xs font-bold ${isUnassigned ? 'text-amber-700' : 'text-slate-600'}`}>Responsável: {item.responsavelNome || 'Falta atribuir'}</p>
+                  <p className={`mt-1 text-xs font-bold ${isScheduled ? 'text-indigo-700' : 'text-amber-700'}`}>{isScheduled ? `Agendado: ${formatDateBR(item.dataAgendada)} às ${item.horarioAgendado}` : 'Aguardando agendamento'}</p>
+                  <button
+                    onClick={() => isMine && item.status === 'pendente' && isScheduled ? onStartService(order.id, item.id) : onOpenServiceOrder(order.id)}
+                    className={`mt-3 w-full rounded-lg px-3 py-2 text-xs font-bold text-white ${isMine && item.status === 'pendente' && isScheduled ? 'bg-blue-600 hover:bg-blue-700' : isUnassigned || !isScheduled ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}
+                  >
+                    {isMine && item.status === 'pendente' && isScheduled ? 'Iniciar serviço' : isUnassigned ? 'Atribuir funcionário' : !isScheduled ? (currentUser.role === 'admin' ? 'Agendar serviço' : 'Aguardando agendamento') : 'Abrir e acompanhar'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -684,7 +737,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {mainTask.responsavelNome.split(' ')[0]}
                       </td>
                       <td className="py-3 pr-3 font-mono text-slate-600 whitespace-nowrap">
-                        {mainTask.prazo}
+                        {formatDateBR(mainTask.prazo)}
                       </td>
                       <td className="py-3 pr-3 text-slate-700 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px]">
@@ -774,7 +827,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                       <p className="font-medium opacity-90">{t.embarcacaoNome}</p>
                       <div className="flex items-center justify-between mt-1">
-                        <span className="text-[10px] opacity-75">{t.prazo.split('-').reverse().join('/')}</span>
+                        <span className="text-[10px] opacity-75">{formatDateBR(t.prazo)}</span>
                         <span className="text-[10px] font-medium opacity-75">{t.responsavelNome}</span>
                       </div>
                     </div>
@@ -852,7 +905,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-amber-900">{cp.titulo}</span>
-                    <span className="text-[10px] font-mono text-amber-700 font-bold">{cp.data}</span>
+                    <span className="text-[10px] font-mono text-amber-700 font-bold">{formatDateBR(cp.data)}</span>
                   </div>
                   <p className="text-slate-700 font-medium">{cp.embarcacaoNome}</p>
                   <p className="text-[11px] text-slate-500">{cp.detalhe}</p>

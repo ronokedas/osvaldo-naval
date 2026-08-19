@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDateBR } from '../utils/date-formatters';
 import { Vessel, FinancialEntry, User, SignatureConfig, LogoConfig } from '../types';
 import {
   DollarSign,
@@ -311,7 +312,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
                 return (
                   <tr key={e.id} className="hover:bg-slate-50 transition">
-                    <td className="p-2.5 font-mono text-slate-500 whitespace-nowrap">{e.data}</td>
+                    <td className="p-2.5 font-mono text-slate-500 whitespace-nowrap">{formatDateBR(e.data)}</td>
                     <td className="p-2.5 font-bold text-slate-900 whitespace-nowrap">
                       {e.embarcacaoNome}
                       {vessel?.clienteNome && (

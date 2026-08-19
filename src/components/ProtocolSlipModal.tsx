@@ -3,6 +3,7 @@ import { Protocol, Vessel, SignatureConfig, LogoConfig } from '../types';
 import { Printer, X, FileCheck, ShieldCheck, Building2, Send, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
 import { generateProtocolPdf } from '../utils/pdfGenerator';
+import { formatDateBR } from '../utils/date-formatters';
 
 interface ProtocolSlipModalProps {
   protocol: Protocol;
@@ -96,7 +97,7 @@ export const ProtocolSlipModal: React.FC<ProtocolSlipModalProps> = ({
                 {protocol.numeroProtocolo}
               </h2>
               <p className="text-[11px] font-mono text-slate-500">
-                Data do Envio: {protocol.dataEnvio}
+                Data do Envio: {formatDateBR(protocol.dataEnvio)}
               </p>
             </div>
           </div>

@@ -33,50 +33,78 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1785874000000,
-      "tag": "0004_financial_refactor",
+      "when": 1785881000000,
+      "tag": "0004_cadastros_base",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1785875000000,
-      "tag": "0005_commitments",
+      "when": 1785882000000,
+      "tag": "0011_operational_gaps",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1785876000000,
-      "tag": "0006_commitment_recipients",
+      "when": 1785883000000,
+      "tag": "0012_annual_renewals",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1785877000000,
-      "tag": "0007_notification_priority",
+      "when": 1785884000000,
+      "tag": "0013_item_reports",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1785878000000,
-      "tag": "0008_notification_commitment_link",
+      "when": 1785885000000,
+      "tag": "0014_restore_commitments_portable",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1785879000000,
-      "tag": "0009_accounts_receivable_commitment",
+      "when": 1785886000000,
+      "tag": "0015_services_and_proposal_discount",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1785880000000,
-      "tag": "0010_backfill_commitment_notification_links",
+      "when": 1785887000000,
+      "tag": "0016_service_order_delivery_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785888000000,
+      "tag": "0017_document_version_pdf_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785889000000,
+      "tag": "0018_service_order_commercial_number",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785890000000,
+      "tag": "0019_service_order_item_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785891000000,
+      "tag": "0020_service_item_scheduling",
       "breakpoints": true
     }
   ]

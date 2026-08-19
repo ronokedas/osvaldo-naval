@@ -33,9 +33,19 @@ import { LoginView } from './components/LoginView';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { ServiceOrdersView } from './components/ServiceOrdersView';
 import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
-import { NotificationsModal } from './components/NotificationsModal';
+import { RegistrationsView } from './components/RegistrationsView';
 import CommitmentsView from './components/CommitmentsView';
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
+
+const TAB_PATHS: TabType[] = [
+  'dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial',
+  'protocols', 'team', 'documents', 'settings', 'commitments', 'registrations',
+];
+
+const tabFromCurrentPath = (): TabType => {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  return TAB_PATHS.includes(path as TabType) ? (path as TabType) : 'dashboard';
+};
 
 // The PostgreSQL API uses database field names while the existing UI uses
 // presentation-oriented names. Keep the conversion at the application edge so
@@ -85,6 +95,7 @@ const normalizeProposal = (proposal: any): Proposal => ({
   observacoesGerais: proposal.observacoesGerais || proposal.observacoes || '',
   elaboradoPor: proposal.elaboradoPor || 'Nautilus Projetos Navais',
   itens: proposal.itens || [],
+  valorDesconto: Number(proposal.valorDesconto) || 0,
   valorTotal: Number(proposal.valorTotal) || 0,
   criadoEm: proposal.criadoEm || proposal.createdAt || new Date().toISOString(),
 });
@@ -106,38 +117,17 @@ export default function App() {
   const [logoConfig, setLogoConfig] = useState<LogoConfig>(({} as LogoConfig));
 
   // UI States
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabType>(tabFromCurrentPath);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
-  useEffect(() => {
-    const closeOnBackdrop = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (target === event.currentTarget) return;
-      if (target.classList.contains('fixed') && target.classList.contains('inset-0')) {
-        setSelectedOsDetail(null);
-        setSelectedOsId(null);
-        setSelectedVessel(null);
-        setIsProfileModalOpen(false);
-        setIsNotificationsModalOpen(false);
-      }
-    };
-    document.addEventListener('click', closeOnBackdrop, true);
-    return () => document.removeEventListener('click', closeOnBackdrop, true);
-  }, []);
 
   // Sincronizar activeTab com a URL para navegação visível no navegador
   React.useEffect(() => {
     const handlePopState = () => {
-      const currentPath = window.location.pathname.slice(1) || 'dashboard';
-      if (['dashboard', 'vessels', 'proposals', 'service-orders', 'financial', 'team', 'commitments', 'settings'].includes(currentPath)) {
-        setActiveTab(currentPath as TabType);
-      } else if (['tasks', 'protocols', 'documents'].includes(currentPath)) {
-        setActiveTab('dashboard');
-      }
+      setActiveTab(tabFromCurrentPath());
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -145,8 +135,26 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    window.history.pushState({}, '', `/${activeTab}`);
+    const targetPath = `/${activeTab}`;
+    if (window.location.pathname !== targetPath) window.history.pushState({}, '', targetPath);
   }, [activeTab]);
+
+  // All full-screen dialogs share a backdrop. Closing through the same visible
+  // action as "Cancelar" or "Fechar" makes legacy and newer modals consistent
+  // without allowing a click inside the dialog content to dismiss it.
+  React.useEffect(() => {
+    const closeOnBackdrop = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains('fixed') || !target.classList.contains('inset-0')) return;
+      const closeButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+        const label = `${button.textContent || ''} ${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''}`.trim().toLowerCase();
+        return /^(×|✕|x|fechar|cancelar|voltar)(\s|$)/.test(label);
+      });
+      closeButton?.click();
+    };
+    document.addEventListener('click', closeOnBackdrop);
+    return () => document.removeEventListener('click', closeOnBackdrop);
+  }, []);
 
   // OS flow state
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
@@ -237,8 +245,8 @@ export default function App() {
       }
     };
     fetchOs();
-    const notificationTimer = window.setInterval(fetchOs, 30000);
-    return () => window.clearInterval(notificationTimer);
+    const osRefreshInterval = window.setInterval(fetchOs, 30000);
+    return () => window.clearInterval(osRefreshInterval);
   }, [currentUser, selectedOsId]);
 
 
@@ -249,9 +257,11 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || 'Não foi possível concluir a operação');
-    return body;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Não foi possível concluir a operação.');
+    }
+    return res.json();
   };
 
   const apiPut = async (endpoint: string, payload: any) => {
@@ -260,9 +270,11 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || 'Não foi possível atualizar os dados');
-    return body;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Não foi possível atualizar os dados.');
+    }
+    return res.json();
   };
 
 
@@ -278,7 +290,10 @@ export default function App() {
   // User Actions
   const handleSelectUser = (u: User) => {
     setCurrentUser(u);
-    setActiveTab('dashboard');
+    // If technician, switch tab to my tasks default
+    if (u.role === 'tecnico') {
+      setActiveTab('tasks');
+    }
   };
 
   // Vessel Actions
@@ -419,6 +434,7 @@ export default function App() {
       condicaoPagamento: proposalData.condicaoPagamento || 'À vista',
       status: proposalData.status || 'enviado',
       itens: proposalData.itens || [],
+      valorDesconto: proposalData.valorDesconto || 0,
       valorTotal: proposalData.valorTotal || 0,
       elaboradoPor: proposalData.elaboradoPor || currentUser.nome,
       criadoEm: new Date().toISOString().split('T')[0],
@@ -678,9 +694,17 @@ export default function App() {
     setActiveTab('service-orders');
     try {
       const res = await fetch(`/api/service-orders/${osId}`);
-      if (res.ok) setSelectedOsDetail(await res.json());
+      if (res.ok) {
+        setSelectedOsDetail(await res.json());
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSelectedOsId(null);
+        window.alert(data.error || 'Não foi possível abrir esta Ordem de Serviço.');
+      }
     } catch (e) {
       console.error('Erro ao abrir OS:', e);
+      setSelectedOsId(null);
+      window.alert('Não foi possível abrir esta Ordem de Serviço. Verifique a conexão e tente novamente.');
     }
   };
 
@@ -693,9 +717,18 @@ export default function App() {
     }
   };
 
-  const handleOsSchedule = async (data: any) => {
-    if (!selectedOsId) return;
-    await apiPost(`/api/service-orders/${selectedOsId}/schedule`, data);
+  const handleStartAssignedService = async (orderId: string, itemId: string) => {
+    try {
+      await apiPut(`/api/service-orders/items/${itemId}`, { status: 'em_execucao' });
+      await refreshOsList();
+      await openOsDetail(orderId);
+    } catch (error: any) {
+      window.alert(error?.message || 'Não foi possível iniciar o serviço.');
+    }
+  };
+
+  const handleOsScheduleItem = async (itemId: string, data: any) => {
+    await apiPost(`/api/service-orders/items/${itemId}/schedule`, data);
   };
 
   const handleOsVistoria = async (data: any) => {
@@ -753,34 +786,6 @@ export default function App() {
   if (loading) return <div className="flex items-center justify-center min-h-screen">Carregando...</div>;
   if (!currentUser) return <LoginView onLogin={setCurrentUser} />;
 
-  // Calcula alertas inteligentes por categoria para o sino
-  const criticalAlertsCount = criticalPendings.length;
-  
-  // Alertas de execução: OS em andamento atribuídas ao usuário atual
-  const executionAlertsCount = currentUser 
-    ? serviceOrders.filter(os => 
-        os.status === 'vistoria_em_execucao' &&
-        os.responsavelTecnicoId === currentUser.id
-      ).length
-    : 0;
-  
-  // Alertas de documentos: documentos pendentes de revisão ou aprovação
-  const documentAlertsCount = notifications.filter(n => 
-    !n.lida && 
-    (n.tipo === 'documento_anexado' || n.tipo === 'revisao' || n.tipo === 'aprovacao')
-  ).length;
-  
-  const totalPendingAlerts = criticalAlertsCount + 
-    notifications.filter(n => !n.lida).length;
-
-  const q = searchQuery.trim().toLowerCase();
-  const globalSearchResults = q ? [
-    ...clients.filter(c => `${c.nome} ${c.empresa} ${c.email}`.toLowerCase().includes(q)).map(c => ({ id: c.id, type: 'Cliente', title: c.nome, detail: c.empresa })),
-    ...vessels.filter(v => `${v.nome} ${v.tipo} ${v.registro} ${v.clienteNome}`.toLowerCase().includes(q)).map(v => ({ id: v.id, type: 'Embarcação', title: v.nome, detail: v.clienteNome })),
-    ...proposals.filter(p => `${p.numero} ${p.assunto} ${p.embarcacaoNome} ${p.clienteNome}`.toLowerCase().includes(q)).map(p => ({ id: p.id, type: 'Proposta', title: p.numero, detail: p.embarcacaoNome })),
-    ...serviceOrders.filter(o => `${o.numero} ${o.status}`.toLowerCase().includes(q)).map(o => ({ id: o.id, type: 'Ordem de serviço', title: o.numero, detail: o.status })),
-  ].slice(0, 12) : [];
-
   return (
     <div 
       className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
@@ -794,19 +799,7 @@ export default function App() {
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchResults={globalSearchResults}
-        onSelectSearchResult={(result) => {
-          const tabs: any = { Cliente: 'vessels', Embarcação: 'vessels', Proposta: 'proposals', 'Ordem de serviço': 'service-orders' };
-          if (result.type === 'Embarcação') setSelectedVessel(vessels.find(v => v.id === result.id) || null);
-          if (result.type === 'Proposta') setSelectedProposalForView(proposals.find(p => p.id === result.id) || null);
-          if (result.type === 'Ordem de serviço') setSelectedOsId(result.id);
-          setActiveTab(tabs[result.type] || 'dashboard');
-          setSearchQuery('');
-        }}
-        pendingAlertsCount={totalPendingAlerts}
-        criticalAlertsCount={criticalAlertsCount}
-        executionAlertsCount={executionAlertsCount}
-        documentAlertsCount={documentAlertsCount}
+        pendingAlertsCount={criticalPendings.length}
         onGoHome={() => {
           setActiveTab('dashboard');
           setSelectedVessel(null);
@@ -815,7 +808,6 @@ export default function App() {
         }}
         onToggleProfile={() => setIsProfileModalOpen(true)}
         onLogout={handleLogout}
-        onOpenNotifications={() => setIsNotificationsModalOpen(true)}
       />
 
       {/* Main App Body */}
@@ -844,26 +836,12 @@ export default function App() {
               proposals={proposals}
               financialEntries={financialEntries}
               criticalPendings={criticalPendings}
+              serviceOrders={serviceOrders}
               onSelectVessel={(v) => setSelectedVessel(v)}
               onNavigateTab={(tab) => setActiveTab(tab)}
               onCreateProposalClick={() => setActiveTab('proposals')}
-              onCreateCommitmentClick={() => setActiveTab('commitments')}
-              notifications={notifications}
-              onSelectNotification={(n) => {
-                if (n.compromissoId || n.compromisso_id) {
-                  setActiveTab('commitments');
-                } else if (n.osId || n.os_id) {
-                  setSelectedOsId(n.osId || n.os_id); setActiveTab('service-orders');
-                } else {
-                  setIsNotificationsModalOpen(true);
-                }
-              }}
-              onAcknowledgeNotification={(n) => {
-                if (!n.id) return;
-                fetch(`/api/service-orders/notifications/${n.id}/read`, { method: 'POST' })
-                  .then(() => setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, lida: true } : item)))
-                  .catch(() => undefined);
-              }}
+              onOpenServiceOrder={openOsDetail}
+              onStartService={handleStartAssignedService}
             />
           )}
 
@@ -874,6 +852,18 @@ export default function App() {
               onSelectVessel={(v) => setSelectedVessel(v)}
               onCreateVessel={handleCreateVessel}
               canCreate={currentUser.role !== 'tecnico'}
+            />
+          )}
+
+          {activeTab === 'registrations' && (
+            <RegistrationsView onChanged={() => window.dispatchEvent(new Event('nautilus:data-changed'))} />
+          )}
+
+          {activeTab === 'commitments' && (
+            <CommitmentsView
+              currentUser={currentUser}
+              vessels={vessels}
+              users={users}
             />
           )}
 
@@ -891,12 +881,14 @@ export default function App() {
             <ProposalsList
               proposals={proposals}
               vessels={vessels}
+              clients={clients}
               currentUser={currentUser}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}
               onCreateProposal={handleCreateProposal}
               onUpdateProposal={handleUpdateProposal}
               onFormalAcceptance={handleFormalAcceptance}
+              onNavigateTab={setActiveTab}
             />
           )}
 
@@ -949,10 +941,6 @@ export default function App() {
             <GlobalDocumentSearch tasks={tasks} vessels={vessels} />
           )}
 
-          {activeTab === 'commitments' as any && (
-            <CommitmentsView currentUser={currentUser} vessels={vessels} users={users} onRefresh={() => {}} />
-          )}
-
           {activeTab === 'settings' && (
             <SettingsView
               currentUser={currentUser}
@@ -981,14 +969,15 @@ export default function App() {
           users={users}
           onClose={() => { setSelectedOsDetail(null); setSelectedOsId(null); }}
           onRefresh={async () => {
-            if (selectedOsId) {
-              const res = await fetch(`/api/service-orders/${selectedOsId}`);
-              if (res.ok) setSelectedOsDetail(await res.json());
-            }
+            const [detailRes, notificationRes] = await Promise.all([
+              selectedOsId ? fetch(`/api/service-orders/${selectedOsId}`) : Promise.resolve(null),
+              fetch('/api/service-orders/notifications'),
+            ]);
+            if (detailRes?.ok) setSelectedOsDetail(await detailRes.json());
+            if (notificationRes.ok) setNotifications(await notificationRes.json());
             refreshOsList();
           }}
-          onSchedule={handleOsSchedule}
-          onVistoria={handleOsVistoria}
+          onScheduleItem={handleOsScheduleItem}
           onUploadVersion={handleOsUploadVersion}
           onReviewDoc={handleOsReviewDoc}
           onApproveDoc={handleOsApproveDoc}
@@ -1029,31 +1018,6 @@ export default function App() {
           onSaveProfile={handleUpdateProfile}
         />
       )}
-
-      {/* Notifications Modal */}
-      <NotificationsModal
-        isOpen={isNotificationsModalOpen}
-        onClose={() => setIsNotificationsModalOpen(false)}
-        notifications={notifications}
-        criticalPendings={criticalPendings}
-        onMarkAsRead={async (id: string) => {
-          try {
-            await fetch(`/api/service-orders/notifications/${id}/read`, { method: 'POST' });
-            setNotifications(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
-          } catch (e) {
-            console.error('Erro ao marcar notificação como lida:', e);
-          }
-        }}
-        onNavigateToOS={(osId: string) => {
-          setSelectedOsId(osId);
-          setActiveTab('service-orders');
-          setIsNotificationsModalOpen(false);
-        }}
-        onNavigateToCommitment={() => {
-          setActiveTab('commitments');
-          setIsNotificationsModalOpen(false);
-        }}
-      />
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav

@@ -47,6 +47,18 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
   }
 });
 
+router.put("/:id", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]), async (req, res) => {
+  try {
+    const data = req.body || {}; const nome = String(data.nome || "").trim();
+    if (!nome) return res.status(400).json({ error: "Nome do cliente é obrigatório" });
+    const cnpjCpf = data.cnpjCpf ? String(data.cnpjCpf).replace(/\D/g, "") : null;
+    if (cnpjCpf && !(cnpjCpf.length === 11 ? validateCPF(cnpjCpf) : cnpjCpf.length === 14 ? validateCNPJ(cnpjCpf) : false)) return res.status(400).json({ error: "CPF/CNPJ inválido. Por favor, verifique os números digitados." });
+    const updated = await db.update(clients).set({ nome, email: data.email || null, telefone: data.telefone || null, whatsapp: data.whatsapp || null, cnpjCpf, endereco: data.endereco || null, updatedAt: new Date() }).where(eq(clients.id, req.params.id)).returning();
+    if (!updated.length) return res.status(404).json({ error: "Cliente não encontrado" });
+    res.json(updated[0]);
+  } catch { res.status(500).json({ error: "Não foi possível atualizar o cliente" }); }
+});
+
 // CPF validation algorithm
 function validateCPF(cpf: string): boolean {
   if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;

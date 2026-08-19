@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDateBR } from '../utils/date-formatters';
 import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus } from '../types';
 import { generateTechnicalReport } from '../utils/pdfGenerator';
 import {
@@ -388,7 +389,7 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                         headers.join(","),
                         ...vesselPayments.map(p => [
                           p.id,
-                          p.data,
+                          formatDateBR(p.data),
                           p.tipo,
                           p.formaPagamento,
                           `"${p.observacao.replace(/"/g, '""')}"`,
@@ -454,7 +455,7 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                       </div>
                       <p className="text-slate-600 mt-1">{p.observacao}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">
-                        Registrado por: {p.lancadoPorNome} em {p.data}
+                        Registrado por: {p.lancadoPorNome} em {formatDateBR(p.data)}
                       </p>
                     </div>
 

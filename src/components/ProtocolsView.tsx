@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Protocol, Vessel, User, SignatureConfig, LogoConfig } from '../types';
+import { formatDateBR } from '../utils/date-formatters';
 import {
   FileCheck,
   Plus,
@@ -327,7 +328,7 @@ export const ProtocolsView: React.FC<ProtocolsViewProps> = ({
                         {getTipoLabel(protocol.tipoProtocolo)}
                       </span>
                       <span className="text-xs text-slate-400 font-mono">
-                        Data: {protocol.dataEnvio}
+                        Data: {formatDateBR(protocol.dataEnvio)}
                       </span>
                     </div>
 

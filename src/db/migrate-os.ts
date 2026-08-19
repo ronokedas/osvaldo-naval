@@ -39,6 +39,10 @@ async function generateOsNumber(year: number): Promise<string> {
   return `${prefix}${String(count + 1).padStart(3, "0")}`;
 }
 
+function osNumberFromProposal(proposalNumber: string): string {
+  return `OS ${String(proposalNumber || "").trim().replace(/^DS\s*/i, "")}`;
+}
+
 async function run() {
   console.log("Executando migração de dados para Ordem de Serviço...");
   try {
@@ -58,8 +62,7 @@ async function run() {
         if (existing.length > 0) continue;
       }
 
-      const year = prop.ano || new Date().getFullYear();
-      const numero = await generateOsNumber(year);
+      const numero = osNumberFromProposal(prop.numero);
       const inserted = await db.insert(service_orders).values({
         numero,
         propostaId: prop.id,

@@ -79,3 +79,4 @@ router.delete("/:id/anexos/:attachmentId", requireRole(["admin"]), async (req: a
 
 router.delete("/:id", requireRole(["admin"]), async (req, res) => { const deleted = await db.delete(commitments).where(eq(commitments.id, req.params.id)).returning(); if (!deleted.length) return res.status(404).json({ error: "Pendência não encontrada" }); res.json({ ok: true }); });
 export default router;
+

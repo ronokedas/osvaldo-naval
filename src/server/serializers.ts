@@ -50,6 +50,7 @@ export const serializeProposal = (proposal: any) => ({
   observacoesGerais: proposal.observacoes || "",
   elaboradoPor: proposal.elaboradoPor || "Nautilus Projetos Navais",
   itens: proposal.itens || [],
+  valorDesconto: asNumber(proposal.valorDesconto),
   valorTotal: asNumber(proposal.valorTotal),
   criadoEm: proposal.createdAt,
 });

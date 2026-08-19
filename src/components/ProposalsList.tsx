@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable } from '../types';
+import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable, Client, RegisteredService } from '../types';
 import { ProposalPdfTemplate } from './ProposalPdfTemplate';
 import { generateProposalPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
 import { INITIAL_STANDARD_OBSERVATIONS } from '../data/initialData';
 import { CurrencyInput } from './CurrencyInput';
+import { formatDateBR } from '../utils/date-formatters';
 import {
   FileText,
   Plus,
@@ -26,23 +27,29 @@ import {
 interface ProposalsListProps {
   proposals: Proposal[];
   vessels: Vessel[];
+  clients: Client[];
   currentUser: User;
   signatureConfig?: SignatureConfig;
   logoConfig?: LogoConfig;
   onCreateProposal: (proposalData: Partial<Proposal>) => void;
   onUpdateProposal: (proposalId: string, updatedData: Partial<Proposal>) => void;
   onFormalAcceptance: (proposalId: string, payload: any, file?: File | null) => Promise<any>;
+  onRenewalCreated?: (proposal: Proposal) => void;
+  onNavigateTab?: (tab: any) => void;
 }
 
 export const ProposalsList: React.FC<ProposalsListProps> = ({
   proposals,
   vessels,
+  clients,
   currentUser,
   signatureConfig,
   logoConfig,
   onCreateProposal,
   onUpdateProposal,
   onFormalAcceptance,
+  onRenewalCreated,
+  onNavigateTab,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
@@ -69,7 +76,9 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
 
   // Proposal Form State
   const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
-  const [embarcacaoId, setEmbarcacaoId] = useState(vessels[0]?.id || '');
+  const [clienteId, setClienteId] = useState('');
+  const [embarcacaoId, setEmbarcacaoId] = useState('');
+  const [embarcacoesIds, setEmbarcacoesIds] = useState<string[]>([]);
   const [destinatario, setDestinatario] = useState('A/C: Sr. Armador / Proprietário');
   const [assunto, setAssunto] = useState(
     'Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica.'
@@ -80,15 +89,19 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     'Pagamento de 50% de sinal no aceite da proposta + 50% na entrega e homologação dos relatórios.'
   );
   const [elaboradoPor, setElaboradoPor] = useState('Deisy Saldanha - Administrativo/Financeiro');
+  const [services, setServices] = useState<RegisteredService[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [valorDesconto, setValorDesconto] = useState(0);
 
   // Items State
-  const [itens, setItens] = useState<ScopeItem[]>([
-    { id: '1', descricao: 'Anotação de Responsabilidade Técnica (ART) - CREA/PA', quantidade: 1, valorUnitario: 800 },
-    { id: '2', descricao: 'Declaração de responsabilidade técnica', quantidade: 1, valorUnitario: 1200 },
-    { id: '3', descricao: 'Relatório de medição de chapas por ultrassom NDT', quantidade: 1, valorUnitario: 8500 },
-    { id: '4', descricao: 'Certificado de homologação nas certificadoras', quantidade: 1, valorUnitario: 3500 },
-    { id: '5', descricao: 'Croqui de sondagem', quantidade: 1, valorUnitario: 4500 },
-  ]);
+  const [itens, setItens] = useState<ScopeItem[]>([]);
+
+  useEffect(() => {
+    fetch('/api/services')
+      .then((response) => response.ok ? response.json() : [])
+      .then((data) => setServices(Array.isArray(data) ? data.map((service) => ({ ...service, valorPadrao: Number(service.valorPadrao) || 0 })) : []))
+      .catch(() => setServices([]));
+  }, [isEditorOpen]);
 
   // Formal Acceptance Modal State
   const [aceiteNome, setAceiteNome] = useState('');
@@ -100,7 +113,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [valorRecebido, setValorRecebido] = useState(0);
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().split('T')[0]);
   const [formaPagamento, setFormaPagamento] = useState('PIX');
-  const [acceptStage, setAcceptStage] = useState<'info' | 'financeiro'>('info');
+  const [acceptStage, setAcceptStage] = useState<'info' | 'financeiro' | 'sucesso'>('info');
   const [noDocumentWarning, setNoDocumentWarning] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState('');
@@ -143,6 +156,19 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     ]);
   };
 
+  const handleAddRegisteredService = () => {
+    const service = services.find((item) => item.id === selectedServiceId);
+    if (!service) return;
+    setItens([...itens, {
+      id: `${service.id}-${Date.now()}`,
+      serviceId: service.id,
+      descricao: service.nome,
+      quantidade: 1,
+      valorUnitario: service.valorPadrao,
+    }]);
+    setSelectedServiceId('');
+  };
+
   const handleRemoveItem = (id: string) => {
     setItens(itens.filter((i) => i.id !== id));
   };
@@ -160,21 +186,25 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
 
   const handleOpenNewProposal = () => {
     setEditingProposalId(null);
-    const selectedV = vessels[0];
-    if (selectedV) {
-      setEmbarcacaoId(selectedV.id);
-      setDestinatario(`A/C: ${selectedV.clienteNome}`);
-      setAssunto(
-        `Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica para a embarcação ${selectedV.nome}.`
-      );
-    }
+    setClienteId('');
+    setEmbarcacaoId('');
+    setEmbarcacoesIds([]);
+    setDestinatario('A/C: Sr. Armador / Proprietário');
+    setAssunto(
+      'Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica.'
+    );
+    setItens([]);
+    setValorDesconto(0);
+    setSelectedServiceId('');
     setIsEditorOpen(true);
   };
 
   const handleSaveProposal = (e: React.FormEvent) => {
     e.preventDefault();
     const selectedVessel = vessels.find((v) => v.id === embarcacaoId);
-    const totalVal = calculateTotal(itens);
+    const subtotal = calculateTotal(itens);
+    const discount = Math.min(subtotal, Math.max(0, valorDesconto || 0));
+    const totalVal = subtotal - discount;
 
     const nowFormatted = new Date().toLocaleDateString('pt-BR', {
       day: 'numeric',
@@ -190,6 +220,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         observacoesGerais: observacoes,
         condicaoPagamento,
         itens,
+        valorDesconto: discount,
         valorTotal: totalVal,
         elaboradoPor,
       });
@@ -206,6 +237,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         condicaoPagamento,
         status: 'enviado',
         itens,
+        valorDesconto: discount,
         valorTotal: totalVal,
         elaboradoPor,
       });
@@ -215,9 +247,21 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   };
 
   // ---------- PDF Download ----------
-  const handleDownloadPdf = async (proposal: Proposal) => {
-    const blob = generateProposalPdf(proposal, logoConfig);
-    downloadBlob(blob, `Proposta_${proposal.numero.replace(/\//g, '-')}.pdf`);
+  const proposalVessels = (proposal: Proposal) => {
+    const ids = proposal.embarcacoesIds?.length ? proposal.embarcacoesIds : [proposal.embarcacaoId];
+    const linked = ids.map((id) => vessels.find((v) => v.id === id)).filter(Boolean) as Vessel[];
+    return linked.length ? linked : [undefined];
+  };
+
+  const proposalPdfFilename = (proposal: Proposal, vessel?: Vessel) =>
+    `Proposta_${proposal.numero.replace(/\//g, '-')}_${(vessel?.nome || proposal.embarcacaoNome).replace(/[^a-zA-Z0-9]+/g, '_')}.pdf`;
+
+  const handleDownloadPdf = async (proposal: Proposal, selectedVessel?: Vessel) => {
+    const targets = selectedVessel ? [selectedVessel] : proposalVessels(proposal);
+    for (const vessel of targets) {
+      const blob = await generateProposalPdf(proposal, vessel, signatureConfig);
+      downloadBlob(blob, proposalPdfFilename(proposal, vessel));
+    }
   };
 
   // ---------- Email ----------
@@ -236,8 +280,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     setEmailSending(true);
     setEmailResult('');
     try {
-      const blob = generateProposalPdf(selectedProposal, logoConfig);
-      const pdfBase64 = await blobToBase64(blob);
+      const pdfs = await Promise.all(proposalVessels(selectedProposal).map(async (vessel) => ({
+        filename: proposalPdfFilename(selectedProposal, vessel),
+        base64: await blobToBase64(await generateProposalPdf(selectedProposal, vessel, signatureConfig)),
+      })));
       const res = await fetch(`/api/proposals/${selectedProposal.id}/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -245,7 +291,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
           destinatarioEmail: emailDest,
           assunto: emailAssunto,
           mensagem: emailMensagem,
-          pdfBase64,
+          pdfs,
         }),
       });
       const data = await res.json();
@@ -276,14 +322,15 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     if (!selectedProposal) return;
     setWhatsSharing(true);
     try {
-      const blob = generateProposalPdf(selectedProposal, logoConfig);
-      const file = new File([blob], `Proposta_${selectedProposal.numero.replace(/\//g, '-')}.pdf`, { type: 'application/pdf' });
+      const files = await Promise.all(proposalVessels(selectedProposal).map(async (vessel) => new File(
+        [await generateProposalPdf(selectedProposal, vessel, signatureConfig)], proposalPdfFilename(selectedProposal, vessel), { type: 'application/pdf' }
+      )));
 
       // Try Web Share API with file
       const nav = navigator as any;
-      if (nav.share && nav.canShare && nav.canShare({ files: [file] })) {
+      if (nav.share && nav.canShare && nav.canShare({ files })) {
         await nav.share({
-          files: [file],
+          files,
           title: `Proposta ${selectedProposal.numero}`,
           text: whatsMensagem,
         });
@@ -296,10 +343,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         setIsWhatsAppModalOpen(false);
       } else {
         // Desktop fallback: download PDF and open WhatsApp conversation
-        downloadBlob(blob, `Proposta_${selectedProposal.numero.replace(/\//g, '-')}.pdf`);
+        files.forEach((file: File) => downloadBlob(file, file.name));
         const cleanPhone = whatsNumero.replace(/\D/g, '');
         const internationalPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-        window.open(`https://wa.me/${internationalPhone}?text=${encodeURIComponent(whatsMensagem + '\n\n(Arquivo PDF baixado; anexe-o antes de enviar.)')}`, '_blank');
+        window.open(`https://api.whatsapp.com/send?phone=${internationalPhone}&text=${encodeURIComponent(whatsMensagem + '\n\n(Arquivo PDF baixado; anexe-o antes de enviar.)')}`, '_blank');
         await fetch(`/api/proposals/${selectedProposal.id}/deliveries`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -364,7 +411,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         formaPagamento: situacaoFinanceira === 'pendente' ? undefined : formaPagamento,
       };
       const result: any = await onFormalAcceptance(selectedProposal.id, payload, aceiteDocumento);
-      setIsFormalAcceptanceModalOpen(false);
+      setAcceptStage('sucesso');
 
       // Load acceptance info for display
       const accRes = await fetch(`/api/proposals/${selectedProposal.id}/acceptance`);
@@ -507,10 +554,9 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
           <div className="max-w-4xl mx-auto my-6 relative">
             <ProposalPdfTemplate
               proposal={selectedProposal}
+              vessels={vessels}
               signatureConfig={signatureConfig}
-              logoConfig={logoConfig}
-              onDownloadPdf={() => handleDownloadPdf(selectedProposal)}
-              onPrint={() => window.print()}
+              onDownloadPdf={(vessel) => handleDownloadPdf(selectedProposal, vessel)}
               onClose={() => setSelectedProposal(null)}
             />
 
@@ -563,7 +609,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </div>
                   <div>
                     <p className="text-emerald-400 text-[10px] uppercase font-bold">Data</p>
-                    <p className="font-bold">{acceptanceInfo.acceptance.data}</p>
+                    <p className="font-bold">{formatDateBR(acceptanceInfo.acceptance.data)}</p>
                   </div>
                   <div>
                     <p className="text-emerald-400 text-[10px] uppercase font-bold">Meio</p>
@@ -612,28 +658,55 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
 
             <form onSubmit={handleSaveProposal} className="space-y-4">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Vincular à Embarcação *</label>
+                <label className="block font-bold text-slate-700 mb-1">Selecionar Cliente *</label>
                 <select
-                  value={embarcacaoId}
+                  value={clienteId}
                   onChange={(e) => {
-                    setEmbarcacaoId(e.target.value);
-                    const v = vessels.find((ves) => ves.id === e.target.value);
-                    if (v) {
-                      setDestinatario(`A/C: ${v.clienteNome}`);
-                      setAssunto(
-                        `Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica para a embarcação ${v.nome}.`
-                      );
-                    }
+                    setClienteId(e.target.value);
+                    setEmbarcacaoId('');
+                    setEmbarcacoesIds([]);
                   }}
                   className="w-full px-3 py-2 border rounded-lg text-xs font-bold"
                 >
-                  {vessels.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.nome} ({v.clienteNome})
+                  <option value="">-- Selecione um Cliente --</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {clienteId && (
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Vincular à Embarcação *</label>
+                  <select
+                    multiple
+                    value={embarcacoesIds}
+                    onChange={(e) => {
+                      const selected = Array.from(e.currentTarget.selectedOptions).map((option) => option.value);
+                      const primary = selected[0] || '';
+                      setEmbarcacaoId(primary); setEmbarcacoesIds(selected);
+                      const v = vessels.find((ves) => ves.id === primary);
+                      if (v) {
+                        setDestinatario(`A/C: ${v.clienteNome}`);
+                        setAssunto(
+                          `Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica para a embarcação ${v.nome}.`
+                        );
+                      }
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg text-xs font-bold min-h-28"
+                  >
+                    {vessels
+                      .filter((v) => v.clienteId === clienteId)
+                      .map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.nome}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -680,6 +753,29 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </button>
                 </div>
 
+                <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50 p-2.5 sm:flex-row">
+                  <select
+                    value={selectedServiceId}
+                    onChange={(e) => setSelectedServiceId(e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-blue-200 bg-white px-2 py-1.5 text-sm"
+                  >
+                    <option value="">Selecione um serviço cadastrado</option>
+                    {services.filter((service) => service.ativo !== false).map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.nome} — R$ {service.valorPadrao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!selectedServiceId}
+                    onClick={handleAddRegisteredService}
+                    className="rounded bg-blue-600 px-3 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Adicionar serviço
+                  </button>
+                </div>
+
                 <div className="space-y-2">
                   {itens.map((item, idx) => (
                     <div key={item.id} className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border">
@@ -713,8 +809,22 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   ))}
                 </div>
 
-                <div className="text-right font-bold text-sm text-blue-900 pt-2 font-mono">
-                  Valor Total Calculado: R$ {calculateTotal(itens).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                <div className="ml-auto max-w-sm space-y-1.5 pt-2 text-right text-sm font-mono">
+                  <div className="font-semibold text-slate-600">
+                    Subtotal: R$ {calculateTotal(itens).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
+                  <label className="flex items-center justify-end gap-2 font-semibold text-slate-700">
+                    Desconto:
+                    <CurrencyInput
+                      value={valorDesconto}
+                      onValueChange={(value) => setValorDesconto(Math.min(calculateTotal(itens), Math.max(0, value)))}
+                      aria-label="Desconto da proposta"
+                      className="w-32 rounded border bg-white px-2 py-1 text-right"
+                    />
+                  </label>
+                  <div className="font-bold text-blue-900">
+                    Valor Total: R$ {(calculateTotal(itens) - Math.min(calculateTotal(itens), Math.max(0, valorDesconto))).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
 
@@ -964,7 +1074,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </button>
                 </div>
               </form>
-            ) : (
+            ) : acceptStage === 'financeiro' ? (
               <form onSubmit={handleConfirmFormalAcceptance} className="space-y-3 text-xs">
                 <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
                   <p className="font-bold text-slate-800">
@@ -1052,6 +1162,74 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </button>
                 </div>
               </form>
+            ) : (
+              <div className="space-y-4 text-center">
+                <div className="mx-auto w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Proposta Aprovada com Sucesso!</h3>
+                <p className="text-xs text-slate-500">
+                  O aceite foi registrado, o financeiro atualizado e a ordem de serviço foi gerada.
+                </p>
+
+                <div className="grid gap-3 mt-4 text-left">
+                  <button
+                    type="button"
+                    onClick={() => { setIsFormalAcceptanceModalOpen(false); onNavigateTab?.('service-orders'); }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 transition"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                      <FileCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">Ir para Ordens de Serviço (OS)</p>
+                      <p className="text-[11px] text-slate-500">Acompanhar a execução do serviço</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (acceptanceInfo?.receivable) {
+                        const blob = new Blob([`Recibo do valor de R$ ${acceptanceInfo.receivable.valorPago ?? 0}`], { type: 'text/plain' });
+                        downloadBlob(blob, `Recibo_${selectedProposal?.numero.replace(/\//g, '-')}.txt`);
+                      }
+                    }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                      <Download className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">Baixar Recibo do Valor Pago</p>
+                      <p className="text-[11px] text-slate-500">Gerar PDF do recibo provisório</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setIsFormalAcceptanceModalOpen(false); onNavigateTab?.('financial'); }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-purple-500 hover:bg-purple-50 transition"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                      <ExternalLink className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">Ir para Módulo Financeiro</p>
+                      <p className="text-[11px] text-slate-500">Visualizar lançamentos pendentes/pagos</p>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setIsFormalAcceptanceModalOpen(false)}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-700"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

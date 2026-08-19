@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS "commitments" (
   "created_at" timestamp DEFAULT now(),
   "updated_at" timestamp DEFAULT now()
 );
---> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "commitment_attachments" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "compromisso_id" uuid NOT NULL REFERENCES "commitments"("id") ON DELETE CASCADE,
@@ -24,4 +23,5 @@ CREATE TABLE IF NOT EXISTS "commitment_attachments" (
   "autor_id" uuid REFERENCES "users"("id"),
   "created_at" timestamp DEFAULT now()
 );
-
+ALTER TABLE "notifications" ADD COLUMN IF NOT EXISTS "compromisso_id" uuid REFERENCES "commitments"("id");
+ALTER TABLE "notifications" ADD COLUMN IF NOT EXISTS "prioridade" text DEFAULT 'normal';

@@ -3,11 +3,18 @@ import { users } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { userHasPermission, Permission } from "./permissions.js";
 
-export const requireAuth = (req: any, res: any, next: any) => {
+export const requireAuth = async (req: any, res: any, next: any) => {
   if (!req.session?.userId) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  next();
+  try {
+    const user = (await db.select().from(users).where(eq(users.id, req.session.userId)))[0];
+    if (!user || user.ativo === false) return res.status(401).json({ error: "Unauthorized" });
+    req.user = user;
+    next();
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
 };
 
 export const requireRole = (roles: string[]) => {

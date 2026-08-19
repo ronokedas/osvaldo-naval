@@ -4,10 +4,8 @@ import { User } from '../types';
 import { 
   LayoutDashboard, 
   Ship, 
-  CheckSquare, 
   FileText, 
-  DollarSign, 
-  FileCheck 
+  BellRing
 } from 'lucide-react';
 
 interface MobileBottomNavProps {
@@ -38,24 +36,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       roles: ['admin', 'tecnico'],
     },
     {
-      id: 'tasks' as TabType,
-      label: 'Tarefas',
-      icon: CheckSquare,
-      roles: ['admin', 'financeiro', 'tecnico'],
-      badge: myTasksCount > 0 ? myTasksCount : undefined,
-    },
-    {
       id: 'proposals' as TabType,
       label: 'Propostas',
       icon: FileText,
       roles: ['admin', 'financeiro'],
     },
-    {
-      id: 'documents' as TabType,
-      label: 'Busca',
-      icon: FileCheck,
-      roles: ['admin', 'tecnico', 'financeiro'],
-    },
+    { id: 'commitments' as TabType, label: 'Pendências', icon: BellRing, roles: ['admin', 'financeiro', 'tecnico'] },
   ];
 
   const visibleItems = navItems.filter((item) => item.roles.includes(currentUser.role));
@@ -80,11 +66,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             >
               <div className="relative">
                 <Icon className={`w-5 h-5 ${isActive ? 'fill-blue-100' : ''}`} />
-                {item.badge !== undefined && (
-                  <span className="absolute -top-1 -right-2 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white">
-                    {item.badge}
-                  </span>
-                )}
               </div>
               <span className={`text-[10px] font-medium ${isActive ? 'font-bold' : ''}`}>
                 {item.label}
