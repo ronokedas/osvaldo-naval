@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { clients } from "../../db/schema.js";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 
@@ -21,6 +21,15 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
     const nome = String(data.nome || "").trim();
     if (!nome) return res.status(400).json({ error: "Nome do cliente é obrigatório" });
 
+    // Validate CPF/CNPJ if provided
+    const cnpjCpf = data.cnpjCpf ? String(data.cnpjCpf).replace(/\D/g, "") : null;
+    if (cnpjCpf) {
+      const isValid = cnpjCpf.length === 11 ? validateCPF(cnpjCpf) : cnpjCpf.length === 14 ? validateCNPJ(cnpjCpf) : false;
+      if (!isValid) {
+        return res.status(400).json({ error: "CPF/CNPJ inválido. Por favor, verifique os números digitados." });
+      }
+    }
+
     const existing = (await db.select().from(clients)).find((client) => client.nome.trim().toLowerCase() === nome.toLowerCase());
     if (existing) return res.json(existing);
 
@@ -28,7 +37,8 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
       nome,
       email: data.email || null,
       telefone: data.telefone || null,
-      cnpjCpf: data.cnpjCpf || null,
+      whatsapp: data.whatsapp || null,
+      cnpjCpf: cnpjCpf || null,
       endereco: data.endereco || null,
     }).returning())[0];
     res.status(201).json(created);
@@ -36,5 +46,53 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
     res.status(500).json({ error: "Não foi possível cadastrar o cliente" });
   }
 });
+
+// CPF validation algorithm
+function validateCPF(cpf: string): boolean {
+  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+  
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(cpf[i]) * (10 - i);
+  }
+  let dv1 = 11 - (sum % 11);
+  if (dv1 >= 10) dv1 = 0;
+  if (parseInt(cpf[9]) !== dv1) return false;
+  
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(cpf[i]) * (11 - i);
+  }
+  let dv2 = 11 - (sum % 11);
+  if (dv2 >= 10) dv2 = 0;
+  if (parseInt(cpf[10]) !== dv2) return false;
+  
+  return true;
+}
+
+// CNPJ validation algorithm
+function validateCNPJ(cnpj: string): boolean {
+  if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false;
+  
+  let weights = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(cnpj[i]) * weights[i];
+  }
+  let dv1 = sum % 11;
+  dv1 = dv1 < 2 ? 0 : 11 - dv1;
+  if (parseInt(cnpj[12]) !== dv1) return false;
+  
+  weights = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  sum = 0;
+  for (let i = 0; i < 13; i++) {
+    sum += parseInt(cnpj[i]) * weights[i];
+  }
+  let dv2 = sum % 11;
+  dv2 = dv2 < 2 ? 0 : 11 - dv2;
+  if (parseInt(cnpj[13]) !== dv2) return false;
+  
+  return true;
+}
 
 export default router;

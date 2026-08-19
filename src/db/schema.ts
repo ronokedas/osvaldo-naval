@@ -20,8 +20,20 @@ export const clients = pgTable("clients", {
   nome: text("nome").notNull(),
   email: text("email"),
   telefone: text("telefone"),
+  whatsapp: text("whatsapp"),
   cnpjCpf: text("cnpj_cpf"),
   endereco: text("endereco"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const certifiers = pgTable("certifiers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nome: text("nome").notNull(),
+  codigoRegistro: text("codigo_registro"),
+  telefoneContato: text("telefone_contato"),
+  email: text("email"),
+  ativo: boolean("ativo").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -43,7 +55,11 @@ export const vessels = pgTable("vessels", {
   arquivosAssociados: jsonb("arquivos_associados").default([]),
   progresso: integer("progresso").default(0),
   registro: text("registro"),
+  certificadoraId: uuid("certificadora_id").references(() => certifiers.id),
   certificadoraPrincipal: text("certificadora_principal"),
+  comprimento: decimal("comprimento", { precision: 10, scale: 2 }),
+  boca: decimal("boca", { precision: 10, scale: 2 }),
+  pontal: decimal("pontal", { precision: 10, scale: 2 }),
   valorSinal: decimal("valor_sinal", { precision: 12, scale: 2 }).default("0"),
   descricao: text("descricao"),
   createdAt: timestamp("created_at").defaultNow(),
