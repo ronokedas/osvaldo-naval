@@ -179,17 +179,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}`} />
                     <span>{item.label}</span>
                   </div>
-                  {item.badge !== undefined && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                        isActive
-                          ? 'bg-white text-blue-900'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
                 </button>
               );
             })}
