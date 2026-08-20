@@ -35,11 +35,12 @@ import { ServiceOrdersView } from './components/ServiceOrdersView';
 import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
 import { RegistrationsView } from './components/RegistrationsView';
 import CommitmentsView from './components/CommitmentsView';
+import { RenewalsView } from './components/RenewalsView';
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 const TAB_PATHS: TabType[] = [
   'dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial',
-  'protocols', 'team', 'documents', 'settings', 'commitments', 'registrations',
+  'protocols', 'team', 'documents', 'settings', 'commitments', 'registrations', 'renewals',
 ];
 
 const tabFromCurrentPath = (): TabType => {
@@ -874,6 +875,15 @@ export default function App() {
               currentUser={currentUser}
               vessels={vessels}
               users={users}
+            />
+          )}
+
+          {activeTab === 'renewals' && (
+            <RenewalsView
+              onNavigate={(tab, item) => {
+                setActiveTab(tab as TabType);
+                if (item) setSelectedProposalForView(item);
+              }}
             />
           )}
 

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ServiceOrderDetail, User, Document, ExternalSubmission } from '../types';
-import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History } from 'lucide-react';
+import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History, ChevronRight } from 'lucide-react';
 import { formatPhone } from '../utils/input-formatters';
 import { formatDateBR, formatDateTimeBR } from '../utils/date-formatters';
+import { OsWorkflowStepper } from './OsWorkflowStepper';
 
 interface Props {
   detail: ServiceOrderDetail;
@@ -130,7 +131,10 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="p-5 space-y-6">
+        <div className="p-5 sm:p-6 space-y-6">
+          {/* Stepper de Progresso Visual */}
+          <OsWorkflowStepper status={detail.status} />
+
           {/* Context */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3"><p className="text-[10px] uppercase text-blue-500 font-bold">Referência comercial</p><p className="font-mono font-bold text-blue-900">{detail.proposta?.numero || 'Sem proposta vinculada'}</p></div>

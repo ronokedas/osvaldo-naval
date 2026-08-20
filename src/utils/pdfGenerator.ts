@@ -164,8 +164,24 @@ const getOfficialLogoDataUrl = () => {
 };
 
 const drawProposalHeader = (doc: jsPDF, number: string, date: string, logo: string | null) => {
-  if (logo) doc.addImage(logo, "PNG", 20, 13, 42, 17, undefined, "FAST");
-  else {
+  if (logo) {
+    // Use a larger header area while preserving the logo's original aspect ratio.
+    // This keeps wide and tall versions visually balanced in the proposal PDF.
+    try {
+      const properties = doc.getImageProperties(logo);
+      const maxWidth = 64;
+      const maxHeight = 24;
+      const scale = Math.min(maxWidth / properties.width, maxHeight / properties.height);
+      const width = properties.width * scale;
+      const height = properties.height * scale;
+      const x = 20;
+      const y = 21 - height / 2;
+      doc.addImage(logo, "PNG", x, y, width, height, undefined, "FAST");
+    } catch {
+      // Keep the PDF usable if a legacy logo cannot expose image properties.
+      doc.addImage(logo, "PNG", 20, 9, 60, 23, undefined, "FAST");
+    }
+  } else {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(...PRIMARY_DARK);
     doc.text("NAUTILUS", 20, 21); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.text("ENGENHARIA NAVAL", 20, 26);
   }

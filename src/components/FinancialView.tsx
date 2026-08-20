@@ -226,16 +226,250 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         <button onClick={() => setFinanceTab('pagar')} className={`px-4 py-2 rounded-lg text-xs font-bold ${financeTab === 'pagar' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>Contas a pagar</button>
       </div>
 
-      {financeTab === 'pagar' && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-        <h3 className="font-bold text-slate-900">Contas a pagar</h3>
-        <form className="grid grid-cols-1 md:grid-cols-4 gap-2" onSubmit={async (event) => { event.preventDefault(); const response = await fetch('/api/payables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payableForm) }); if (response.ok) { setPayableForm({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' }); loadPayables(); } }}>
-          <input required placeholder="Descrição da conta" value={payableForm.descricao} onChange={(e) => setPayableForm({ ...payableForm, descricao: e.target.value })} className="border rounded-lg px-3 py-2 text-xs" />
-          <CurrencyInput value={payableForm.valorOriginal} onValueChange={(value) => setPayableForm({ ...payableForm, valorOriginal: value })} className="border rounded-lg px-3 py-2 text-xs" />
-          <input type="date" value={payableForm.vencimento} onChange={(e) => setPayableForm({ ...payableForm, vencimento: e.target.value })} className="border rounded-lg px-3 py-2 text-xs" />
-          <button className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs font-bold">Cadastrar conta</button>
-        </form>
-        <div className="divide-y">{payables.map((account) => <div key={account.id} className="py-3 flex items-center justify-between gap-3 text-xs"><div><strong>{account.descricao}</strong><span className="block text-slate-500">Vencimento: {account.vencimento || 'não informado'} · {account.status}</span></div><div className="text-right"><strong>R$ {Number(account.saldo ?? account.valorOriginal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong><button className="block text-blue-600 font-bold" onClick={async () => { const raw = window.prompt('Valor da baixa', String(account.saldo ?? account.valorOriginal)); const valor = Number(raw); if (!valor) return; const response = await fetch(`/api/payables/${account.id}/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor }) }); if (response.ok) loadPayables(); }}>Baixar</button></div></div>)}</div>
-      </div>}
+      {/* Pagar Tab - Contas a Pagar Organizado */}
+      {financeTab === 'pagar' && (
+        <div className="space-y-6">
+          {/* Summary Cards Contas a Pagar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-amber-500">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Saldo a Pagar (Aberto)</p>
+              <p className="text-xl font-black font-mono text-amber-700">
+                R${' '}
+                {payables
+                  .filter((a) => a.status !== 'cancelado')
+                  .reduce((acc, a) => acc + (a.saldo ?? a.valorOriginal ?? 0), 0)
+                  .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-red-500">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">Contas Atrasadas</p>
+              <p className="text-xl font-black font-mono text-red-700">
+                {
+                  payables.filter((a) => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    return a.vencimento && a.vencimento < today && (a.saldo ?? a.valorOriginal) > 0 && a.status !== 'cancelado';
+                  }).length
+                }{' '}
+                <span className="text-xs font-normal text-slate-500">conta(s)</span>
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-emerald-500">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Total Pago / Baixado</p>
+              <p className="text-xl font-black font-mono text-emerald-700">
+                R${' '}
+                {payables
+                  .reduce((acc, a) => acc + (a.valorPago ?? 0), 0)
+                  .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-blue-500">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-blue-700">Total de Contas</p>
+              <p className="text-xl font-black font-mono text-slate-900">
+                {payables.length} <span className="text-xs font-normal text-slate-500">registradas</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Form Cadastro de Nova Conta a Pagar */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                  <FilePlus className="w-5 h-5 text-emerald-600" />
+                  Cadastrar Nova Conta a Pagar
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Registre compromissos financeiros, despesas fixas, impostos ou compras de fornecedores.
+                </p>
+              </div>
+            </div>
+
+            <form
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const response = await fetch('/api/payables', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payableForm),
+                });
+                if (response.ok) {
+                  setPayableForm({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' });
+                  loadPayables();
+                } else {
+                  alert('Preencha os campos obrigatórios.');
+                }
+              }}
+            >
+              <div className="lg:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Descrição / Favorecido *</label>
+                <input
+                  required
+                  placeholder="Ex: Aluguel do galpão, ART Marinha, Peças..."
+                  value={payableForm.descricao}
+                  onChange={(e) => setPayableForm({ ...payableForm, descricao: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Valor Original (R$) *</label>
+                <CurrencyInput
+                  value={payableForm.valorOriginal}
+                  onValueChange={(value) => setPayableForm({ ...payableForm, valorOriginal: value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Vencimento *</label>
+                <input
+                  type="date"
+                  required
+                  value={payableForm.vencimento}
+                  onChange={(e) => setPayableForm({ ...payableForm, vencimento: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <Plus className="w-4 h-4" /> Cadastrar Conta
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Tabela de Contas a Pagar */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Relação de Contas a Pagar</h3>
+                <p className="text-xs text-slate-500">Controle de liquidação, saldos devedores e baixas financeiras</p>
+              </div>
+            </div>
+
+            {payables.length === 0 ? (
+              <div className="text-center py-10 text-slate-400">
+                <Receipt className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                <p className="font-bold text-slate-600 text-xs">Nenhuma conta a pagar cadastrada</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Use o formulário acima para registrar uma despesa ou fornecedor.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#0B192C] text-white uppercase font-bold tracking-wider text-[10px]">
+                      <th className="p-3">Descrição / Título</th>
+                      <th className="p-3">Vencimento</th>
+                      <th className="p-3 text-center">Status</th>
+                      <th className="p-3 text-right">Valor Original</th>
+                      <th className="p-3 text-right">Valor Pago</th>
+                      <th className="p-3 text-right">Saldo Devedor</th>
+                      <th className="p-3 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {payables.map((account) => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const isOverdue =
+                        account.vencimento &&
+                        account.vencimento < today &&
+                        (account.saldo ?? account.valorOriginal) > 0 &&
+                        account.status !== 'cancelado';
+
+                      const statusLabel =
+                        account.status === 'pago'
+                          ? 'Pago'
+                          : account.status === 'parcial'
+                          ? 'Parcial'
+                          : isOverdue
+                          ? 'Atrasado'
+                          : account.status === 'cancelado'
+                          ? 'Cancelado'
+                          : 'Pendente';
+
+                      const statusBadgeClass =
+                        account.status === 'pago'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : account.status === 'parcial'
+                          ? 'bg-blue-50 text-blue-800 border-blue-300'
+                          : isOverdue
+                          ? 'bg-red-50 text-red-800 border-red-300 animate-pulse'
+                          : account.status === 'cancelado'
+                          ? 'bg-slate-100 text-slate-500 border-slate-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-300';
+
+                      const saldoAtual = Number(account.saldo ?? account.valorOriginal ?? 0);
+
+                      return (
+                        <tr key={account.id} className="hover:bg-slate-50 transition">
+                          <td className="p-3 font-bold text-slate-900">
+                            {account.descricao}
+                            {account.competencia && (
+                              <span className="block text-[10px] text-slate-400 font-normal">
+                                Comp: {account.competencia}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono text-slate-600 whitespace-nowrap">
+                            {account.vencimento ? formatDateBR(account.vencimento) : 'Não informado'}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusBadgeClass}`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                            R$ {Number(account.valorOriginal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            R$ {Number(account.valorPago ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right font-mono font-black text-amber-700 whitespace-nowrap">
+                            R$ {saldoAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            {account.status !== 'pago' && account.status !== 'cancelado' ? (
+                              <button
+                                onClick={async () => {
+                                  const raw = window.prompt(`Valor da baixa para "${account.descricao}":`, String(saldoAtual));
+                                  if (!raw) return;
+                                  const valor = Number(raw.replace(',', '.'));
+                                  if (isNaN(valor) || valor <= 0) return alert('Valor inválido');
+                                  const response = await fetch(`/api/payables/${account.id}/payments`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ valor }),
+                                  });
+                                  if (response.ok) loadPayables();
+                                  else alert('Erro ao registrar baixa.');
+                                }}
+                                className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer active:scale-95"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Dar Baixa
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-bold text-slate-400">Liquidado</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Financial Top Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">

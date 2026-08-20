@@ -17,6 +17,7 @@ import {
   ClipboardList,
   BellRing,
   ContactRound,
+  CalendarClock,
 } from 'lucide-react';
 
 export type TabType =
@@ -31,7 +32,8 @@ export type TabType =
   | 'settings'
   | 'documents'
   | 'commitments'
-  | 'registrations';
+  | 'registrations'
+  | 'renewals';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -88,6 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       roles: ['admin', 'financeiro'],
     },
     {
+      id: 'renewals' as TabType,
+      label: 'Renovações Anuais',
+      icon: CalendarClock,
+      roles: ['admin', 'financeiro'],
+    },
+    {
       id: 'service-orders' as TabType,
       label: 'Ordens de Serviço',
       icon: ClipboardList,
@@ -104,12 +112,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Protocolos & Entregas',
       icon: Send,
       roles: [],
-    },
-    {
-      id: 'team' as TabType,
-      label: 'Equipe & Carga',
-      icon: Users,
-      roles: ['admin'],
     },
     {
       id: 'documents' as TabType,
@@ -160,31 +162,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
-          {/* User Profile Mini Badge */}
-          <button
-            type="button"
-            onClick={onOpenProfile}
-            className="w-full bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 hover:border-blue-500/50 rounded-xl p-3 flex items-center justify-between gap-3 text-left transition cursor-pointer group"
-            title="Clique para editar seu perfil, foto e senha"
-          >
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="w-10 h-10 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-base flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition">
-                {currentUser.avatarUrl ? (
-                  <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  currentUser.nome.charAt(0)
-                )}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-xs font-bold text-white group-hover:text-cyan-300 truncate transition">{currentUser.nome}</p>
-                <p className="text-[10px] text-slate-400 truncate">{currentUser.cargo}</p>
-              </div>
-            </div>
-            <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-800/60 px-1.5 py-0.5 rounded font-mono shrink-0 group-hover:bg-blue-600 group-hover:text-white transition">
-              Perfil
-            </span>
-          </button>
-
           {/* Navigation Links */}
           <nav className="space-y-1">
             <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold px-3 mb-2">
@@ -224,18 +201,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
+        {/* Footer info & Profile */}
+        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 text-[11px] text-slate-500 space-y-2">
+          {/* User Profile Mini Badge at bottom */}
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            className="w-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/50 rounded-xl p-2.5 flex items-center justify-between gap-2.5 text-left transition cursor-pointer group"
+            title="Clique para editar seu perfil, foto e senha"
+          >
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div className="w-8 h-8 rounded-full bg-blue-600/30 border border-blue-500/50 text-blue-400 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition">
+                {currentUser.avatarUrl ? (
+                  <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  currentUser.nome.charAt(0)
+                )}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs font-bold text-white group-hover:text-cyan-300 truncate transition">{currentUser.nome}</p>
+                <p className="text-[10px] text-slate-400 truncate">{currentUser.cargo || currentUser.role}</p>
+              </div>
+            </div>
+            <span className="text-[10px] bg-slate-800 text-blue-300 border border-slate-700 px-1.5 py-0.5 rounded font-mono shrink-0 group-hover:bg-blue-600 group-hover:text-white transition">
+              Perfil
+            </span>
+          </button>
 
-        {/* Footer info & Company Details */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 text-[11px] text-slate-500 space-y-1">
           <button
             onClick={onLogout}
-            className="w-full text-center px-3 py-2 mb-2 text-xs font-bold text-red-400 bg-red-950/30 rounded-lg hover:bg-red-900/50 transition cursor-pointer"
+            className="w-full text-center px-3 py-2 text-xs font-bold text-red-400 bg-red-950/30 rounded-lg hover:bg-red-900/50 transition cursor-pointer"
           >
             Sair do Sistema
           </button>
           <p className="font-semibold text-slate-400 truncate">Nautilus Projetos Navais</p>
           <p className="text-[10px]">Belém/PA — (91) 3247-3278</p>
-          <div className="pt-2 flex items-center justify-between text-[10px] text-slate-600">
+          <div className="pt-1 flex items-center justify-between text-[10px] text-slate-600">
             <span>v2.6.0 (VPS)</span>
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Sistema online" />
           </div>
