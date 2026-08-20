@@ -63,6 +63,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Employee Modal state
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({
     nome: '',
     email: '',
@@ -71,6 +72,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     role: 'tecnico' as UserRole,
     acessoAtivo: true,
   });
+
+  const CARGOS_INTERNOS = [
+    'Técnico',
+    'Analista de Qualidade',
+    'Administrador / Responsável Técnico',
+    'Comercial / Financeiro',
+    'Editor / Entrega',
+    'Administrador'
+  ];
 
   // Local state for Email Form
   const [localEmailConfig, setLocalEmailConfig] = useState<EmailConfig>({ ...emailConfig });
@@ -97,29 +107,65 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Handle User Create submit
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.nome.trim() || !newUser.email.trim() || newUser.senha.length < 6) return;
+    if (!newUser.nome.trim() || !newUser.email.trim()) return;
+    if (!editingUserId && newUser.senha.length < 6) return;
+    
     if (!isValidEmail(newUser.email)) {
       alert('Informe um e-mail válido, como nome@empresa.com.');
       return;
     }
 
     try {
-      await onCreateUser({
-      nome: newUser.nome,
-      email: newUser.email,
-      cargo: newUser.cargo || (newUser.role === 'admin' ? 'Administrador' : newUser.role === 'financeiro' ? 'Financeiro' : 'Técnico Naval'),
-      role: newUser.role,
-      ativo: true,
-      acessoAtivo: newUser.acessoAtivo,
-      tarefasAtivas: 0,
-      senha: newUser.senha,
-      });
+      if (editingUserId) {
+        const updateData: Partial<User> = {
+          nome: newUser.nome,
+          email: newUser.email,
+          cargo: newUser.cargo,
+          role: newUser.role,
+          acessoAtivo: newUser.acessoAtivo,
+        };
+        if (newUser.senha && newUser.senha.trim().length >= 6) {
+          updateData.senha = newUser.senha;
+        }
+        await onUpdateUser(editingUserId, updateData);
+      } else {
+        await onCreateUser({
+          nome: newUser.nome,
+          email: newUser.email,
+          cargo: newUser.cargo || (newUser.role === 'admin' ? 'Administrador' : newUser.role === 'financeiro' ? 'Financeiro' : 'Técnico Naval'),
+          role: newUser.role,
+          ativo: true,
+          acessoAtivo: newUser.acessoAtivo,
+          tarefasAtivas: 0,
+          senha: newUser.senha,
+        });
+      }
 
       setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true });
       setShowAddUserModal(false);
+      setEditingUserId(null);
     } catch (error: any) {
-      alert(error?.message || 'Não foi possível cadastrar o usuário.');
+      alert(error?.message || 'Não foi possível salvar o usuário.');
     }
+  };
+
+  const openEditUserModal = (user: User) => {
+    setEditingUserId(user.id);
+    setNewUser({
+      nome: user.nome,
+      email: user.email,
+      cargo: user.cargo || '',
+      senha: '',
+      role: user.role,
+      acessoAtivo: user.acessoAtivo !== false,
+    });
+    setShowAddUserModal(true);
+  };
+
+  const openAddUserModal = () => {
+    setEditingUserId(null);
+    setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true });
+    setShowAddUserModal(true);
   };
 
   // Handle Save Email Config
@@ -332,7 +378,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {isAdmin && (
                 <button
-                  onClick={() => setShowAddUserModal(true)}
+                  onClick={openAddUserModal}
                   className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
@@ -408,19 +454,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                         <td className="p-3 text-right">
                           {isAdmin ? (
-                            <button
-                              onClick={() => onUpdateUser(u.id, { acessoAtivo: !isUserActive })}
-                              disabled={u.id === currentUser.id}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                                u.id === currentUser.id
-                                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                  : isUserActive
-                                  ? 'bg-rose-100 hover:bg-rose-200 text-rose-800'
-                                  : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                              }`}
-                            >
-                              {isUserActive ? 'Bloquear Acesso' : 'Liberar Acesso'}
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openEditUserModal(u)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1"
+                              >
+                                <PenTool className="w-3.5 h-3.5" />
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => onUpdateUser(u.id, { acessoAtivo: !isUserActive })}
+                                disabled={u.id === currentUser.id}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                  u.id === currentUser.id
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : isUserActive
+                                    ? 'bg-rose-100 hover:bg-rose-200 text-rose-800'
+                                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                                }`}
+                              >
+                                {isUserActive ? 'Bloquear Acesso' : 'Liberar Acesso'}
+                              </button>
+                            </div>
                           ) : (
                             <span className="text-slate-400 text-[11px] italic">Sem permissão</span>
                           )}
@@ -1023,7 +1078,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-600" />
-                Cadastrar Novo Funcionário
+                {editingUserId ? 'Editar Funcionário' : 'Cadastrar Novo Funcionário'}
               </h3>
               <button
                 onClick={() => setShowAddUserModal(false)}
@@ -1060,17 +1115,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Cargo Interno</label>
-                <input
-                  type="text"
-                  value={newUser.cargo}
+                <select
+                  value={CARGOS_INTERNOS.includes(newUser.cargo) ? newUser.cargo : (newUser.cargo ? 'Outro' : '')}
                   onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
-                  placeholder="ex: Projeta CAD / Inspetor de Campo"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800"
-                />
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 mb-2"
+                >
+                  <option value="" disabled>Selecione um Cargo</option>
+                  {CARGOS_INTERNOS.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="Outro">Outro (digitar)</option>
+                </select>
+                {(!CARGOS_INTERNOS.includes(newUser.cargo) && newUser.cargo !== '') && (
+                  <input
+                    type="text"
+                    value={newUser.cargo}
+                    onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
+                    placeholder="Digite o cargo customizado"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800"
+                  />
+                )}
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Senha inicial</label>
+                <label className="block text-slate-700 font-bold mb-1">
+                  {editingUserId ? 'Nova Senha (deixe em branco para não alterar)' : 'Senha inicial'}
+                </label>
                 <input
                   type="password"
                   value={newUser.senha}
@@ -1078,7 +1146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   placeholder="Mínimo de 6 caracteres"
                   minLength={6}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800"
-                  required
+                  required={!editingUserId}
                 />
               </div>
 
@@ -1121,7 +1189,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="submit"
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg cursor-pointer"
                 >
-                  Confirmar Cadastro
+                  {editingUserId ? 'Salvar Alterações' : 'Confirmar Cadastro'}
                 </button>
               </div>
             </form>

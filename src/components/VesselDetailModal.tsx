@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
-import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus } from '../types';
+import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus, Client } from '../types';
 import { generateTechnicalReport } from '../utils/pdfGenerator';
 import {
   X,
@@ -19,18 +19,21 @@ import {
   MessageCircle,
   Printer,
   FilePlus,
+  Edit3,
 } from 'lucide-react';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
 import { CurrencyInput } from './CurrencyInput';
 
 interface VesselDetailModalProps {
   vessel: Vessel;
+  clients?: Client[];
   tasks: DocumentTask[];
   proposals: Proposal[];
   financialEntries: FinancialEntry[];
   users: User[];
   currentUser: User;
   onClose: () => void;
+  onUpdateVessel?: (vesselId: string, updatedFields: Partial<Vessel>) => void;
   onUpdateVesselStatus: (vesselId: string, newStatus: 'aberta' | 'concluida') => void;
   onUpdateTaskStatus: (taskId: string, newStatus: TaskStatus, certificadora?: Certificadora) => void;
   onCreateTask: (taskData: Partial<DocumentTask>) => void;
@@ -41,12 +44,14 @@ interface VesselDetailModalProps {
 
 export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   vessel,
+  clients = [],
   tasks,
   proposals,
   financialEntries,
   users,
   currentUser,
   onClose,
+  onUpdateVessel,
   onUpdateVesselStatus,
   onUpdateTaskStatus,
   onCreateTask,
@@ -55,6 +60,44 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   onCreateProposalForVessel,
 }) => {
   const [activeTab, setActiveTab] = useState<'documentos' | 'financeiro' | 'propostas'>('documentos');
+
+  // Edit Vessel Modal State
+  const [isEditVesselModalOpen, setIsEditVesselModalOpen] = useState(false);
+  const [editNome, setEditNome] = useState(vessel.nome);
+  const [editClienteId, setEditClienteId] = useState(vessel.clienteId || '');
+  const [editClienteNome, setEditClienteNome] = useState(vessel.clienteNome || '');
+  const [editTipo, setEditTipo] = useState(vessel.tipo || 'Empurrador Fluvial');
+  const [editRegistro, setEditRegistro] = useState(vessel.registro || '');
+  const [editCertificadora, setEditCertificadora] = useState<Certificadora>(vessel.certificadoraPrincipal);
+  const [editDescricao, setEditDescricao] = useState(vessel.descricao || '');
+
+  const handleOpenEditVessel = () => {
+    setEditNome(vessel.nome);
+    setEditClienteId(vessel.clienteId || '');
+    setEditClienteNome(vessel.clienteNome || '');
+    setEditTipo(vessel.tipo || 'Empurrador Fluvial');
+    setEditRegistro(vessel.registro || '');
+    setEditCertificadora(vessel.certificadoraPrincipal);
+    setEditDescricao(vessel.descricao || '');
+    setIsEditVesselModalOpen(true);
+  };
+
+  const handleSaveEditVesselSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNome.trim()) return;
+
+    onUpdateVessel?.(vessel.id, {
+      nome: editNome,
+      clienteId: editClienteId || undefined,
+      clienteNome: editClienteNome,
+      tipo: editTipo,
+      registro: editRegistro,
+      certificadoraPrincipal: editCertificadora,
+      descricao: editDescricao,
+    });
+
+    setIsEditVesselModalOpen(false);
+  };
 
   // New task modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -154,6 +197,15 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleOpenEditVessel}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-sm cursor-pointer"
+              title="Editar nome, cliente, registro ou certificadora da embarcação"
+            >
+              <Edit3 className="w-4 h-4" />
+              <span>Editar Dados / Cliente</span>
+            </button>
+
             <button
               onClick={handleWhatsAppClient}
               className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-[#25D366] text-white hover:bg-[#20bd5a] shadow-sm cursor-pointer"
@@ -680,6 +732,137 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                   className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-lg"
                 >
                   Registrar Pagamento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Embarcação / Atribuir Cliente */}
+      {isEditVesselModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-amber-500" /> Editar Dados da Embarcação
+              </h3>
+              <button
+                onClick={() => setIsEditVesselModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditVesselSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Nome da Embarcação *</label>
+                <input
+                  type="text"
+                  required
+                  value={editNome}
+                  onChange={(e) => setEditNome(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-bold text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Cliente / Armador (Dono) *</label>
+                  <select
+                    value={editClienteId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setEditClienteId(selId);
+                      const selectedClient = clients.find((c) => c.id === selId);
+                      if (selectedClient) {
+                        setEditClienteNome(selectedClient.nome);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium text-slate-900 bg-white"
+                  >
+                    <option value="">-- Sem Cliente --</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tipo de Embarcação</label>
+                  <select
+                    value={editTipo}
+                    onChange={(e) => setEditTipo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
+                  >
+                    <option value="Empurrador Fluvial">Empurrador Fluvial</option>
+                    <option value="Balsa Graneleira">Balsa Graneleira</option>
+                    <option value="Balsa Tanque">Balsa Tanque</option>
+                    <option value="Balsa Carga Geral">Balsa Carga Geral</option>
+                    <option value="Balsa Coberta / DDL">Balsa Coberta / DDL</option>
+                    <option value="Rebocador">Rebocador</option>
+                    <option value="Lancha / Passageiros">Lancha / Passageiros</option>
+                    <option value="Catamarã">Catamarã</option>
+                    <option value="Flutuante / Terminal">Flutuante / Terminal</option>
+                    <option value="Draga / Chata">Draga / Chata</option>
+                    <option value="Ferry Boat">Ferry Boat</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Inscrição / Registro Marinha</label>
+                  <input
+                    type="text"
+                    value={editRegistro}
+                    onChange={(e) => setEditRegistro(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Certificadora Principal</label>
+                  <select
+                    value={editCertificadora}
+                    onChange={(e) => setEditCertificadora(e.target.value as Certificadora)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                  >
+                    <option value="Amazon Naval">Amazon Naval</option>
+                    <option value="Auto Ship">Auto Ship</option>
+                    <option value="ABS">ABS</option>
+                    <option value="DNV">DNV</option>
+                    <option value="RBNA">RBNA</option>
+                    <option value="A definir">A definir</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Observações do Escopo</label>
+                <textarea
+                  rows={2}
+                  value={editDescricao}
+                  onChange={(e) => setEditDescricao(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditVesselModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg cursor-pointer"
+                >
+                  Salvar Alterações
                 </button>
               </div>
             </form>

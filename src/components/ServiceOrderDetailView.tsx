@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ServiceOrderDetail, User, Document, ExternalSubmission } from '../types';
-import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History, ChevronRight } from 'lucide-react';
+import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History, ChevronRight, Camera, Paperclip } from 'lucide-react';
 import { formatPhone } from '../utils/input-formatters';
 import { formatDateBR, formatDateTimeBR } from '../utils/date-formatters';
 import { OsWorkflowStepper } from './OsWorkflowStepper';
@@ -40,6 +40,8 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
   const [showDeliver, setShowDeliver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reviewingDocId, setReviewingDocId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; action: () => void } | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Record<string, File>>({});
 
   const unassignedItems = (detail.itens || []).filter((item) => !item.tecnicoResponsavelId);
   const unscheduledItems = (detail.itens || []).filter((item) => !item.dataAgendada || !item.horarioAgendado);
@@ -49,8 +51,11 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
   const handleUpload = async (docId: string, e: React.FormEvent) => {
     e.preventDefault();
     const form = e.target as any;
-    const file = form.file.files[0];
-    if (!file) return;
+    const file = selectedFiles[docId];
+    if (!file) {
+      alert('Selecione um arquivo ou tire uma foto primeiro.');
+      return;
+    }
     setLoading(true);
     try {
       await onUploadVersion(docId, file, {
@@ -59,6 +64,7 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
       });
       form.reset();
       setShowUploadFor(null);
+      setSelectedFiles(prev => { const n = {...prev}; delete n[docId]; return n; });
       onRefresh();
     } finally { setLoading(false); }
   };
@@ -112,6 +118,24 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
       if (successMessage) window.alert(successMessage);
     } catch (error: any) {
       window.alert(error?.message || 'Não foi possível concluir a operação.');
+    }
+  };
+
+  const handleConfirmAction = (title: string, message: string, action: () => void) => {
+    setConfirmAction({ title, message, action });
+  };
+
+  const handleItemUpload = async (itemId: string, file: File | undefined) => {
+    if (!file) return;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const upload = await fetch('/api/upload', { method: 'POST', body: fd });
+      const data = await upload.json();
+      if (!upload.ok) throw new Error(data.error || 'Falha no upload');
+      await updateServiceItem(itemId, { relatorioUrl: data.url, relatorioNome: data.fileName });
+    } catch (error: any) {
+      alert(error.message);
     }
   };
 
@@ -170,7 +194,12 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
               <button onClick={() => setShowDeliver(true)} className="inline-flex items-center gap-1 bg-orange-600 text-white px-3 py-2 rounded-lg text-xs font-bold cursor-pointer"><Truck className="w-3.5 h-3.5" /> Registrar Entrega</button>
             )}
             {hasPerm(currentUser, 'entregar_concluir') && detail.status === 'aguardando_entrega' && (
-              <button onClick={() => runAndRefresh(onComplete, 'Ordem de Serviço concluída.')} className="inline-flex items-center gap-1 bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold cursor-pointer"><CheckCircle2 className="w-3.5 h-3.5" /> Concluir OS</button>
+              <button 
+                onClick={() => handleConfirmAction('Concluir OS', 'Tem certeza que deseja concluir esta Ordem de Serviço?', () => runAndRefresh(onComplete, 'Ordem de Serviço concluída.'))} 
+                className="inline-flex items-center gap-1 bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Concluir OS
+              </button>
             )}
           </div>
 
@@ -178,7 +207,9 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
           <div>
             <h3 className="font-bold text-sm text-slate-700 mb-2">Serviços da OS</h3>
             <div className="space-y-3">{(detail.itens || []).map((item: any) => {
-              const canEdit = currentUser.role === 'admin' || item.tecnicoResponsavelId === currentUser.id;
+              const isAdmin = currentUser.role === 'admin';
+              const isAssignedToMe = item.tecnicoResponsavelId === currentUser.id;
+              const canExecute = isAssignedToMe; 
               const assignedUser = users.find((user) => user.id === item.tecnicoResponsavelId) || (item.tecnicoResponsavelId === currentUser.id ? currentUser : undefined);
               const isScheduled = Boolean(item.dataAgendada && item.horarioAgendado);
               const statusLabel = item.status === 'em_execucao' ? 'Em execução' : item.status === 'concluido' ? 'Concluído' : 'Aguardando início';
@@ -193,16 +224,29 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
                       {item.relatorioUrl && <a href={item.relatorioUrl} target="_blank" rel="noreferrer" className="block mt-1 text-xs font-bold text-blue-600 underline">Abrir documento: {item.relatorioNome || 'anexo'}</a>}
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                      {currentUser.role === 'admin' && <select aria-label={`Funcionário responsável por ${item.descricao}`} value={item.tecnicoResponsavelId || ''} onChange={async e => { try { await updateServiceItem(item.id, { tecnicoResponsavelId: e.target.value }); } catch (error: any) { alert(error.message); } }} className={`min-w-52 border rounded-lg px-2 py-2 text-xs ${item.tecnicoResponsavelId ? 'bg-white' : 'border-amber-400 bg-amber-50 font-bold text-amber-900'}`}><option value="">Selecionar funcionário</option>{users.filter((user) => user.ativo).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>}
-                      {currentUser.role === 'admin' && <button onClick={() => setScheduleItemId(item.id)} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">{isScheduled ? 'Editar agendamento' : 'Agendar serviço'}</button>}
-                      {canEdit && item.status === 'pendente' && isScheduled && <button onClick={() => updateServiceItem(item.id, { status: 'em_execucao' }).catch((error) => alert(error.message))} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">Iniciar serviço</button>}
-                      {canEdit && item.status === 'pendente' && !isScheduled && currentUser.role !== 'admin' && <button disabled className="cursor-not-allowed rounded-lg bg-slate-300 px-3 py-2 text-xs font-bold text-slate-600">Aguardando agendamento</button>}
-                      {canEdit && item.status === 'em_execucao' && <button onClick={() => updateServiceItem(item.id, { status: 'concluido' }).catch((error) => alert(error.message))} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Concluir serviço</button>}
-                      {currentUser.role === 'admin' && item.status === 'concluido' && <button onClick={() => updateServiceItem(item.id, { status: 'em_execucao' }).catch((error) => alert(error.message))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700">Reabrir</button>}
-                      {canEdit && <label className="border rounded-lg px-3 py-2 text-xs cursor-pointer text-center text-blue-700 bg-white">Anexar documento<input type="file" className="hidden" onChange={async e => { try { const file=e.target.files?.[0]; if(!file)return; const fd=new FormData();fd.append('file',file); const upload=await fetch('/api/upload',{method:'POST',body:fd}); const data=await upload.json(); if(!upload.ok)throw new Error(data.error||'Falha no upload'); await updateServiceItem(item.id,{relatorioUrl:data.url,relatorioNome:data.fileName}); } catch(error:any) { alert(error.message); } }}/></label>}
+                      {isAdmin && <select aria-label={`Funcionário responsável por ${item.descricao}`} value={item.tecnicoResponsavelId || ''} onChange={async e => { try { await updateServiceItem(item.id, { tecnicoResponsavelId: e.target.value }); } catch (error: any) { alert(error.message); } }} className={`min-w-52 border rounded-lg px-2 py-2 text-xs ${item.tecnicoResponsavelId ? 'bg-white' : 'border-amber-400 bg-amber-50 font-bold text-amber-900'}`}><option value="">Selecionar funcionário</option>{users.filter((user) => user.ativo).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>}
+                      {isAdmin && <button onClick={() => setScheduleItemId(item.id)} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">{isScheduled ? 'Editar agendamento' : 'Agendar serviço'}</button>}
+                      {canExecute && item.status === 'pendente' && isScheduled && <button onClick={() => handleConfirmAction('Iniciar Serviço', 'Tem certeza que deseja iniciar a execução deste serviço?', () => updateServiceItem(item.id, { status: 'em_execucao' }).catch((error) => alert(error.message)))} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">Iniciar serviço</button>}
+                      {canExecute && item.status === 'pendente' && !isScheduled && !isAdmin && <button disabled className="cursor-not-allowed rounded-lg bg-slate-300 px-3 py-2 text-xs font-bold text-slate-600">Aguardando agendamento</button>}
+                      {canExecute && item.status === 'em_execucao' && <button onClick={() => handleConfirmAction('Concluir Serviço', 'Deseja marcar este serviço como concluído?', () => updateServiceItem(item.id, { status: 'concluido' }).catch((error) => alert(error.message)))} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Concluir serviço</button>}
+                      {isAdmin && item.status === 'concluido' && <button onClick={() => handleConfirmAction('Reabrir Serviço', 'Deseja reabrir este serviço? O status voltará para Em Execução.', () => updateServiceItem(item.id, { status: 'em_execucao' }).catch((error) => alert(error.message)))} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700">Reabrir</button>}
+                      {(isAdmin || canExecute) && (
+                        <div className="flex gap-2">
+                          <label className="inline-flex items-center gap-1 border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold cursor-pointer text-slate-700 bg-white hover:bg-slate-50 transition shadow-sm">
+                            <Paperclip className="w-3.5 h-3.5" />
+                            Anexar Arquivo
+                            <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => handleItemUpload(item.id, e.target.files?.[0])} />
+                          </label>
+                          <label className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs font-bold cursor-pointer text-blue-700 hover:bg-blue-100 transition shadow-sm">
+                            <Camera className="w-3.5 h-3.5" />
+                            Tirar Foto
+                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleItemUpload(item.id, e.target.files?.[0])} />
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {canEdit && (
+                  {(isAdmin || canExecute) && (
                     <div className="border-t border-slate-200 bg-slate-50 p-3">
                       <p className="text-xs font-bold text-slate-700 mb-2">Comunicação e observações</p>
                       {(item.observacoes || []).length > 0 && <div className="mb-3 max-h-36 space-y-2 overflow-y-auto">{item.observacoes.map((comment: any) => <div key={comment.id} className="rounded-lg border border-slate-200 bg-white p-2 text-xs"><p className="font-bold text-slate-800">{comment.autorNome} <span className="font-normal text-slate-400">· {formatDateTimeBR(comment.createdAt)}</span></p><p className="mt-1 whitespace-pre-wrap text-slate-600">{comment.texto}</p></div>)}</div>}
@@ -233,10 +277,35 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
                     )}
                   </div>
                   {showUploadFor === doc.id && (
-                    <form onSubmit={(e) => handleUpload(doc.id, e)} className="p-3 bg-white space-y-2 flex flex-col sm:flex-row gap-2 items-end">
-                      <input name="file" type="file" required className="flex-1 text-xs" />
-                      <input name="comentario" placeholder="Comentário da alteração" className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
-                      <button type="submit" disabled={loading} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer">{loading ? 'Enviando...' : 'Enviar'}</button>
+                    <form onSubmit={(e) => handleUpload(doc.id, e)} className="p-4 bg-white space-y-3 border-b border-slate-200 rounded-b-xl">
+                      <div className="flex flex-col sm:flex-row gap-3 items-center">
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          {!selectedFiles[doc.id] ? (
+                            <>
+                              <label className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 cursor-pointer transition shadow-sm">
+                                <Paperclip className="w-4 h-4" /> Arquivo
+                                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { if(e.target.files?.[0]) setSelectedFiles(prev => ({...prev, [doc.id]: e.target.files![0]})); }} />
+                              </label>
+                              <label className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold text-blue-700 cursor-pointer transition shadow-sm">
+                                <Camera className="w-4 h-4" /> Tirar Foto
+                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if(e.target.files?.[0]) setSelectedFiles(prev => ({...prev, [doc.id]: e.target.files![0]})); }} />
+                              </label>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2 bg-slate-100 px-4 py-2.5 rounded-lg border border-slate-200 w-full sm:w-auto">
+                              <FileText className="w-4 h-4 text-slate-500" />
+                              <span className="text-xs text-slate-700 font-bold truncate max-w-[150px]">{selectedFiles[doc.id].name}</span>
+                              <button type="button" onClick={() => setSelectedFiles(prev => { const n = {...prev}; delete n[doc.id]; return n; })} className="text-slate-400 hover:text-red-500 ml-2">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <input name="comentario" placeholder="Comentário da alteração" required className="flex-1 w-full px-4 py-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
+                        <button type="submit" disabled={loading || !selectedFiles[doc.id]} className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm">
+                          {loading ? 'Enviando...' : 'Enviar Versão'}
+                        </button>
+                      </div>
                     </form>
                   )}
                   <div className="divide-y divide-slate-100">
@@ -392,6 +461,35 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
             </div>
           </form>
         </Modal>
+      )}
+
+      {confirmAction && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">{confirmAction.title}</h3>
+            <p className="text-sm text-slate-600 mb-6">{confirmAction.message}</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  confirmAction.action();
+                  setConfirmAction(null);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

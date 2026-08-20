@@ -24,8 +24,10 @@ export const VesselsList: React.FC<VesselsListProps> = ({
 
   // New Vessel Form State
   const [newNome, setNewNome] = useState('');
+  const [newClienteId, setNewClienteId] = useState(clients[0]?.id || '');
   const [newClienteNome, setNewClienteNome] = useState(clients[0]?.nome || '');
   const [newTipo, setNewTipo] = useState('Empurrador Fluvial');
+  const [customTipo, setCustomTipo] = useState('');
   const [newRegistro, setNewRegistro] = useState('');
   const [newCertificadora, setNewCertificadora] = useState<Certificadora>('Amazon Naval');
   const [newDescricao, setNewDescricao] = useState('');
@@ -45,20 +47,27 @@ export const VesselsList: React.FC<VesselsListProps> = ({
     e.preventDefault();
     if (!newNome.trim()) return;
 
-    onCreateVessel({
-      nome: newNome,
-      clienteNome: newClienteNome,
-      tipo: newTipo,
-      registro: newRegistro || 'PA-00000-X',
-      certificadoraPrincipal: newCertificadora,
-      descricao: newDescricao,
-      status: 'aberta',
-    }, false);
+    const finalTipo = newTipo === 'Outro' ? customTipo || 'Outro' : newTipo;
+
+    onCreateVessel(
+      {
+        nome: newNome,
+        clienteId: newClienteId || undefined,
+        clienteNome: newClienteNome,
+        tipo: finalTipo,
+        registro: newRegistro || 'PA-00000-X',
+        certificadoraPrincipal: newCertificadora,
+        descricao: newDescricao,
+        status: 'aberta',
+      },
+      false
+    );
 
     setIsModalOpen(false);
     setNewNome('');
     setNewRegistro('');
     setNewDescricao('');
+    setCustomTipo('');
   };
 
   return (
@@ -175,45 +184,41 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                   <span>{v.nome}</span>
                   <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 transition" />
                 </h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">{v.clienteNome}</p>
-                <p className="text-xs text-slate-600 font-semibold mt-1 bg-slate-50 px-2 py-1 rounded inline-block">
-                  {v.tipo}
-                </p>
+                <p className="text-xs text-slate-500 font-medium">{v.clienteNome}</p>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{v.tipo || 'Sem tipo informado'}</p>
               </div>
 
-              {/* Certifying Body */}
-              <div className="flex items-center gap-2 text-xs text-slate-600 border-t border-slate-100 pt-3">
-                <Award className="w-4 h-4 text-indigo-600" />
-                <span>Certificadora: <strong className="text-slate-800">{v.certificadoraPrincipal}</strong></span>
-              </div>
+              {/* Financial & Tasks Summary */}
+              <div className="space-y-2 pt-3 border-t border-slate-100 text-xs">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Certificadora:</span>
+                  <span className="font-semibold text-slate-800">{v.certificadoraPrincipal}</span>
+                </div>
 
-              {/* Financial Bar */}
-              <div className="bg-slate-50 p-3 rounded-xl space-y-2 border border-slate-100">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-slate-500">Valor Total:</span>
-                  <span className="font-mono font-bold text-slate-900">
-                    R$ {v.valorTotal.toLocaleString('pt-BR')}
-                  </span>
+                <div className="flex items-center justify-between text-slate-600">
+                  <span>Valor Contratado:</span>
+                  <span className="font-mono font-bold text-slate-900">R$ {v.valorTotal.toLocaleString('pt-BR')}</span>
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      percentReceived >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
-                    }`}
-                    style={{ width: `${percentReceived}%` }}
-                  />
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span>Recebido ({percentReceived}%)</span>
+                    <span className="font-mono text-emerald-700">R$ {v.valorRecebido.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                      style={{ width: `${percentReceived}%` }}
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-emerald-700 font-semibold">
-                    Recebido: R$ {v.valorRecebido.toLocaleString('pt-BR')} ({percentReceived}%)
-                  </span>
-                  <span className="text-slate-500 font-mono">
-                    Falta: R$ {remainingBalance.toLocaleString('pt-BR')}
-                  </span>
-                </div>
+                {remainingBalance > 0 && (
+                  <div className="text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/60 font-medium">
+                    Saldo pendente: R$ {remainingBalance.toLocaleString('pt-BR')}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -221,19 +226,19 @@ export const VesselsList: React.FC<VesselsListProps> = ({
       </div>
 
       {filteredVessels.length === 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
-          <Ship className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="font-bold text-base text-slate-700">Nenhuma embarcação encontrada</p>
-          <p className="text-xs text-slate-400 mt-1">Ajuste os filtros de busca ou cadastre uma nova embarcação.</p>
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500 shadow-sm">
+          <Ship className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+          <p className="font-bold text-slate-700">Nenhuma embarcação encontrada</p>
+          <p className="text-xs text-slate-400 mt-1">Ajuste os filtros de busca para visualizar embarcações.</p>
         </div>
       )}
 
-      {/* Modal Cadastrar Nova Embarcação */}
+      {/* Modal Novo Cadastro */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-lg font-bold text-slate-900">Cadastrar Nova Embarcação</h2>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-bold text-slate-900">Cadastrar Nova Embarcação</h3>
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 font-bold"
@@ -257,25 +262,60 @@ export const VesselsList: React.FC<VesselsListProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Cliente / Armador *</label>
-                  <input
-                    type="text"
+                  <label className="block font-bold text-slate-700 mb-1">Cliente / Armador (Dono) *</label>
+                  <select
                     required
-                    placeholder="Ex: Rogelio / Armador OPUS"
-                    value={newClienteNome}
-                    onChange={(e) => setNewClienteNome(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                    value={newClienteId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setNewClienteId(selId);
+                      const selectedClient = clients.find((c) => c.id === selId);
+                      if (selectedClient) {
+                        setNewClienteNome(selectedClient.nome);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium text-slate-900 bg-white"
+                  >
+                    <option value="">-- Selecione o Cliente --</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Tipo de Embarcação</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Empurrador, Balsa, Rebocador"
+                  <label className="block font-bold text-slate-700 mb-1">Tipo de Embarcação *</label>
+                  <select
+                    required
                     value={newTipo}
                     onChange={(e) => setNewTipo(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
+                  >
+                    <option value="Empurrador Fluvial">Empurrador Fluvial</option>
+                    <option value="Balsa Graneleira">Balsa Graneleira</option>
+                    <option value="Balsa Tanque">Balsa Tanque</option>
+                    <option value="Balsa Carga Geral">Balsa Carga Geral</option>
+                    <option value="Balsa Coberta / DDL">Balsa Coberta / DDL</option>
+                    <option value="Rebocador">Rebocador</option>
+                    <option value="Lancha / Passageiros">Lancha / Passageiros</option>
+                    <option value="Catamarã">Catamarã</option>
+                    <option value="Flutuante / Terminal">Flutuante / Terminal</option>
+                    <option value="Draga / Chata">Draga / Chata</option>
+                    <option value="Ferry Boat">Ferry Boat</option>
+                    <option value="Outro">Outro tipo...</option>
+                  </select>
+                  {newTipo === 'Outro' && (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Especifique o tipo..."
+                      value={customTipo}
+                      onChange={(e) => setCustomTipo(e.target.value)}
+                      className="w-full mt-2 px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-medium"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -295,7 +335,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                   <select
                     value={newCertificadora}
                     onChange={(e) => setNewCertificadora(e.target.value as Certificadora)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
                   >
                     <option value="Amazon Naval">Amazon Naval</option>
                     <option value="Auto Ship">Auto Ship</option>

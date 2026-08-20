@@ -697,14 +697,28 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                     }}
                     className="w-full px-3 py-2 border rounded-lg text-xs font-bold min-h-28"
                   >
-                    {vessels
-                      .filter((v) => v.clienteId === clienteId)
-                      .map((v) => (
+                    {(() => {
+                      const selClient = clients.find((c) => c.id === clienteId);
+                      const matchingVessels = vessels.filter(
+                        (v) => v.clienteId === clienteId || (selClient && v.clienteNome?.trim().toLowerCase() === selClient.nome?.trim().toLowerCase())
+                      );
+                      if (matchingVessels.length === 0) {
+                        return (
+                          <option value="" disabled className="text-slate-400">
+                            (Nenhuma embarcação cadastrada para este cliente)
+                          </option>
+                        );
+                      }
+                      return matchingVessels.map((v) => (
                         <option key={v.id} value={v.id}>
-                          {v.nome}
+                          {v.nome} ({v.tipo || 'Embarcação'})
                         </option>
-                      ))}
+                      ));
+                    })()}
                   </select>
+                  <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                    * Pressione Ctrl (ou Cmd) para selecionar mais de uma embarcação se a proposta abranger a frota do cliente.
+                  </p>
                 </div>
               )}
 

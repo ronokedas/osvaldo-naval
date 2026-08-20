@@ -36,6 +36,7 @@ import { ServiceOrderDetailView } from './components/ServiceOrderDetailView';
 import { RegistrationsView } from './components/RegistrationsView';
 import CommitmentsView from './components/CommitmentsView';
 import { RenewalsView } from './components/RenewalsView';
+import { NotificationsModal } from './components/NotificationsModal';
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 const TAB_PATHS: TabType[] = [
@@ -124,6 +125,7 @@ export default function App() {
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
 
   // Sincronizar activeTab com a URL para navegação visível no navegador
   React.useEffect(() => {
@@ -352,6 +354,19 @@ export default function App() {
 
       const createdTasks = await Promise.all(newTasks.map((task) => apiPost('/api/tasks', task)));
       setTasks((prev) => [...createdTasks.map((task) => normalizeTask(task, new Map([[createdVessel.id, createdVessel]]))), ...prev]);
+    }
+  };
+
+  const handleUpdateVessel = async (vesselId: string, updatedFields: Partial<Vessel>) => {
+    try {
+      const res = await apiPut(`/api/vessels/${vesselId}`, updatedFields);
+      const updated = normalizeVessel(res);
+      setVessels((prev) => prev.map((v) => (v.id === vesselId ? updated : v)));
+      if (selectedVessel && selectedVessel.id === vesselId) {
+        setSelectedVessel(updated);
+      }
+    } catch (e) {
+      console.error('Error updating vessel', e);
     }
   };
 
@@ -819,6 +834,7 @@ export default function App() {
         }}
         onToggleProfile={() => setIsProfileModalOpen(true)}
         onLogout={handleLogout}
+        onOpenNotifications={() => setIsNotificationsModalOpen(true)}
       />
 
       {/* Main App Body */}
@@ -880,6 +896,9 @@ export default function App() {
 
           {activeTab === 'renewals' && (
             <RenewalsView
+              vessels={vessels}
+              clients={clients}
+              onUpdateProposal={handleUpdateProposal}
               onNavigate={(tab, item) => {
                 setActiveTab(tab as TabType);
                 if (item) setSelectedProposalForView(item);
@@ -1012,12 +1031,14 @@ export default function App() {
       {selectedVessel && (
         <VesselDetailModal
           vessel={selectedVessel}
+          clients={clients}
           tasks={tasks}
           proposals={proposals}
           financialEntries={financialEntries}
           users={users}
           currentUser={currentUser}
           onClose={() => setSelectedVessel(null)}
+          onUpdateVessel={handleUpdateVessel}
           onUpdateVesselStatus={handleUpdateVesselStatus}
           onUpdateTaskStatus={handleUpdateTaskStatus}
           onCreateTask={handleCreateTask}
@@ -1038,6 +1059,28 @@ export default function App() {
           onSaveProfile={handleUpdateProfile}
         />
       )}
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        isOpen={isNotificationsModalOpen}
+        onClose={() => setIsNotificationsModalOpen(false)}
+        notifications={notifications}
+        criticalPendings={criticalPendings}
+        onNavigateToOS={(osId) => {
+          setSelectedOsId(osId);
+          setActiveTab('service-orders');
+          setIsNotificationsModalOpen(false);
+        }}
+        onNavigateToCommitment={() => {
+          setActiveTab('commitments');
+          setIsNotificationsModalOpen(false);
+        }}
+        onMarkAsRead={async (id) => {
+          const updated = notifications.map((n) => (n.id === id ? { ...n, lida: true } : n));
+          setNotifications(updated);
+          await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
+        }}
+      />
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav
