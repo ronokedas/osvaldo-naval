@@ -161,12 +161,13 @@ export interface Proposal {
 
 export interface FinancialEntry {
   id: string;
-  embarcacaoId: string;
+  embarcacaoId?: string;
   embarcacaoNome: string;
   clienteNome?: string;
   data: string;
   valor: number;
   tipo: 'sinal' | 'parcela' | 'quitacao' | 'despesa';
+  natureza?: 'entrada' | 'saida';
   formaPagamento: 'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque' | 'Dinheiro';
   observacao: string;
   lancadoPorNome: string;
@@ -176,6 +177,32 @@ export interface FinancialEntry {
   notaFiscalDataEmissao?: string;
   reciboNumero?: string;
   reciboEmitidoEm?: string;
+  contaReceberId?: string;
+  contaPagarId?: string;
+  fornecedorId?: string;
+  categoriaId?: string;
+  competencia?: string;
+  vencimento?: string;
+  fornecedorNome?: string;
+  categoriaNome?: string;
+  isStorno?: boolean;
+  stornoReason?: string;
+}
+
+export interface AccountPayable {
+  id: string;
+  fornecedorId?: string;
+  fornecedorNome?: string;
+  categoriaId?: string;
+  categoriaNome?: string;
+  embarcacaoId?: string;
+  descricao: string;
+  valorOriginal: number;
+  valorPago?: number;
+  saldo?: number;
+  vencimento?: string;
+  competencia?: string;
+  status: 'pendente' | 'parcial' | 'pago' | 'cancelado';
 }
 
 export interface Protocol {

@@ -113,6 +113,13 @@
       "when": 1785892000000,
       "tag": "0021_financial_refactor",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785893000000,
+      "tag": "0022_financial_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -393,6 +393,9 @@ export default function App() {
         // Refresh proposals
         const pRes = await fetch('/api/proposals');
         if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
+        const [fRefresh, vRefresh] = await Promise.all([fetch('/api/finance'), fetch('/api/vessels')]);
+        if (fRefresh.ok) setFinancialEntries((await fRefresh.json()).map(normalizeFinancialEntry));
+        if (vRefresh.ok) setVessels((await vRefresh.json()).map(normalizeVessel));
 
         // Redirect to OS scheduling
         if (result.os?.id && result.redirecionarAgendamento) {
@@ -554,7 +557,7 @@ export default function App() {
     const vessel = vessels.find((v) => v.id === paymentData.embarcacaoId);
     const newEntry: FinancialEntry = {
       id: '',
-      embarcacaoId: paymentData.embarcacaoId || '',
+      embarcacaoId: paymentData.embarcacaoId,
       embarcacaoNome: paymentData.embarcacaoNome || '',
       clienteNome: vessel?.clienteNome || paymentData.clienteNome || '',
       data: paymentData.data || new Date().toISOString().split('T')[0],
@@ -568,10 +571,17 @@ export default function App() {
       notaFiscalNome: paymentData.notaFiscalNome,
       notaFiscalDataEmissao: paymentData.notaFiscalDataEmissao,
       reciboNumero: paymentData.reciboNumero || `REC-${Date.now().toString().slice(-6)}`,
+      natureza: paymentData.natureza || (paymentData.tipo === 'despesa' ? 'saida' : 'entrada'),
+      fornecedorId: paymentData.fornecedorId,
+      categoriaId: paymentData.categoriaId,
+      competencia: paymentData.competencia,
+      vencimento: paymentData.vencimento,
     };
 
     const createdEntry = normalizeFinancialEntry(await apiPost('/api/finance', newEntry));
     setFinancialEntries((prev) => [createdEntry, ...prev]);
+
+    if (createdEntry.natureza === 'saida' || createdEntry.tipo === 'despesa') return;
 
     // Update vessel's received total
     setVessels((prevVessels) =>

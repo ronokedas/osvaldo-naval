@@ -18,6 +18,7 @@ import settingsRoutes from "./src/server/routes/settings.js";
 import uploadsRoutes from "./src/server/routes/uploads.js";
 import serviceOrdersRoutes from "./src/server/routes/service-orders.js";
 import receivablesRoutes from "./src/server/routes/receivables.js";
+import payablesRoutes from "./src/server/routes/payables.js";
 import commitmentsRoutes from "./src/server/routes/commitments.js";
 import certifiersRoutes from "./src/server/routes/certifiers.js";
 import servicesRoutes from "./src/server/routes/services.js";
@@ -93,6 +94,7 @@ async function startServer() {
   app.use("/api/upload", uploadsRoutes);
   app.use("/api/service-orders", serviceOrdersRoutes);
   app.use("/api/receivables", receivablesRoutes);
+  app.use("/api/payables", payablesRoutes);
   app.use("/api/commitments", commitmentsRoutes);
   app.use("/api/certifiers", certifiersRoutes);
   app.use("/api/services", servicesRoutes);

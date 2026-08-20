@@ -118,6 +118,7 @@ router.post("/:id/payments", requireFinance, async (req: any, res: any) => {
       data: data.data || new Date().toISOString().split("T")[0],
       valor: valor.toString(),
       tipo: "parcela",
+      natureza: "entrada",
       formaPagamento: data.formaPagamento || "PIX",
       observacao: data.observacao || `Pagamento vinculado à proposta ${prop?.numero || ""}`,
       lancadoPorNome: req.user?.nome || "Sistema",

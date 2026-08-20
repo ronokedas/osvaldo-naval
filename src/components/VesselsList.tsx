@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { Vessel, Client, Certificadora } from '../types';
 import { Ship, Search, Plus, Filter, ArrowRight, DollarSign, Award, CheckCircle2 } from 'lucide-react';
-import { CurrencyInput } from './CurrencyInput';
 
 interface VesselsListProps {
   vessels: Vessel[];
   clients: Client[];
   onSelectVessel: (vessel: Vessel) => void;
-  onCreateVessel: (vesselData: Partial<Vessel>, generateTasks: boolean) => void;
+  onCreateVessel: (vesselData: Partial<Vessel>, generateTasks?: boolean) => void;
   canCreate: boolean;
 }
 
@@ -29,10 +28,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   const [newTipo, setNewTipo] = useState('Empurrador Fluvial');
   const [newRegistro, setNewRegistro] = useState('');
   const [newCertificadora, setNewCertificadora] = useState<Certificadora>('Amazon Naval');
-  const [newValorTotal, setNewValorTotal] = useState(18500);
-  const [newValorSinal, setNewValorSinal] = useState(5000);
   const [newDescricao, setNewDescricao] = useState('');
-  const [generateStandardTasks, setGenerateStandardTasks] = useState(true);
 
   const filteredVessels = vessels.filter((v) => {
     const matchesSearch =
@@ -55,18 +51,14 @@ export const VesselsList: React.FC<VesselsListProps> = ({
       tipo: newTipo,
       registro: newRegistro || 'PA-00000-X',
       certificadoraPrincipal: newCertificadora,
-      valorTotal: newValorTotal,
-      valorSinal: newValorSinal,
-      valorRecebido: newValorSinal,
       descricao: newDescricao,
       status: 'aberta',
-    }, generateStandardTasks);
+    }, false);
 
     setIsModalOpen(false);
     setNewNome('');
     setNewRegistro('');
     setNewDescricao('');
-    setGenerateStandardTasks(true);
   };
 
   return (
@@ -315,25 +307,6 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Valor Total Estimado (R$)</label>
-                  <CurrencyInput
-                    value={newValorTotal}
-                    onValueChange={setNewValorTotal}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Sinal de Entrada (R$)</label>
-                  <CurrencyInput
-                    value={newValorSinal}
-                    onValueChange={setNewValorSinal}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
-                  />
-                </div>
-              </div>
-
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Observações do Escopo Inicial</label>
                 <textarea
@@ -343,19 +316,6 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                   onChange={(e) => setNewDescricao(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
-              </div>
-
-              <div className="flex items-center gap-2 p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
-                <input
-                  type="checkbox"
-                  id="generateTasks"
-                  checked={generateStandardTasks}
-                  onChange={(e) => setGenerateStandardTasks(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                />
-                <label htmlFor="generateTasks" className="text-xs font-bold text-blue-900 cursor-pointer select-none">
-                  Gerar pacote padrão de tarefas automaticamente (Ultrassom, ART, Desenho, Homologação)
-                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { financial_entries, vessels, financial_attachments, notifications, users, clients } from "../../db/schema.js";
+import { financial_entries, vessels, financial_attachments, notifications, users, clients, financial_categories, financial_suppliers } from "../../db/schema.js";
 import { eq, desc, sql, and, or } from "drizzle-orm";
 import { requireFinanceAccess, requireAdminAccess } from "../middleware/requireFinanceRole.js";
+import { requireAuth } from "../auth.js";
 import { serializeFinancialEntry } from "../serializers.js";
 import { 
   calculateFinancialStatus, 
@@ -13,6 +14,7 @@ import {
 } from "../../utils/financial-utils.js";
 
 const router = Router();
+router.use(requireAuth);
 
 // GET - Listar todos os lançamentos financeiros
 router.get("/", requireFinanceAccess, async (req, res) => {
@@ -116,6 +118,16 @@ router.post("/", requireFinanceAccess, async (req, res) => {
     }
     
     const result = await db.transaction(async (tx) => {
+      let categoriaId = data.categoriaId || null;
+      let fornecedorId = data.fornecedorId || null;
+      if (!categoriaId && data.categoriaNome) {
+        const category = (await tx.insert(financial_categories).values({ nome: String(data.categoriaNome), natureza: data.natureza === "saida" ? "despesa" : "receita" }).onConflictDoNothing().returning())[0];
+        categoriaId = category?.id || (await tx.select().from(financial_categories).where(eq(financial_categories.nome, String(data.categoriaNome))))[0]?.id || null;
+      }
+      if (!fornecedorId && data.fornecedorNome) {
+        const supplier = (await tx.insert(financial_suppliers).values({ nome: String(data.fornecedorNome) }).returning())[0];
+        fornecedorId = supplier?.id || null;
+      }
       const inserted = await tx.insert(financial_entries).values({
         embarcacaoId: data.embarcacaoId,
         embarcacaoNome: data.embarcacaoNome,
@@ -136,6 +148,12 @@ router.post("/", requireFinanceAccess, async (req, res) => {
         propostaId: data.propostaId,
         osId: data.osId,
         contaReceberId: data.contaReceberId,
+        contaPagarId: data.contaPagarId,
+        categoriaId,
+        fornecedorId,
+        natureza: data.natureza || (data.tipo === "despesa" ? "saida" : "entrada"),
+        competencia: data.competencia,
+        vencimento: data.vencimento,
         isStorno: data.isStorno || false,
         stornoReason: data.stornoReason,
         originalPaymentId: data.originalPaymentId,
@@ -175,6 +193,15 @@ router.post("/", requireFinanceAccess, async (req, res) => {
         await tx.update(financial_entries)
           .set({ notificationSent: true })
           .where(eq(financial_entries.id, newEntry.id));
+      }
+
+      if (newEntry.embarcacaoId) {
+        await tx.execute(sql`
+          UPDATE vessels SET valor_recebido = (
+            SELECT COALESCE(SUM(valor), 0) FROM financial_entries
+            WHERE embarcacao_id = ${newEntry.embarcacaoId} AND natureza = 'entrada' AND is_storno = FALSE
+          ) WHERE id = ${newEntry.embarcacaoId}
+        `);
       }
       
       return newEntry;
@@ -257,6 +284,9 @@ router.put("/:id", requireFinanceAccess, async (req, res) => {
     if (data.notaFiscalNumero !== undefined) updateData.notaFiscalNumero = data.notaFiscalNumero;
     if (data.notaFiscalNome !== undefined) updateData.notaFiscalNome = data.notaFiscalNome;
     if (data.notaFiscalUrl !== undefined) updateData.notaFiscalUrl = data.notaFiscalUrl;
+    if (data.natureza !== undefined) updateData.natureza = data.natureza;
+    if (data.competencia !== undefined) updateData.competencia = data.competencia;
+    if (data.vencimento !== undefined) updateData.vencimento = data.vencimento;
     if (data.nfSeries !== undefined) updateData.nfSeries = data.nfSeries;
     if (data.issuerId !== undefined) updateData.issuerId = data.issuerId;
     if (data.isStorno !== undefined) updateData.isStorno = data.isStorno;

@@ -219,10 +219,51 @@ export const financial_entries = pgTable("financial_entries", {
   propostaId: uuid("proposta_id").references(() => proposals.id),
   osId: uuid("os_id").references(() => service_orders.id),
   contaReceberId: uuid("conta_receber_id").references(() => accounts_receivable.id),
+  contaPagarId: uuid("conta_pagar_id").references(() => accounts_payable.id),
+  categoriaId: uuid("categoria_id").references(() => financial_categories.id),
+  fornecedorId: uuid("fornecedor_id").references(() => financial_suppliers.id),
+  natureza: text("natureza").notNull().default("entrada"),
+  competencia: text("competencia"),
+  vencimento: text("vencimento"),
   isStorno: boolean("is_storno").default(false),
   stornoReason: text("storno_reason"),
   originalPaymentId: uuid("original_payment_id").references(() => financial_entries.id),
   notificationSent: boolean("notification_sent").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const financial_categories = pgTable("financial_categories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nome: text("nome").notNull().unique(),
+  natureza: text("natureza").notNull().default("despesa"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const financial_suppliers = pgTable("financial_suppliers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nome: text("nome").notNull(),
+  documento: text("documento"),
+  email: text("email"),
+  telefone: text("telefone"),
+  observacoes: text("observacoes"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const accounts_payable = pgTable("accounts_payable", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fornecedorId: uuid("fornecedor_id").references(() => financial_suppliers.id),
+  categoriaId: uuid("categoria_id").references(() => financial_categories.id),
+  embarcacaoId: uuid("embarcacao_id").references(() => vessels.id),
+  descricao: text("descricao").notNull(),
+  valorOriginal: decimal("valor_original", { precision: 12, scale: 2 }).default("0"),
+  vencimento: text("vencimento"),
+  competencia: text("competencia"),
+  status: text("status").notNull().default("pendente"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

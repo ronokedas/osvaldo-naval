@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
 import { Vessel, FinancialEntry, User, SignatureConfig, LogoConfig } from '../types';
 import {
@@ -45,6 +45,15 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedReceiptEntry, setSelectedReceiptEntry] = useState<FinancialEntry | null>(null);
   const [attachNfModalEntry, setAttachNfModalEntry] = useState<FinancialEntry | null>(null);
+  const [financeTab, setFinanceTab] = useState<'resumo' | 'pagar'>('resumo');
+  const [payables, setPayables] = useState<any[]>([]);
+  const [payableForm, setPayableForm] = useState({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' });
+
+  const loadPayables = async () => {
+    const response = await fetch('/api/payables');
+    if (response.ok) setPayables(await response.json());
+  };
+  useEffect(() => { if (financeTab === 'pagar') loadPayables(); }, [financeTab]);
 
   // Modal Form State (New Entry)
   const [selectedVesselId, setSelectedVesselId] = useState(vessels[0]?.id || '');
@@ -54,6 +63,8 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
   const [payObs, setPayObs] = useState('');
   const [payNfNumero, setPayNfNumero] = useState('');
   const [payNfFile, setPayNfFile] = useState<File | null>(null);
+  const [payFornecedorNome, setPayFornecedorNome] = useState('');
+  const [payCategoriaNome, setPayCategoriaNome] = useState('Administrativo');
 
   // Attach NF Quick Modal Form State
   const [nfNumInput, setNfNumInput] = useState('');
@@ -72,15 +83,23 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       (e.notaFiscalNumero && e.notaFiscalNumero.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleCreatePaymentSubmit = (e: React.FormEvent) => {
+  const handleCreatePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (payValor <= 0) return;
 
     const vessel = vessels.find((v) => v.id === selectedVesselId);
+    let uploadedNfUrl: string | undefined;
+    if (payNfFile) {
+      const form = new FormData();
+      form.append('file', payNfFile);
+      const upload = await fetch('/api/upload', { method: 'POST', body: form });
+      if (!upload.ok) return;
+      uploadedNfUrl = (await upload.json()).url;
+    }
 
     onAddPayment({
-      embarcacaoId: selectedVesselId,
-      embarcacaoNome: vessel ? vessel.nome : 'Embarcação',
+      embarcacaoId: payTipo === 'despesa' ? undefined : selectedVesselId || undefined,
+      embarcacaoNome: vessel ? vessel.nome : 'Despesa da empresa',
       clienteNome: vessel ? vessel.clienteNome : '',
       valor: payValor,
       tipo: payTipo,
@@ -89,23 +108,35 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       lancadoPorNome: currentUser.nome,
       notaFiscalNumero: payNfNumero || undefined,
       notaFiscalNome: payNfFile ? payNfFile.name : payNfNumero ? `NF_${payNfNumero}.pdf` : undefined,
-      notaFiscalUrl: payNfFile || payNfNumero ? '#' : undefined,
+      notaFiscalUrl: uploadedNfUrl || (payNfNumero ? undefined : undefined),
+      natureza: payTipo === 'despesa' ? 'saida' : 'entrada',
+      fornecedorNome: payTipo === 'despesa' ? payFornecedorNome || undefined : undefined,
+      categoriaNome: payTipo === 'despesa' ? payCategoriaNome : undefined,
     });
 
     setIsModalOpen(false);
     setPayObs('');
     setPayNfNumero('');
     setPayNfFile(null);
+    setPayFornecedorNome('');
   };
 
-  const handleSaveNfSubmit = (e: React.FormEvent) => {
+  const handleSaveNfSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!attachNfModalEntry || !onUpdatePayment) return;
 
+    let uploadedUrl = attachNfModalEntry.notaFiscalUrl;
+    if (nfFileInput) {
+      const form = new FormData();
+      form.append('file', nfFileInput);
+      const upload = await fetch('/api/upload', { method: 'POST', body: form });
+      if (!upload.ok) return;
+      uploadedUrl = (await upload.json()).url;
+    }
     onUpdatePayment(attachNfModalEntry.id, {
       notaFiscalNumero: nfNumInput || undefined,
       notaFiscalNome: nfFileInput ? nfFileInput.name : attachNfModalEntry.notaFiscalNome || `NF_${nfNumInput}.pdf`,
-      notaFiscalUrl: '#',
+      notaFiscalUrl: uploadedUrl,
     });
 
     setAttachNfModalEntry(null);
@@ -189,6 +220,22 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           </button>
         </div>
       </div>
+
+      <div className="flex gap-2 bg-white p-2 rounded-xl border border-slate-200 w-fit">
+        <button onClick={() => setFinanceTab('resumo')} className={`px-4 py-2 rounded-lg text-xs font-bold ${financeTab === 'resumo' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>Resumo e lançamentos</button>
+        <button onClick={() => setFinanceTab('pagar')} className={`px-4 py-2 rounded-lg text-xs font-bold ${financeTab === 'pagar' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>Contas a pagar</button>
+      </div>
+
+      {financeTab === 'pagar' && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <h3 className="font-bold text-slate-900">Contas a pagar</h3>
+        <form className="grid grid-cols-1 md:grid-cols-4 gap-2" onSubmit={async (event) => { event.preventDefault(); const response = await fetch('/api/payables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payableForm) }); if (response.ok) { setPayableForm({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' }); loadPayables(); } }}>
+          <input required placeholder="Descrição da conta" value={payableForm.descricao} onChange={(e) => setPayableForm({ ...payableForm, descricao: e.target.value })} className="border rounded-lg px-3 py-2 text-xs" />
+          <CurrencyInput value={payableForm.valorOriginal} onValueChange={(value) => setPayableForm({ ...payableForm, valorOriginal: value })} className="border rounded-lg px-3 py-2 text-xs" />
+          <input type="date" value={payableForm.vencimento} onChange={(e) => setPayableForm({ ...payableForm, vencimento: e.target.value })} className="border rounded-lg px-3 py-2 text-xs" />
+          <button className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs font-bold">Cadastrar conta</button>
+        </form>
+        <div className="divide-y">{payables.map((account) => <div key={account.id} className="py-3 flex items-center justify-between gap-3 text-xs"><div><strong>{account.descricao}</strong><span className="block text-slate-500">Vencimento: {account.vencimento || 'não informado'} · {account.status}</span></div><div className="text-right"><strong>R$ {Number(account.saldo ?? account.valorOriginal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong><button className="block text-blue-600 font-bold" onClick={async () => { const raw = window.prompt('Valor da baixa', String(account.saldo ?? account.valorOriginal)); const valor = Number(raw); if (!valor) return; const response = await fetch(`/api/payables/${account.id}/payments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor }) }); if (response.ok) loadPayables(); }}>Baixar</button></div></div>)}</div>
+      </div>}
 
       {/* Financial Top Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
@@ -394,20 +441,28 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             </div>
 
             <form onSubmit={handleCreatePaymentSubmit} className="space-y-3">
-              <div>
+              {payTipo !== 'despesa' && <div>
                 <label className="block font-bold text-slate-700 mb-1">Embarcação *</label>
-                <select
-                  value={selectedVesselId}
-                  onChange={(e) => setSelectedVesselId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-xs"
-                >
-                  {vessels.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.nome} ({v.clienteNome})
-                    </option>
-                  ))}
+                <select required value={selectedVesselId} onChange={(e) => setSelectedVesselId(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-xs">
+                  <option value="">Selecione a embarcação</option>
+                  {vessels.map((v) => <option key={v.id} value={v.id}>{v.nome} ({v.clienteNome})</option>)}
                 </select>
-              </div>
+              </div>}
+
+              {payTipo === 'despesa' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Fornecedor</label>
+                    <input value={payFornecedorNome} onChange={(e) => setPayFornecedorNome(e.target.value)} placeholder="Empresa ou pessoa" className="w-full px-3 py-2 border rounded-lg text-xs" />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Categoria</label>
+                    <select value={payCategoriaNome} onChange={(e) => setPayCategoriaNome(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-xs">
+                      {['Administrativo', 'Pessoal', 'Taxas e impostos', 'Certificadora', 'Viagem e deslocamento', 'Materiais', 'Outros'].map((category) => <option key={category}>{category}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Valor (R$) *</label>
