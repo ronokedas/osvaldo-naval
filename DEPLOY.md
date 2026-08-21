@@ -6,7 +6,7 @@ Use um repositório GitHub **privado**: o backup contém dados do sistema.
 Na pasta local do projeto:
 ```bash
 New-Item -ItemType Directory -Force backups/deploy | Out-Null
-docker compose exec -T postgres pg_dump -U nautilus_user -d nautilus_db > backups/deploy/database.sql
+cmd /c "docker compose exec -T postgres pg_dump -U nautilus_user -d nautilus_db > backups\\deploy\\database.sql"
 tar -czf backups/deploy/uploads.tar.gz uploads
 ```
 
@@ -38,3 +38,9 @@ sudo docker compose start app
 Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada novo commit.
 
 
+
+ver se tá ok:
+
+
+sudo docker compose ps
+curl -fsS http://127.0.0.1:3000/healthz && echo ONLINE
