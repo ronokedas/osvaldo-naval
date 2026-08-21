@@ -1,22 +1,23 @@
 # Migração completa do Nautilus para outro VPS
 
-Use um repositório GitHub privado. O backup contém dados do sistema. Faça o backup no computador local e envie código, banco e uploads ao GitHub antes de preparar o novo VPS.
+Use um repositório GitHub privado. O backup contém dados do sistema. O VPS antigo e o novo são Linux; execute tudo nos consoles SSH.
 
-## 1. Gerar e enviar o backup pelo Windows
+## 1. Gerar o backup no VPS antigo e enviar ao GitHub
 
-Na pasta local do projeto, em PowerShell:
+No console SSH do VPS antigo:
 
-```powershell
-New-Item -ItemType Directory -Force backups/deploy | Out-Null
-cmd /c "docker compose exec -T postgres pg_dump -U nautilus_user -d nautilus_db > backups\deploy\database.sql"
+```bash
+cd ~/osvaldo-naval
+mkdir -p backups/deploy
+sudo docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > backups/deploy/database.sql
 tar -czf backups/deploy/uploads.tar.gz uploads
-git add .
+git add -u
 git add -f backups/deploy/database.sql backups/deploy/uploads.tar.gz
 git commit -m "Backup completo para migracao"
 git push origin main
 ```
 
-O uso de `cmd /c` evita que o PowerShell grave o SQL em UTF-16. Não envie o arquivo `.env` ao GitHub.
+O redirecionamento Linux mantém o SQL em UTF-8. Não envie o arquivo `.env` ao GitHub. O VPS antigo precisa de autenticação para fazer `git push`.
 
 ## 2. Preparar o novo VPS
 
@@ -60,7 +61,7 @@ sudo docker compose ps
 curl -fsS http://127.0.0.1:3000/healthz && echo ONLINE
 ```
 
-Se aparecer erro no SQL, pare e não execute o `DROP SCHEMA` novamente. Verifique se o backup foi gerado pelo comando `cmd /c` da etapa 1.
+Se aparecer erro no SQL, pare e não execute o `DROP SCHEMA` novamente. Verifique o backup no VPS antigo e gere-o novamente.
 
 ## 4. Configurar o Nginx e o domínio
 
