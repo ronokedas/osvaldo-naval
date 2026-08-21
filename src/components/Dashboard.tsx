@@ -252,6 +252,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return { label: 'Concluída', bg: 'bg-emerald-50 text-emerald-700 border-emerald-300' };
       case 'cancelada':
         return { label: 'Cancelada', bg: 'bg-slate-100 text-slate-700 border-slate-300' };
+      case 'sem_servico':
+        return { label: 'Sem Serviço', bg: 'bg-slate-100 text-slate-500 border-slate-200' };
       case 'aguardando_agendamento':
       case 'visita_agendada':
       default:
@@ -736,9 +738,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   const vesselOsList = serviceOrders.filter((os) => os.embarcacaoId === v.id || os.embarcacaoNome === v.nome);
                   const mainOs = vesselOsList[0];
                   
-                  const displayTitle = mainOs ? `OS ${mainOs.numero}` : 'Serviços pendentes (Tarefas antigas)';
-                  const displayResp = mainOs && mainOs.responsavelTecnicoId ? (users.find(u => u.id === mainOs.responsavelTecnicoId)?.nome || 'A definir') : 'A definir';
-                  const displayStatus = mainOs ? mainOs.status : 'pendente';
+                  const hasTasks = tasks.some(t => t.embarcacaoId === v.id);
+                  const displayTitle = mainOs 
+                    ? `OS ${mainOs.numero}` 
+                    : hasTasks ? 'Serviços pendentes (Tarefas)' : 'Sem serviço ativo';
+                    
+                  const respNome = mainOs && mainOs.responsavelTecnicoId ? (users.find(u => u.id === mainOs.responsavelTecnicoId)?.nome || 'A definir') : 'A definir';
+                  const displayResp = respNome === 'A definir' ? 'A definir' : respNome.split(' ')[0];
+                  
+                  const displayStatus = mainOs ? mainOs.status : (hasTasks ? 'pendente' : 'sem_servico');
                   const badge = getOsStatusBadge(displayStatus);
 
                   return (
@@ -757,7 +765,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {displayTitle}
                       </td>
                       <td className="py-3 pr-3 text-slate-800 whitespace-nowrap">
-                        {displayResp.split(' ')[0]}
+                        {displayResp}
                       </td>
                       <td className="py-3 pr-3 font-mono text-slate-600 whitespace-nowrap">
                         {v.status === 'concluida' ? 'Finalizada' : (mainOs?.dataConclusao ? formatDateBR(mainOs.dataConclusao) : 'Em andamento')}

@@ -549,32 +549,40 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {vessels.map((v) => {
-                const pending = v.valorTotal - v.valorRecebido;
-                const pct = v.valorTotal > 0 ? Math.round((v.valorRecebido / v.valorTotal) * 100) : 0;
+              {vessels.filter(v => v.valorTotal > 0 || v.valorRecebido > 0 || v.valorSinal > 0).length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
+                    Nenhuma embarcação com registro financeiro ativo no momento.
+                  </td>
+                </tr>
+              ) : (
+                vessels.filter(v => v.valorTotal > 0 || v.valorRecebido > 0 || v.valorSinal > 0).map((v) => {
+                  const pending = v.valorTotal - v.valorRecebido;
+                  const pct = v.valorTotal > 0 ? Math.round((v.valorRecebido / v.valorTotal) * 100) : 0;
 
-                return (
-                  <tr key={v.id} className="hover:bg-slate-50 transition">
-                    <td className="p-3 font-bold text-slate-900">{v.nome}</td>
-                    <td className="p-3 text-slate-600">{v.clienteNome}</td>
-                    <td className="p-3 text-right font-mono font-bold text-slate-900">
-                      R$ {v.valorTotal.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="p-3 text-right font-mono text-blue-800">
-                      R$ {v.valorSinal.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-emerald-700">
-                      R$ {v.valorRecebido.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-amber-700">
-                      R$ {pending.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className="font-mono text-xs font-bold text-slate-700">{pct}%</span>
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <tr key={v.id} className="hover:bg-slate-50 transition">
+                      <td className="p-3 font-bold text-slate-900">{v.nome}</td>
+                      <td className="p-3 text-slate-600">{v.clienteNome}</td>
+                      <td className="p-3 text-right font-mono font-bold text-slate-900">
+                        R$ {v.valorTotal.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-3 text-right font-mono text-blue-800">
+                        R$ {v.valorSinal.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-emerald-700">
+                        R$ {v.valorRecebido.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-3 text-right font-mono font-bold text-amber-700">
+                        R$ {pending.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="font-mono text-xs font-bold text-slate-700">{pct}%</span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
