@@ -5,7 +5,7 @@ Use um repositório GitHub **privado**: o backup contém dados do sistema.
 ## 1. Gerar backup completo local
 Na pasta local do projeto:
 ```bash
-mkdir -p backups/deploy
+New-Item -ItemType Directory -Force backups/deploy | Out-Null
 docker compose exec -T postgres pg_dump -U nautilus_user -d nautilus_db > backups/deploy/database.sql
 tar -czf backups/deploy/uploads.tar.gz uploads
 ```
