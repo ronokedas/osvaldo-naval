@@ -35,12 +35,11 @@ sudo docker compose start app
 
 
 
-Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada novo commit.
-
-
-
-ver se tá ok:
-
-
+## 4. Validar o VPS
+```bash
 sudo docker compose ps
 curl -fsS http://127.0.0.1:3000/healthz && echo ONLINE
+```
+
+Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada novo commit. Use a restauração somente quando quiser substituir os dados online pelos dados locais.
+
