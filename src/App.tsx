@@ -456,15 +456,6 @@ export default function App() {
         const [fRefresh, vRefresh] = await Promise.all([fetch('/api/finance'), fetch('/api/vessels')]);
         if (fRefresh.ok) setFinancialEntries((await fRefresh.json()).map(normalizeFinancialEntry));
         if (vRefresh.ok) setVessels((await vRefresh.json()).map(normalizeVessel));
-
-        // Redirect to OS scheduling
-        if (result.os?.id && result.redirecionarAgendamento) {
-          setSelectedOsId(result.os.id);
-          setActiveTab('service-orders');
-          const detRes = await fetch(`/api/service-orders/${result.os.id}`);
-          if (detRes.ok) setSelectedOsDetail(await detRes.json());
-          refreshOsList();
-        }
         return result;
       } else {
         const err = await res.json().catch(() => ({ error: 'Erro ao registrar aceite' }));
@@ -490,7 +481,7 @@ export default function App() {
       numero: num,
       ano: currentYear,
       dataEmissao: proposalData.dataEmissao || new Date().toLocaleDateString('pt-BR'),
-      destinatario: proposalData.destinatario || 'A/C: Cliente',
+      destinatario: proposalData.destinatario || 'Cliente',
       assunto: proposalData.assunto || 'Serviços de inspeção e desenhos técnicos.',
       prazoEntregaDias: proposalData.prazoEntregaDias || 10,
       observacoesGerais: proposalData.observacoesGerais || '',
@@ -1012,6 +1003,7 @@ export default function App() {
               onUpdateProposal={handleUpdateProposal}
               onFormalAcceptance={handleFormalAcceptance}
               onNavigateTab={setActiveTab}
+              onOpenOs={openOsDetail}
             />
           )}
 
@@ -1029,6 +1021,7 @@ export default function App() {
             <LazyFinancialView
               vessels={vessels}
               financialEntries={financialEntries}
+              clients={clients}
               currentUser={currentUser}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}

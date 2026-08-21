@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
-import { FinancialEntry, Vessel, SignatureConfig, LogoConfig } from '../types';
+import { FinancialEntry, Vessel, Client, SignatureConfig, LogoConfig } from '../types';
 import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
 import { generateReceiptPdf, downloadBlob } from '../utils/pdfGenerator';
@@ -9,6 +9,7 @@ import { numberToWords } from '../utils/numberToWords';
 interface PaymentReceiptModalProps {
   entry: FinancialEntry;
   vessel?: Vessel;
+  client?: Client;
   signatureConfig?: SignatureConfig;
   logoConfig?: LogoConfig;
   onClose: () => void;
@@ -17,6 +18,7 @@ interface PaymentReceiptModalProps {
 export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   entry,
   vessel,
+  client,
   signatureConfig,
   logoConfig,
   onClose,
@@ -31,7 +33,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
     let active = true;
     let objectUrl = '';
     setPdfLoading(true);
-    generateReceiptPdf(entry, logoConfig).then((blob) => {
+    generateReceiptPdf(entry, logoConfig, signatureConfig, client?.cnpjCpf).then((blob) => {
       if (!active) return;
       objectUrl = URL.createObjectURL(blob);
       setPdfUrl(objectUrl);
@@ -40,14 +42,14 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [entry, logoConfig]);
+  }, [entry, logoConfig, signatureConfig, client?.cnpjCpf]);
 
   const handlePrint = () => {
     pdfFrameRef.current?.contentWindow?.print();
   };
 
   const handleDownload = async () => {
-    const blob = await generateReceiptPdf(entry, logoConfig);
+    const blob = await generateReceiptPdf(entry, logoConfig, signatureConfig, client?.cnpjCpf);
     downloadBlob(blob, `Recibo_${receiptNum.replace(/\//g, '-')}.pdf`);
   };
 

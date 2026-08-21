@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ServiceOrderDetail, User, Document, ExternalSubmission } from '../types';
-import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History, ChevronRight, Camera, Paperclip } from 'lucide-react';
+import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck, Download, History, ChevronRight, Camera, Paperclip, RotateCcw } from 'lucide-react';
 import { formatPhone } from '../utils/input-formatters';
 import { formatDateBR, formatDateTimeBR } from '../utils/date-formatters';
 import { OsWorkflowStepper } from './OsWorkflowStepper';
@@ -163,6 +163,16 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [reviewingDocId, setReviewingDocId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; action: () => void } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
   const [selectedFiles, setSelectedFiles] = useState<Record<string, File>>({});
 
   const unassignedItems = (detail.itens || []).filter((item) => !item.tecnicoResponsavelId);
@@ -281,7 +291,10 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
             {detail.proposta?.numero && <p className="mt-1 text-xs font-bold text-blue-300">Proposta vinculada: {detail.proposta.numero}</p>}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onRefresh} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold cursor-pointer">Atualizar</button>
+            <button disabled={isRefreshing} onClick={handleManualRefresh} className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50">
+              <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Atualizando...' : 'Atualizar'}
+            </button>
             <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg cursor-pointer"><X className="w-4 h-4" /></button>
           </div>
         </div>
@@ -315,10 +328,10 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
 
           {/* Actions */}
           <div className="flex flex-wrap gap-2">
-            {(detail.status === 'aguardando_envio_externo') && hasPerm(currentUser, 'registrar_envio_resposta_externa') && (
+            {((detail.documentos || []).some((d: any) => d.status === 'aguardando_envio') || detail.status === 'aguardando_envio_externo') && hasPerm(currentUser, 'registrar_envio_resposta_externa') && (
               <button onClick={() => setShowSubmit(true)} className="inline-flex items-center gap-1 bg-sky-600 text-white px-3 py-2 rounded-lg text-xs font-bold cursor-pointer"><Send className="w-3.5 h-3.5" /> Registrar Envio Externo</button>
             )}
-            {(detail.status === 'em_analise_externa') && hasPerm(currentUser, 'registrar_envio_resposta_externa') && (
+            {((detail.documentos || []).some((d: any) => d.status === 'em_analise_externa') || detail.status === 'em_analise_externa') && hasPerm(currentUser, 'registrar_envio_resposta_externa') && (
               <button onClick={() => setShowResponse(true)} className="inline-flex items-center gap-1 bg-purple-600 text-white px-3 py-2 rounded-lg text-xs font-bold cursor-pointer"><AlertTriangle className="w-3.5 h-3.5" /> Registrar Resposta</button>
             )}
             {hasPerm(currentUser, 'entregar_concluir') && detail.status === 'aguardando_entrega' && (
@@ -345,7 +358,7 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
               const isScheduled = Boolean(item.dataAgendada && item.horarioAgendado);
               const statusLabel = item.status === 'em_execucao' ? 'Em execução' : item.status === 'concluido' ? 'Concluído' : 'Aguardando início';
               return (
-                <div key={item.id} className={`border rounded-xl overflow-hidden ${item.tecnicoResponsavelId ? 'border-slate-200' : 'border-amber-300 bg-amber-50/60'}`}>
+                <div key={item.id} className={`border rounded-xl overflow-hidden ${!item.tecnicoResponsavelId || !isScheduled ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200'}`}>
                   <div className="p-4 text-sm flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div className="min-w-0">
                       <p className="font-bold">{item.descricao}</p>
@@ -355,8 +368,14 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
                       {item.relatorioUrl && <a href={item.relatorioUrl} target="_blank" rel="noreferrer" className="block mt-1 text-xs font-bold text-blue-600 underline">Abrir documento: {item.relatorioNome || 'anexo'}</a>}
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                      {isAdmin && <select aria-label={`Funcionário responsável por ${item.descricao}`} value={item.tecnicoResponsavelId || ''} onChange={async e => { try { await updateServiceItem(item.id, { tecnicoResponsavelId: e.target.value }); } catch (error: any) { alert(error.message); } }} className={`min-w-52 border rounded-lg px-2 py-2 text-xs ${item.tecnicoResponsavelId ? 'bg-white' : 'border-amber-400 bg-amber-50 font-bold text-amber-900'}`}><option value="">Selecionar funcionário</option>{users.filter((user) => user.ativo).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>}
-                      {isAdmin && <button onClick={() => setScheduleItemId(item.id)} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white">{isScheduled ? 'Editar agendamento' : 'Agendar serviço'}</button>}
+                      {isAdmin && (
+                        <button 
+                          onClick={() => setScheduleItemId(item.id)} 
+                          className="rounded-lg bg-indigo-600 hover:bg-indigo-700 transition px-3 py-2 text-xs font-bold text-white shadow-sm"
+                        >
+                          {item.tecnicoResponsavelId ? (isScheduled ? 'Editar agendamento' : 'Agendar serviço') : 'Atribuir e Agendar'}
+                        </button>
+                      )}
                       {canExecute && item.status === 'pendente' && isScheduled && <button onClick={() => handleConfirmAction('Iniciar Serviço', 'Tem certeza que deseja iniciar a execução deste serviço?', () => updateServiceItem(item.id, { status: 'em_execucao' }).catch((error) => alert(error.message)))} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">Iniciar serviço</button>}
                       {canExecute && item.status === 'pendente' && !isScheduled && !isAdmin && <button disabled className="cursor-not-allowed rounded-lg bg-slate-300 px-3 py-2 text-xs font-bold text-slate-600">Aguardando agendamento</button>}
                       {canExecute && item.status === 'em_execucao' && <button onClick={() => handleConfirmAction('Concluir Serviço', 'Deseja marcar este serviço como concluído?', () => updateServiceItem(item.id, { status: 'concluido' }).catch((error) => alert(error.message)))} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Concluir serviço</button>}
@@ -460,7 +479,7 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
                       <button disabled={reviewingDocId === doc.id} onClick={() => handleReview(doc.id, false)} className="px-3 py-1 bg-red-600 disabled:opacity-60 text-white rounded-lg text-xs font-bold cursor-pointer">{reviewingDocId === doc.id ? 'Salvando...' : 'Pedir Correções'}</button>
                     </div>
                   )}
-                  {hasPerm(currentUser, 'aprovar_tecnicamente') && doc.status === 'aguardando_envio' && (
+                  {hasPerm(currentUser, 'aprovar_tecnicamente') && doc.status === 'aguardando_envio' && (doc.versoes || [])[0]?.situacaoAprovacao !== 'aprovado' && (
                     <div className="p-2 bg-sky-50"><button onClick={() => runAndRefresh(() => onApproveDoc(doc.id), 'Documento aprovado tecnicamente.')} className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold cursor-pointer">Aprovar Tecnicamente</button></div>
                   )}
                 </div>
@@ -519,7 +538,15 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
       {/* Modals */}
       {scheduleItem && (
         <Modal title={`Agendar serviço: ${scheduleItem.descricao}`} onClose={() => setScheduleItemId(null)}>
-          <form onSubmit={async (e) => { e.preventDefault(); const f = e.target as any; try { await onScheduleItem(scheduleItem.id, { data: f.data.value, horario: f.horario.value, local: f.local.value, contato: f.contato.value, observacoes: f.obs.value, tecnicoResponsavelId: f.tecnico.value || undefined }); setScheduleItemId(null); await onRefresh(); } catch (error: any) { alert(error.message); } }} className="space-y-3 text-sm">
+          <form onSubmit={async (e) => { e.preventDefault(); const f = e.target as any; try { await onScheduleItem(scheduleItem.id, { data: f.data.value, horario: f.horario.value, local: f.local.value, contato: f.contato.value, observacoes: f.obs.value, tecnicoResponsavelId: f.tecnico.value || undefined }); setScheduleItemId(null); await onRefresh(); } catch (error: any) { alert(error.message); } }} className="space-y-4 text-sm">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+              <Field label="Funcionário Responsável">
+                <select name="tecnico" required defaultValue={scheduleItem.tecnicoResponsavelId || ''} className="w-full px-3 py-2.5 border border-indigo-200 rounded-lg text-sm font-bold bg-white text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none transition">
+                  <option value="">Selecione quem fará este serviço...</option>
+                  {users.filter((u) => u.ativo).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                </select>
+              </Field>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Data"><input name="data" type="date" required defaultValue={scheduleItem.dataAgendada || ''} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
               <Field label="Horário">
@@ -531,12 +558,6 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
             </div>
             <Field label="Local"><input name="local" defaultValue={scheduleItem.localAgendado || ''} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
             <Field label="Contato"><input name="contato" inputMode="tel" placeholder="(91) 99999-9999" defaultValue={scheduleItem.contatoAgendamento || ''} onChange={(e) => { e.currentTarget.value = formatPhone(e.currentTarget.value); }} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-            <Field label="Funcionário responsável">
-              <select name="tecnico" required defaultValue={scheduleItem.tecnicoResponsavelId || ''} className="w-full px-3 py-2 border rounded-lg text-xs">
-                <option value="">Selecionar</option>
-                {users.filter((u) => u.ativo).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-              </select>
-            </Field>
             <Field label="Observações"><textarea name="obs" defaultValue={scheduleItem.observacoesAgendamento || ''} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
             <div className="flex justify-end gap-2 pt-2 border-t">
               <button type="button" onClick={() => setScheduleItemId(null)} className="px-3 py-1.5 border rounded-lg text-xs">Cancelar</button>

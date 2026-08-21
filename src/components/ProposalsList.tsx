@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable, Client, RegisteredService } from '../types';
+import { Proposal, Vessel, ScopeItem, User, SignatureConfig, LogoConfig, AcceptPayload, ProposalAcceptance, AccountReceivable, Payment, Client, RegisteredService, FinancialEntry } from '../types';
 import { ProposalPdfTemplate } from './ProposalPdfTemplate';
-import { generateProposalPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
+import { generateProposalPdf, generateReceiptPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
 import { INITIAL_STANDARD_OBSERVATIONS } from '../data/initialData';
 import { CurrencyInput } from './CurrencyInput';
 import { formatDateBR } from '../utils/date-formatters';
@@ -36,6 +36,7 @@ interface ProposalsListProps {
   onFormalAcceptance: (proposalId: string, payload: any, file?: File | null) => Promise<any>;
   onRenewalCreated?: (proposal: Proposal) => void;
   onNavigateTab?: (tab: any) => void;
+  onOpenOs?: (osId: string) => void;
 }
 
 export const ProposalsList: React.FC<ProposalsListProps> = ({
@@ -50,6 +51,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   onFormalAcceptance,
   onRenewalCreated,
   onNavigateTab,
+  onOpenOs,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
@@ -79,7 +81,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [clienteId, setClienteId] = useState('');
   const [embarcacaoId, setEmbarcacaoId] = useState('');
   const [embarcacoesIds, setEmbarcacoesIds] = useState<string[]>([]);
-  const [destinatario, setDestinatario] = useState('A/C: Sr. Armador / Proprietário');
+  const [destinatario, setDestinatario] = useState('Sr. Armador / Proprietário');
   const [assunto, setAssunto] = useState(
     'Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica.'
   );
@@ -119,7 +121,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [acceptError, setAcceptError] = useState('');
 
   // Acceptance info display
-  const [acceptanceInfo, setAcceptanceInfo] = useState<{ acceptance: ProposalAcceptance | null; receivable: AccountReceivable | null; os: any | null } | null>(null);
+  const [acceptanceInfo, setAcceptanceInfo] = useState<{ acceptance: ProposalAcceptance | null; receivable: AccountReceivable | null; payment: Payment | null; os: any | null } | null>(null);
 
   // Email Modal State
   const [emailDest, setEmailDest] = useState('');
@@ -189,7 +191,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     setClienteId('');
     setEmbarcacaoId('');
     setEmbarcacoesIds([]);
-    setDestinatario('A/C: Sr. Armador / Proprietário');
+    setDestinatario('Sr. Armador / Proprietário');
     setAssunto(
       'Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica.'
     );
@@ -473,6 +475,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         setAcceptanceInfo({
           acceptance: accData.acceptance,
           receivable: accData.receivable,
+          payment: accData.payment,
           os: accData.os,
         });
       }
@@ -498,6 +501,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         setAcceptanceInfo({
           acceptance: data.acceptance,
           receivable: data.receivable,
+          payment: data.payment,
           os: data.os,
         });
       }
@@ -742,7 +746,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                       setEmbarcacaoId(primary); setEmbarcacoesIds(selected);
                       const v = vessels.find((ves) => ves.id === primary);
                       if (v) {
-                        setDestinatario(`A/C: ${v.clienteNome}`);
+                        setDestinatario(v.clienteNome);
                         setAssunto(
                           `Elaboração de relatório de medição de espessura de solda por ultrassom com croqui de sondagem e declaração de responsabilidade técnica para a embarcação ${v.nome}.`
                         );
@@ -1242,7 +1246,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                 <div className="grid gap-3 mt-4 text-left">
                   <button
                     type="button"
-                    onClick={() => { setIsFormalAcceptanceModalOpen(false); onNavigateTab?.('service-orders'); }}
+                    onClick={() => { setIsFormalAcceptanceModalOpen(false); if (acceptanceInfo?.os?.id) onOpenOs?.(acceptanceInfo.os.id); else onNavigateTab?.('service-orders'); }}
                     className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 transition"
                   >
                     <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
@@ -1257,10 +1261,35 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (acceptanceInfo?.receivable) {
-                        const blob = new Blob([`Recibo do valor de R$ ${acceptanceInfo.receivable.valorPago ?? 0}`], { type: 'text/plain' });
-                        downloadBlob(blob, `Recibo_${selectedProposal?.numero.replace(/\//g, '-')}.txt`);
-                      }
+                      void (async () => {
+                        const receivable = acceptanceInfo?.receivable;
+                        const amount = Number(receivable?.valorPago) || 0;
+                        if (!receivable || amount <= 0 || !selectedProposal) {
+                          window.alert('Não há valor recebido neste aceite para emitir um recibo.');
+                          return;
+                        }
+
+                        const payment = acceptanceInfo.payment;
+                        const receiptEntry: FinancialEntry = {
+                          id: payment?.id || `aceite-${selectedProposal.id}`,
+                          embarcacaoId: selectedProposal.embarcacaoId,
+                          embarcacaoNome: selectedProposal.embarcacaoNome,
+                          clienteNome: selectedProposal.clienteNome,
+                          data: payment?.data || acceptanceInfo.acceptance?.data || new Date().toISOString().split('T')[0],
+                          valor: amount,
+                          tipo: receivable.status === 'pago' ? 'quitacao' : 'parcela',
+                          formaPagamento: (payment?.formaPagamento || formaPagamento) as FinancialEntry['formaPagamento'],
+                          observacao: payment?.observacao || `Pagamento registrado no aceite da proposta ${selectedProposal.numero}`,
+                          lancadoPorNome: payment?.lancadoPorNome || currentUser.nome,
+                          propostaNumero: selectedProposal.numero,
+                        } as FinancialEntry & { propostaNumero: string };
+
+                        const blob = await generateReceiptPdf(receiptEntry, logoConfig, signatureConfig);
+                        downloadBlob(blob, `Recibo_${selectedProposal.numero.replace(/\//g, '-')}.pdf`);
+                      })().catch((error) => {
+                        console.error('Erro ao gerar recibo PDF:', error);
+                        window.alert('Não foi possível gerar o PDF do recibo.');
+                      });
                     }}
                     className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition"
                   >
@@ -1269,7 +1298,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                     </div>
                     <div>
                       <p className="font-bold text-slate-900 text-sm">Baixar Recibo do Valor Pago</p>
-                      <p className="text-[11px] text-slate-500">Gerar PDF do recibo provisório</p>
+                      <p className="text-[11px] text-slate-500">Gerar PDF oficial do recibo</p>
                     </div>
                   </button>
 

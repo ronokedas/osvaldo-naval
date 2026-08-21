@@ -164,6 +164,7 @@ export interface FinancialEntry {
   embarcacaoId?: string;
   embarcacaoNome: string;
   clienteNome?: string;
+  clienteCnpjCpf?: string;
   data: string;
   valor: number;
   tipo: 'sinal' | 'parcela' | 'quitacao' | 'despesa';

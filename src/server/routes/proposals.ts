@@ -194,17 +194,20 @@ router.get("/:id/acceptance", requireProposalAccess, async (req: any, res: any) 
       : [];
 
     let arWithPayments = null;
+    let latestPayment = null;
     if (arList.length > 0) {
       const ar = arList[0];
       const arPayments = await db.select().from(payments).where(eq(payments.contaReceberId, ar.id));
       const totalPaid = arPayments.reduce((acc, p) => acc + (Number(p.valor) || 0), 0);
       arWithPayments = serializeAccountReceivable({ ...ar, valorPago: totalPaid });
+      latestPayment = arPayments.length > 0 ? serializePayment(arPayments[arPayments.length - 1]) : null;
     }
 
     res.json({
       proposal: serializeProposal(prop),
       acceptance: accList.length > 0 ? serializeProposalAcceptance(accList[0]) : null,
       receivable: arWithPayments,
+      payment: latestPayment,
       os: osList.length > 0 ? serializeServiceOrder(osList[0]) : null,
     });
   } catch (error) {

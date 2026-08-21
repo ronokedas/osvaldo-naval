@@ -558,6 +558,13 @@ export const generateProtocolPdf = (protocol: Protocol, logoConfig?: LogoConfig)
 
 const receiptMoney = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
+const formatPayerDocument = (value?: string) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 11) return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  if (digits.length === 14) return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+  return value?.trim() || "";
+};
+
 const drawReceiptSectionTitle = (doc: jsPDF, number: string, title: string, y: number) => {
   doc.setFillColor(...PRIMARY_DARK); doc.circle(23, y - 1.5, 3, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
@@ -592,17 +599,23 @@ const drawReceiptHeader = (doc: jsPDF, receiptNumber: string, date: string, logo
   doc.setDrawColor(...PRIMARY_DARK); doc.setLineWidth(0.8); doc.line(20, 30, 190, 30);
 };
 
-export const generateReceiptPdf = async (entry: FinancialEntry, logoConfig?: LogoConfig): Promise<Blob> => {
+export const generateReceiptPdf = async (entry: FinancialEntry, logoConfig?: LogoConfig, signatureConfig?: SignatureConfig, payerDocument?: string): Promise<Blob> => {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const date = new Date(entry.data).toLocaleDateString('pt-BR');
   const year = new Date(entry.data).getFullYear();
-  const receiptNumber = `REC-${entry.reciboNumero || entry.id.substring(0, 6).toUpperCase()}/${year}`;
+  const receiptSequence = String(entry.reciboNumero || entry.id.substring(0, 6).toUpperCase()).replace(/^REC[-\s]*/i, "");
+  const receiptNumber = `REC-${receiptSequence}/${year}`;
   const amount = Number(entry.valor) || 0;
   const payer = entry.clienteNome || "ARMADOR / RESPONSÁVEL PELA EMBARCAÇÃO";
   const extraEntry = entry as FinancialEntry & { propostaNumero?: string; proposta?: { numero?: string } };
   const proposalNumber = extraEntry.propostaNumero || extraEntry.proposta?.numero || entry.observacao.match(/DS\s*\d+\/\d+/i)?.[0] || "Não informado";
   const reference = entry.observacao || "Pagamento de serviços de engenharia naval";
   const logo = await getOfficialLogoDataUrl();
+  // Older saved configurations may not contain all of the newer toggle fields.
+  // The receipt should still honor an uploaded signature image when one exists.
+  const shouldApplySignature = Boolean(signatureConfig?.imagemUrl);
+  const rawSignatureImage = shouldApplySignature ? await imageSourceToDataUrl(signatureConfig?.imagemUrl) : null;
+  const signatureImage = rawSignatureImage ? await makeWhiteBackgroundTransparent(rawSignatureImage) : null;
 
   drawReceiptHeader(doc, receiptNumber, date, logo);
 
@@ -619,7 +632,8 @@ export const generateReceiptPdf = async (entry: FinancialEntry, logoConfig?: Log
   doc.setDrawColor(226, 232, 240); doc.setLineWidth(.4); doc.roundedRect(20, 77, 170, 30, 3, 3, "S");
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(224, 204, 159); doc.text('“', 25, 84);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...TEXT_DARK);
-  const receivedText = `Recebemos de ${payer}, inscrito no CPF/CNPJ sob nº ________________________, a quantia de ${receiptMoney(amount)}, referente à ${reference}.`;
+  const documentText = formatPayerDocument(payerDocument || (entry as FinancialEntry).clienteCnpjCpf) || "________________________";
+  const receivedText = `Recebemos de ${payer}, inscrito no CPF/CNPJ sob nº ${documentText}, a quantia de ${receiptMoney(amount)}, referente à ${reference}.`;
   doc.text(doc.splitTextToSize(receivedText, 150), 30, 87, { lineHeightFactor: 1.35 });
   doc.setDrawColor(226, 232, 240); doc.line(30, 98, 184, 98); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("VALOR POR EXTENSO", 30, 103);
   doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(...TEXT_DARK); doc.text(numberToWords(amount), 60, 103);
@@ -648,8 +662,29 @@ export const generateReceiptPdf = async (entry: FinancialEntry, logoConfig?: Log
   doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(255, 255, 255); doc.text("COMPOSIÇÃO DOS VALORES", 25, y + 5);
   [[25, "SUBTOTAL", amount], [65, "DESCONTO", 0], [105, "TOTAL LÍQUIDO", amount], [147, "VALOR DESTE RECIBO", amount]].forEach(([x, label, value]) => { const boxX = Number(x); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text(String(label), boxX, y + 12); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...PRIMARY_DARK); doc.text(receiptMoney(Number(value)), boxX, y + 19); });
 
-  y += 27; doc.setFillColor(...LIGHT_GREY); doc.roundedRect(20, y, 88, 48, 3, 3, "F"); doc.setFillColor(42, 125, 91); doc.circle(28, y + 8, 4, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text("✓", 26.2, y + 10.5); doc.setTextColor(...PRIMARY_DARK); doc.text("DOCUMENTO EMITIDO PELO SISTEMA NAUTILUS", 35, y + 9); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...TEXT_GREY); doc.text(doc.splitTextToSize("Este recibo é numerado por ano, vinculado à baixa financeira correspondente e preservado de forma imutável após sua emissão.", 78), 25, y + 19, { lineHeightFactor: 1.35 }); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("IDENTIFICADOR DO PAGAMENTO", 25, y + 37); doc.line(25, y + 40, 68, y + 40); doc.text("DATA E HORA DA GERAÇÃO", 72, y + 37); doc.line(72, y + 40, 103, y + 40);
-  doc.setDrawColor(...PRIMARY_DARK); doc.roundedRect(112, y, 78, 48, 3, 3, "S"); doc.line(118, y + 35, 184, y + 35); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PRIMARY_DARK); doc.text(entry.lancadoPorNome || "Deisy Saldanha", 151, y + 40, { align: "center" }); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(...TEXT_GREY); doc.text("Administrativo / Financeiro", 151, y + 44, { align: "center" }); doc.text("Nautilus Projetos Navais LTDA", 151, y + 47, { align: "center" });
+  y += 27; doc.setFillColor(...LIGHT_GREY); doc.roundedRect(20, y, 88, 48, 3, 3, "F"); doc.setFillColor(42, 125, 91); doc.circle(28, y + 8, 4, "F"); doc.setDrawColor(255, 255, 255); doc.setLineWidth(.8); doc.line(26, y + 8, 27.5, y + 10); doc.line(27.5, y + 10, 30.5, y + 6); doc.setTextColor(...PRIMARY_DARK); doc.setFontSize(6.5); doc.text("DOCUMENTO EMITIDO PELO SISTEMA NAUTILUS", 35, y + 9, { maxWidth: 68 }); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...TEXT_GREY); doc.text(doc.splitTextToSize("Este recibo é numerado por ano, vinculado à baixa financeira correspondente e preservado de forma imutável após sua emissão.", 78), 25, y + 19, { lineHeightFactor: 1.35 }); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("IDENTIFICADOR DO PAGAMENTO", 25, y + 37); doc.line(25, y + 40, 68, y + 40); doc.text("DATA E HORA DA GERAÇÃO", 72, y + 37); doc.line(72, y + 40, 103, y + 40);
+  doc.setDrawColor(...PRIMARY_DARK); doc.roundedRect(112, y, 78, 48, 3, 3, "S");
+  const signerName = signatureConfig?.nomeSignatario || entry.lancadoPorNome || "Administrador";
+  const signerRole = signatureConfig?.cargoSignatario || "Administrativo / Financeiro";
+  const signerRegistration = signatureConfig?.creaOrRegistro || "Nautilus Projetos Navais LTDA";
+  if (signatureImage) {
+    try {
+      const properties = doc.getImageProperties(signatureImage);
+      const scale = Math.min(48 / properties.width, 16 / properties.height);
+      const signatureWidth = properties.width * scale;
+      const signatureHeight = properties.height * scale;
+      const format = signatureImage.match(/^data:image\/(png|jpe?g|webp)/i)?.[1]?.replace(/jpg/i, "JPEG").replace(/jpeg/i, "JPEG").toUpperCase() || "PNG";
+      doc.addImage(signatureImage, format, 151 - signatureWidth / 2, y + 27 - signatureHeight, signatureWidth, signatureHeight, undefined, "FAST");
+    } catch {
+      // Keep the signature block usable if a legacy signature cannot be decoded.
+    }
+  } else {
+    // Visible fallback for old records whose image was not persisted, while
+    // keeping the configured signer information in the receipt.
+    doc.setFont("times", "italic"); doc.setFontSize(12); doc.setTextColor(...PRIMARY_DARK);
+    doc.text(signerName, 151, y + 27, { align: "center", maxWidth: 62 });
+  }
+  doc.line(118, y + 31, 184, y + 31); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PRIMARY_DARK); doc.text(signerName, 151, y + 36, { align: "center", maxWidth: 66 }); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(...TEXT_GREY); doc.text(signerRole, 151, y + 40, { align: "center", maxWidth: 66 }); doc.text(signerRegistration, 151, y + 44, { align: "center", maxWidth: 66 });
   doc.setFillColor(250, 248, 244); doc.rect(20, 270, 170, 8, "F"); doc.setFillColor(201, 138, 37); doc.rect(20, 270, 1, 8, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(6); doc.setTextColor(...PRIMARY_DARK); doc.text("Importante:", 24, 275); doc.setFont("helvetica", "normal"); doc.text("este recibo comprova exclusivamente o pagamento informado e não substitui nota fiscal de serviço quando sua emissão for legalmente exigida.", 39, 275);
   drawFooter(doc, 1, 1);
   return doc.output("blob");

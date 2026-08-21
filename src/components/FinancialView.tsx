@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
-import { Vessel, FinancialEntry, User, SignatureConfig, LogoConfig } from '../types';
+import { Vessel, FinancialEntry, User, Client, SignatureConfig, LogoConfig } from '../types';
 import {
   DollarSign,
   TrendingUp,
@@ -25,6 +25,7 @@ import { CurrencyInput } from './CurrencyInput';
 interface FinancialViewProps {
   vessels: Vessel[];
   financialEntries: FinancialEntry[];
+  clients?: Client[];
   currentUser: User;
   signatureConfig?: SignatureConfig;
   logoConfig?: LogoConfig;
@@ -35,6 +36,7 @@ interface FinancialViewProps {
 export const FinancialView: React.FC<FinancialViewProps> = ({
   vessels,
   financialEntries,
+  clients = [],
   currentUser,
   signatureConfig,
   logoConfig,
@@ -902,6 +904,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         <PaymentReceiptModal
           entry={selectedReceiptEntry}
           vessel={vessels.find((v) => v.id === selectedReceiptEntry.embarcacaoId)}
+          client={clients.find((client) => client.id === vessels.find((v) => v.id === selectedReceiptEntry.embarcacaoId)?.clienteId)}
           signatureConfig={signatureConfig}
           logoConfig={logoConfig}
           onClose={() => setSelectedReceiptEntry(null)}
