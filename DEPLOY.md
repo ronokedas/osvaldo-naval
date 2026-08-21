@@ -41,5 +41,4 @@ sudo docker compose ps
 curl -fsS http://127.0.0.1:3000/healthz && echo ONLINE
 ```
 
-Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada novo commit. Use a restauração somente quando quiser substituir os dados online pelos dados locais.
-
+Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada commit. Restaure só quando quiser substituir os dados online.
