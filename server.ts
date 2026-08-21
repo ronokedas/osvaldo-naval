@@ -2,6 +2,7 @@ import express from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import path from "path";
+import compression from "compression";
 
 import { createServer as createViteServer } from "vite";
 
@@ -40,6 +41,7 @@ async function startServer() {
   }
 
   // Middleware
+  app.use(compression());
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true }));
 
@@ -48,10 +50,6 @@ async function startServer() {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
-    // Headers para prevenir cache do navegador
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
     next();
   });
 
@@ -98,8 +96,7 @@ async function startServer() {
   app.use("/api/commitments", commitmentsRoutes);
   app.use("/api/certifiers", certifiersRoutes);
   app.use("/api/services", servicesRoutes);
-
-  // Global Error Handler for API
+  // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("API Error:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -114,15 +111,29 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    // Serve static files with no-cache headers
+    
+    // Configura headers de cache mais inteligentes para arquivos estáticos
     app.use(express.static(distPath, {
-      setHeaders: (res, path, stat) => {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
+      setHeaders: (res, pathStr, stat) => {
+        // Arquivos gerados com hash pelo Vite (.js, .css, .woff2) em /assets
+        if (pathStr.includes('/assets/') && (pathStr.endsWith('.js') || pathStr.endsWith('.css') || pathStr.endsWith('.woff2'))) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (pathStr.endsWith('index.html')) {
+          // Nunca fazer cache do index.html (pra quando atualizar versão baixar a nova)
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        } else {
+          // Outros assets estáticos curtos
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
       }
     }));
+
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

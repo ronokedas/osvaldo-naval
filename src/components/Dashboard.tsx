@@ -96,41 +96,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
       id: 'vistorias',
       title: 'Vistorias & Ultrassom',
       roleOwner: 'Equipe de Campo',
-      count: tasks.filter((t) => t.tipo === 'ultrassom' && (t.status === 'pendente' || t.status === 'execucao')).length,
+      count: serviceOrders.filter((os) => os.status === 'visita_agendada' || os.status === 'vistoria_em_execucao').length,
       icon: Activity,
       color: 'from-blue-500 to-cyan-600',
       description: 'Medição de espessura e vistorias físicas',
-      targetTab: 'tasks',
+      targetTab: 'service-orders',
     },
     {
       id: 'laudos',
       title: 'Laudos & Desenhos',
       roleOwner: 'Desenhistas / Técnicos',
-      count: tasks.filter((t) => (t.tipo === 'desenho' || t.tipo === 'art') && (t.status === 'execucao' || t.status === 'em_revisao')).length,
+      count: serviceOrders.filter((os) => os.status === 'documentacao_em_elaboracao' || os.status === 'revisao_interna').length,
       icon: Layers,
       color: 'from-purple-500 to-indigo-600',
       description: 'Elaboração e revisão técnica',
-      targetTab: 'tasks',
+      targetTab: 'service-orders',
     },
     {
       id: 'certificadoras',
       title: 'Em Certificadora',
       roleOwner: 'DPC / Capitania / RBNA',
-      count: tasks.filter((t) => t.status === 'enviado' || t.status === 'exigencia').length,
+      count: serviceOrders.filter((os) => ['aguardando_envio_externo', 'em_analise_externa', 'exigencia_externa', 'aprovado_externamente'].includes(os.status)).length,
       icon: Award,
       color: 'from-indigo-500 to-violet-600',
       description: 'Aguardando chancela ou sanar exigência',
-      targetTab: 'tasks',
+      targetTab: 'service-orders',
     },
     {
       id: 'entrega',
       title: 'Aguardando Entrega',
       roleOwner: 'Lucas (Entrega)',
-      count: tasks.filter((t) => t.status === 'pronto').length,
+      count: serviceOrders.filter((os) => os.status === 'aguardando_entrega').length,
       icon: Send,
       color: 'from-teal-500 to-emerald-600',
       description: 'Documentos prontos para envio ao cliente',
-      targetTab: 'tasks',
+      targetTab: 'service-orders',
     },
     {
       id: 'faturamento',
@@ -159,31 +159,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
         actionLabel: 'Ver Proposta',
         onClick: () => onNavigateTab('proposals'),
       })),
-    ...tasks
-      .filter((t) => t.status === 'exigencia')
-      .map((t) => ({
-        id: `act-task-exg-${t.id}`,
-        title: `URGENTE: Sanar exigência em ${t.embarcacaoNome}`,
-        subtitle: `${t.titulo} - Certificadora ${t.certificadora}`,
+    ...proposals
+      .filter((p) => p.status === 'aprovado' && !serviceOrders.some(os => os.propostaNumero === p.numero))
+      .map((p) => ({
+        id: `act-prop-aprov-${p.id}`,
+        title: `Criar OS para Proposta Aprovada: ${p.clienteNome}`,
+        subtitle: `A proposta ${p.numero} foi aceita, mas a Ordem de Serviço ainda não foi gerada.`,
+        role: 'tecnico',
+        tag: 'Engenharia',
+        priority: 'alta' as const,
+        icon: Plus,
+        actionLabel: 'Ver Proposta',
+        onClick: () => onNavigateTab('proposals'),
+      })),
+    ...serviceOrders
+      .filter((os) => os.status === 'exigencia_externa')
+      .map((os) => ({
+        id: `act-os-exg-${os.id}`,
+        title: `URGENTE: Sanar exigência na OS ${os.numero}`,
+        subtitle: `${os.embarcacaoNome || 'Embarcação'} recebeu exigência da certificadora.`,
         role: 'tecnico',
         tag: 'Equipe Técnica',
         priority: 'critica' as const,
         icon: AlertTriangle,
-        actionLabel: 'Ver Tarefa',
-        onClick: () => onNavigateTab('tasks'),
+        actionLabel: 'Ver OS',
+        onClick: () => {
+          onNavigateTab('service-orders');
+          onOpenServiceOrder(os.id);
+        },
       })),
-    ...tasks
-      .filter((t) => t.status === 'pronto')
-      .map((t) => ({
-        id: `act-task-pronto-${t.id}`,
-        title: `Entregar documento final de ${t.embarcacaoNome}`,
-        subtitle: `${t.titulo} aprovado por ${t.certificadora}. Modalidade de entrega pendente.`,
+    ...serviceOrders
+      .filter((os) => os.status === 'aguardando_entrega')
+      .map((os) => ({
+        id: `act-os-pronto-${os.id}`,
+        title: `Entregar documento final da OS ${os.numero}`,
+        subtitle: `Os documentos da embarcação ${os.embarcacaoNome || 'Geral'} estão prontos para envio.`,
         role: 'entrega',
         tag: 'Lucas (Entrega)',
         priority: 'alta' as const,
         icon: Send,
         actionLabel: 'Fazer Entrega',
-        onClick: () => onNavigateTab('tasks'),
+        onClick: () => {
+          onNavigateTab('service-orders');
+          onOpenServiceOrder(os.id);
+        },
       })),
     ...vessels
       .filter((v) => v.status === 'aberta' && v.valorTotal - v.valorRecebido > 0)
@@ -214,23 +233,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }));
 
   // Status Badge color styling helper
-  const getTaskStatusBadge = (status: string) => {
+  const getOsStatusBadge = (status: string) => {
     switch (status) {
-      case 'execucao':
-        return { label: 'Em execução', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-      case 'em_revisao':
-        return { label: 'Em revisão', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
-      case 'enviado':
+      case 'vistoria_em_execucao':
+      case 'documentacao_em_elaboracao':
+        return { label: 'Em execução', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
+      case 'revisao_interna':
+        return { label: 'Revisão Interna', bg: 'bg-purple-50 text-purple-700 border-purple-200' };
+      case 'em_analise_externa':
+      case 'aguardando_envio_externo':
         return { label: 'Na certificadora', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
-      case 'exigencia':
-        return { label: 'Exigência recebida', bg: 'bg-red-50 text-red-700 border-red-200' };
-      case 'pronto':
+      case 'exigencia_externa':
+        return { label: 'Exigência', bg: 'bg-red-50 text-red-700 border-red-200' };
+      case 'aguardando_entrega':
+      case 'aprovado_externamente':
         return { label: 'Pronto / Liberado', bg: 'bg-teal-50 text-teal-700 border-teal-200' };
-      case 'baixado':
-        return { label: 'Baixado', bg: 'bg-slate-100 text-slate-700 border-slate-300' };
-      case 'pendente':
+      case 'concluida':
+        return { label: 'Concluída', bg: 'bg-emerald-50 text-emerald-700 border-emerald-300' };
+      case 'cancelada':
+        return { label: 'Cancelada', bg: 'bg-slate-100 text-slate-700 border-slate-300' };
+      case 'aguardando_agendamento':
+      case 'visita_agendada':
       default:
-        return { label: 'Aguardando início', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
+        return { label: 'Agendamento / Início', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
     }
   };
 
@@ -708,15 +733,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {vessels.slice(0, 6).map((v) => {
-                  const vesselTasks = tasks.filter((t) => t.embarcacaoId === v.id);
-                  const mainTask = vesselTasks[0] || {
-                    titulo: 'Medição por ultrassom e desenhos',
-                    responsavelNome: 'A definir',
-                    prazo: 'Em andamento',
-                    certificadora: v.certificadoraPrincipal,
-                    status: 'pendente',
-                  };
-                  const badge = getTaskStatusBadge(mainTask.status);
+                  const vesselOsList = serviceOrders.filter((os) => os.embarcacaoId === v.id || os.embarcacaoNome === v.nome);
+                  const mainOs = vesselOsList[0];
+                  
+                  const displayTitle = mainOs ? `OS ${mainOs.numero}` : 'Serviços pendentes (Tarefas antigas)';
+                  const displayResp = mainOs && mainOs.responsavelTecnicoId ? (users.find(u => u.id === mainOs.responsavelTecnicoId)?.nome || 'A definir') : 'A definir';
+                  const displayStatus = mainOs ? mainOs.status : 'pendente';
+                  const badge = getOsStatusBadge(displayStatus);
 
                   return (
                     <tr
@@ -731,18 +754,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <p className="text-[11px] text-slate-500 truncate">{v.clienteNome}</p>
                       </td>
                       <td className="py-3 pr-3 text-slate-700 max-w-[150px] truncate">
-                        {mainTask.titulo}
+                        {displayTitle}
                       </td>
                       <td className="py-3 pr-3 text-slate-800 whitespace-nowrap">
-                        {mainTask.responsavelNome.split(' ')[0]}
+                        {displayResp.split(' ')[0]}
                       </td>
                       <td className="py-3 pr-3 font-mono text-slate-600 whitespace-nowrap">
-                        {formatDateBR(mainTask.prazo)}
+                        {v.status === 'concluida' ? 'Finalizada' : (mainOs?.dataConclusao ? formatDateBR(mainOs.dataConclusao) : 'Em andamento')}
                       </td>
                       <td className="py-3 pr-3 text-slate-700 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px]">
                           <Award className="w-3 h-3 text-indigo-600" />
-                          {mainTask.certificadora}
+                          {v.certificadoraPrincipal || 'A definir'}
                         </span>
                       </td>
                       <td className="py-3 pr-3 whitespace-nowrap">

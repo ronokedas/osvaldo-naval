@@ -265,9 +265,30 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   };
 
   // ---------- Email ----------
-  const openEmailModal = (proposal: Proposal) => {
+  const openEmailModal = async (proposal: Proposal) => {
     const vessel = vessels.find((v) => v.id === proposal.embarcacaoId);
-    setEmailDest(vessel?.emailContato || '');
+    let matchedClient = clients.find(
+      (c) => (vessel?.clienteId && c.id === vessel.clienteId) || 
+             (c.nome && (c.nome.trim().toLowerCase() === (proposal.clienteNome || '').trim().toLowerCase() || c.nome.trim().toLowerCase() === (vessel?.clienteNome || '').trim().toLowerCase()))
+    );
+
+    if (!matchedClient && (vessel?.clienteId || proposal.clienteNome || vessel?.clienteNome)) {
+      try {
+        const res = await fetch('/api/clients');
+        if (res.ok) {
+          const clientList: Client[] = await res.json();
+          matchedClient = clientList.find(
+            (c) => (vessel?.clienteId && c.id === vessel.clienteId) || 
+                   (c.nome && (c.nome.trim().toLowerCase() === (proposal.clienteNome || '').trim().toLowerCase() || c.nome.trim().toLowerCase() === (vessel?.clienteNome || '').trim().toLowerCase()))
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const email = matchedClient?.email || vessel?.emailContato || '';
+    setEmailDest(email);
     setEmailAssunto(`Proposta ${proposal.numero} - Nautilus Projetos Navais`);
     setEmailMensagem(`Prezado(a),\n\nSegue em anexo a proposta ${proposal.numero} referente à embarcação ${proposal.embarcacaoNome}.\n\nAtenciosamente,\n${currentUser.nome}`);
     setEmailResult('');
@@ -309,11 +330,43 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   };
 
   // ---------- WhatsApp ----------
-  const openWhatsAppModal = (proposal: Proposal) => {
+  const openWhatsAppModal = async (proposal: Proposal) => {
     const vessel = vessels.find((v) => v.id === proposal.embarcacaoId);
-    const phone = vessel?.telefoneContato || proposal.destinatario.replace(/^A\/C:\s*/, '').split(' ')[0] || '';
-    const msg = `Olá! Segue a proposta ${proposal.numero} referente à embarcação ${proposal.embarcacaoNome} no valor de R$ ${proposal.valorTotal.toLocaleString('pt-BR')}.`;
-    setWhatsNumero(phone);
+    let matchedClient = clients.find(
+      (c) => (vessel?.clienteId && c.id === vessel.clienteId) || 
+             (c.nome && (c.nome.trim().toLowerCase() === (proposal.clienteNome || '').trim().toLowerCase() || c.nome.trim().toLowerCase() === (vessel?.clienteNome || '').trim().toLowerCase()))
+    );
+
+    if (!matchedClient && (vessel?.clienteId || proposal.clienteNome || vessel?.clienteNome)) {
+      try {
+        const res = await fetch('/api/clients');
+        if (res.ok) {
+          const clientList: Client[] = await res.json();
+          matchedClient = clientList.find(
+            (c) => (vessel?.clienteId && c.id === vessel.clienteId) || 
+                   (c.nome && (c.nome.trim().toLowerCase() === (proposal.clienteNome || '').trim().toLowerCase() || c.nome.trim().toLowerCase() === (vessel?.clienteNome || '').trim().toLowerCase()))
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const rawPhone = matchedClient?.whatsapp || matchedClient?.telefone || vessel?.telefoneContato || '';
+    const digits = rawPhone.replace(/\D/g, '');
+    let formattedPhone = '';
+    if (digits) {
+      if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+        formattedPhone = digits;
+      } else if (digits.length === 10 || digits.length === 11) {
+        formattedPhone = `55${digits}`;
+      } else {
+        formattedPhone = digits;
+      }
+    }
+
+    const msg = `Olá! Segue a proposta ${proposal.numero} referente à embarcação ${proposal.embarcacaoNome} no valor de R$ ${Number(proposal.valorTotal).toLocaleString('pt-BR')}.`;
+    setWhatsNumero(formattedPhone);
     setWhatsMensagem(msg);
     setIsWhatsAppModalOpen(true);
   };

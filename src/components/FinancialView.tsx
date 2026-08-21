@@ -178,6 +178,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               ];
               const csvContent = [
                 headers.join(','),
+
                 ...financialEntries.map((e) =>
                   [
                     e.id,
@@ -209,6 +210,33 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           >
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                const { generateFinancialReportPdf } = await import('../utils/pdfGenerator');
+                const blob = await generateFinancialReportPdf(filteredEntries, logoConfig);
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `relatorio_financeiro.pdf`;
+                link.click();
+                URL.revokeObjectURL(url);
+              } catch (err) {
+                console.error("Erro ao gerar PDF financeiro", err);
+                alert("Não foi possível gerar o PDF.");
+              }
+            }}
+            disabled={filteredEntries.length === 0}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition ${
+              filteredEntries.length > 0
+                ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span className="hidden sm:inline">Exportar PDF</span>
           </button>
 
           <button

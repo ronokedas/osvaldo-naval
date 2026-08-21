@@ -21,16 +21,45 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   const [statusFilter, setStatusFilter] = useState<'todos' | 'aberta' | 'concluida'>('aberta');
   const [certifierFilter, setCertifierFilter] = useState<string>('todas');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [availableClients, setAvailableClients] = useState<Client[]>(clients);
+
+  // Sync with prop
+  React.useEffect(() => {
+    setAvailableClients(clients);
+  }, [clients]);
 
   // New Vessel Form State
   const [newNome, setNewNome] = useState('');
-  const [newClienteId, setNewClienteId] = useState(clients[0]?.id || '');
-  const [newClienteNome, setNewClienteNome] = useState(clients[0]?.nome || '');
+  const [newClienteId, setNewClienteId] = useState('');
+  const [newClienteNome, setNewClienteNome] = useState('');
   const [newTipo, setNewTipo] = useState('Empurrador Fluvial');
   const [customTipo, setCustomTipo] = useState('');
   const [newRegistro, setNewRegistro] = useState('');
   const [newCertificadora, setNewCertificadora] = useState<Certificadora>('Amazon Naval');
   const [newDescricao, setNewDescricao] = useState('');
+
+  const fetchLatestClients = async () => {
+    try {
+      const res = await fetch('/api/clients');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableClients(data);
+        return data;
+      }
+    } catch {
+      // ignore
+    }
+    return availableClients;
+  };
+
+  const handleOpenModal = async () => {
+    setIsModalOpen(true);
+    const latest = await fetchLatestClients();
+    if (latest && latest.length > 0 && !newClienteId) {
+      setNewClienteId(latest[0].id);
+      setNewClienteNome(latest[0].nome);
+    }
+  };
 
   const filteredVessels = vessels.filter((v) => {
     const matchesSearch =
@@ -48,12 +77,13 @@ export const VesselsList: React.FC<VesselsListProps> = ({
     if (!newNome.trim()) return;
 
     const finalTipo = newTipo === 'Outro' ? customTipo || 'Outro' : newTipo;
+    const client = availableClients.find((c) => c.id === newClienteId);
 
     onCreateVessel(
       {
         nome: newNome,
         clienteId: newClienteId || undefined,
-        clienteNome: newClienteNome,
+        clienteNome: client?.nome || newClienteNome || 'Cliente não informado',
         tipo: finalTipo,
         registro: newRegistro || 'PA-00000-X',
         certificadoraPrincipal: newCertificadora,
@@ -269,7 +299,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                     onChange={(e) => {
                       const selId = e.target.value;
                       setNewClienteId(selId);
-                      const selectedClient = clients.find((c) => c.id === selId);
+                      const selectedClient = availableClients.find((c) => c.id === selId);
                       if (selectedClient) {
                         setNewClienteNome(selectedClient.nome);
                       }
@@ -277,7 +307,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium text-slate-900 bg-white"
                   >
                     <option value="">-- Selecione o Cliente --</option>
-                    {clients.map((c) => (
+                    {availableClients.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.nome}
                       </option>

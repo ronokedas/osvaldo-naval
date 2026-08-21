@@ -20,6 +20,7 @@ import { Sidebar, TabType } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { VesselsList } from './components/VesselsList';
 import { VesselDetailModal } from './components/VesselDetailModal';
+import { compressImage } from './utils/image-compressor';
 import { ProposalsList } from './components/ProposalsList';
 import { MyTasks } from './components/MyTasks';
 import { FinancialView } from './components/FinancialView';
@@ -37,6 +38,21 @@ import { RegistrationsView } from './components/RegistrationsView';
 import CommitmentsView from './components/CommitmentsView';
 import { RenewalsView } from './components/RenewalsView';
 import { NotificationsModal } from './components/NotificationsModal';
+
+// Lazy loaded views
+const LazyDashboard = React.lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const LazyVesselsList = React.lazy(() => import('./components/VesselsList').then(m => ({ default: m.VesselsList })));
+const LazyProposalsList = React.lazy(() => import('./components/ProposalsList').then(m => ({ default: m.ProposalsList })));
+const LazyMyTasks = React.lazy(() => import('./components/MyTasks').then(m => ({ default: m.MyTasks })));
+const LazyFinancialView = React.lazy(() => import('./components/FinancialView').then(m => ({ default: m.FinancialView })));
+const LazyTeamView = React.lazy(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
+const LazyProtocolsView = React.lazy(() => import('./components/ProtocolsView').then(m => ({ default: m.ProtocolsView })));
+const LazySettingsView = React.lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const LazyGlobalDocumentSearch = React.lazy(() => import('./components/GlobalDocumentSearch').then(m => ({ default: m.GlobalDocumentSearch })));
+const LazyServiceOrdersView = React.lazy(() => import('./components/ServiceOrdersView').then(m => ({ default: m.ServiceOrdersView })));
+const LazyRegistrationsView = React.lazy(() => import('./components/RegistrationsView').then(m => ({ default: m.RegistrationsView })));
+const LazyCommitmentsView = React.lazy(() => import('./components/CommitmentsView'));
+const LazyRenewalsView = React.lazy(() => import('./components/RenewalsView').then(m => ({ default: m.RenewalsView })));
 import { ServiceOrder, ServiceOrderDetail, InternalNotification } from './types';
 
 const TAB_PATHS: TabType[] = [
@@ -186,48 +202,76 @@ export default function App() {
     fetchUser();
   }, []);
 
+  const fetchData = React.useCallback(async (showAlerts = true) => {
+    if (!currentUser) return;
+    try {
+      const [vRes, clRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
+        fetch('/api/vessels'),
+        fetch('/api/clients'),
+        fetch('/api/proposals'),
+        fetch('/api/tasks'),
+        fetch('/api/finance'),
+        fetch('/api/protocols'),
+        fetch('/api/critical-pendings'),
+        fetch('/api/settings/email'),
+        fetch('/api/settings/signature'),
+        fetch('/api/settings/logo'),
+      ]);
+      
+      const rawVessels: any[] = vRes.ok ? await vRes.json() : [];
+      const normalizedVessels: Vessel[] = rawVessels.map(normalizeVessel);
+      const vesselById = new Map<string, Vessel>(normalizedVessels.map((v) => [v.id, v]));
+
+      if (vRes.ok) setVessels(normalizedVessels);
+      if (clRes.ok) setClients(await clRes.json());
+      if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
+      if (tRes.ok) setTasks((await tRes.json()).map((task: any) => normalizeTask(task, vesselById)));
+      if (fRes.ok) setFinancialEntries((await fRes.json()).map(normalizeFinancialEntry));
+      if (prRes.ok) setProtocols(await prRes.json());
+      if (cRes.ok) setCriticalPendings(await cRes.json());
+      if (emRes.ok) setEmailConfig(await emRes.json());
+      if (sigRes.ok) setSignatureConfig(await sigRes.json());
+      if (logRes.ok) setLogoConfig(await logRes.json());
+      
+      if (currentUser.role !== 'tecnico') {
+         const uRes = await fetch('/api/users');
+         if (uRes.ok) setUsers(await uRes.json());
+      }
+
+      const responses = [vRes, clRes, pRes, tRes, fRes, prRes, cRes];
+      if (showAlerts && responses.some(r => !r.ok)) {
+        console.warn('Algumas requisições iniciais falharam.');
+        alert('Algumas informações não puderam ser carregadas do servidor. Se o problema persistir, atualize a página.');
+      }
+    } catch (e) {
+      console.error('Error fetching data:', e);
+      if (showAlerts) {
+        alert('Erro ao carregar os dados iniciais do servidor. Verifique sua conexão e tente novamente.');
+      }
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     if (!currentUser) return;
-    
-    const fetchData = async () => {
-      try {
-        const [vRes, clRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
-          fetch('/api/vessels'),
-          fetch('/api/clients'),
-          fetch('/api/proposals'),
-          fetch('/api/tasks'),
-          fetch('/api/finance'),
-          fetch('/api/protocols'),
-          fetch('/api/critical-pendings'),
-          fetch('/api/settings/email'),
-          fetch('/api/settings/signature'),
-          fetch('/api/settings/logo'),
-        ]);
-        
-        const rawVessels: any[] = vRes.ok ? await vRes.json() : [];
-        const normalizedVessels: Vessel[] = rawVessels.map(normalizeVessel);
-        const vesselById = new Map<string, Vessel>(normalizedVessels.map((v) => [v.id, v]));
+    fetchData(true);
 
-        if (vRes.ok) setVessels(normalizedVessels);
-        if (clRes.ok) setClients(await clRes.json());
-        if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
-        if (tRes.ok) setTasks((await tRes.json()).map((task: any) => normalizeTask(task, vesselById)));
-        if (fRes.ok) setFinancialEntries((await fRes.json()).map(normalizeFinancialEntry));
-        if (prRes.ok) setProtocols(await prRes.json());
-        if (cRes.ok) setCriticalPendings(await cRes.json());
-        if (emRes.ok) setEmailConfig(await emRes.json());
-        if (sigRes.ok) setSignatureConfig(await sigRes.json());
-        if (logRes.ok) setLogoConfig(await logRes.json());
-        
-        if (currentUser.role !== 'tecnico') {
-           const uRes = await fetch('/api/users');
-           if (uRes.ok) setUsers(await uRes.json());
-        }
-      } catch (e) {
-        console.error('Error fetching data:', e);
-      }
+    const handleDataChanged = () => {
+      fetchData(false);
     };
-    fetchData();
+
+    window.addEventListener('nautilus:data-changed', handleDataChanged);
+    return () => window.removeEventListener('nautilus:data-changed', handleDataChanged);
+  }, [currentUser, fetchData]);
+
+  // Refresh data on tab navigation
+  useEffect(() => {
+    if (currentUser) {
+      fetchData(false);
+    }
+  }, [activeTab, currentUser, fetchData]);
+
+  useEffect(() => {
+    if (!currentUser) return;
 
     // Fetch service orders + notifications
     const fetchOs = async () => {
@@ -763,12 +807,23 @@ export default function App() {
   };
 
   const handleOsUploadVersion = async (docId: string, file: File, data: any) => {
+    // Compress image if applicable
+    const processedFile = await compressImage(file);
+
     // Upload file first
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', processedFile);
     const upRes = await fetch('/api/upload', { method: 'POST', body: formData });
-    if (!upRes.ok) throw new Error('Falha no upload do arquivo');
-    const up = await upRes.json();
+    
+    let up;
+    const contentType = upRes.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+      up = await upRes.json();
+    } else {
+      throw new Error(`Erro no servidor (${upRes.status}). O arquivo pode ser muito grande ou ocorreu um erro de conexão.`);
+    }
+
+    if (!upRes.ok) throw new Error(up.error || 'Falha no upload do arquivo');
     // Register version
     if (!selectedOsId) throw new Error('Ordem de Serviço não selecionada');
     await apiPost(`/api/service-orders/documents/${docId}/versions`, {
@@ -792,6 +847,34 @@ export default function App() {
   const handleOsSubmitExternal = async (data: any) => {
     if (!selectedOsId) return;
     await apiPost(`/api/service-orders/${selectedOsId}/submit-external`, data);
+    
+    if (data.gerarProtocoloOFicial) {
+      const os = serviceOrders.find(o => o.id === selectedOsId);
+      if (!os) return;
+      
+      const doc = os.documentos?.find(d => d.id === data.documentoId);
+      const docName = doc ? `${doc.titulo} (V${data.versaoEnviada || 1})` : `Documentos da OS ${os.numero}`;
+
+      const seq = protocols.length + 83;
+      const yearSuffix = String(new Date().getFullYear()).slice(-2);
+      const numeroProtocolo = `PROT-${String(seq).padStart(3, '0')}/${yearSuffix}`;
+
+      await handleCreateProtocol({
+        numeroProtocolo,
+        dataEnvio: new Date().toISOString().split('T')[0],
+        embarcacaoId: os.embarcacaoId || '',
+        embarcacaoNome: os.embarcacaoNome || '',
+        clienteNome: os.clienteNome || '',
+        tipoProtocolo: data.orgaoOuCertificadora.toLowerCase().includes('capitania') ? 'capitania_dpc' : 'certificadora',
+        destinatario: data.orgaoOuCertificadora,
+        orgaoOuEmpresa: data.orgaoOuCertificadora,
+        documentosIncluidos: [docName],
+        responsavelEnvioNome: currentUser?.nome || 'Sistema',
+        status: 'em_trânsito',
+        codigoRastreio: data.protocolo || '',
+        observacoes: data.observacao || `Gerado automaticamente via envio da OS ${os.numero}.`,
+      });
+    }
   };
 
   const handleOsExternalResponse = async (data: any) => {
@@ -854,8 +937,9 @@ export default function App() {
         {/* Dynamic View Panel */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           <RouteErrorBoundary key={activeTab} onRecover={() => setActiveTab('dashboard')}>
+            <React.Suspense fallback={<div className="flex-1 flex flex-col items-center justify-center min-h-[50vh]"><div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div><span className="mt-4 text-slate-500 font-medium">Carregando tela...</span></div>}>
           {activeTab === 'dashboard' && (
-            <Dashboard
+            <LazyDashboard
               currentUser={currentUser}
               users={users}
               vessels={vessels}
@@ -873,7 +957,7 @@ export default function App() {
           )}
 
           {activeTab === 'vessels' && (
-            <VesselsList
+            <LazyVesselsList
               vessels={vessels}
               clients={clients}
               onSelectVessel={(v) => setSelectedVessel(v)}
@@ -883,11 +967,11 @@ export default function App() {
           )}
 
           {activeTab === 'registrations' && (
-            <RegistrationsView onChanged={() => window.dispatchEvent(new Event('nautilus:data-changed'))} />
+            <LazyRegistrationsView onChanged={() => window.dispatchEvent(new Event('nautilus:data-changed'))} />
           )}
 
           {activeTab === 'commitments' && (
-            <CommitmentsView
+            <LazyCommitmentsView
               currentUser={currentUser}
               vessels={vessels}
               users={users}
@@ -895,7 +979,7 @@ export default function App() {
           )}
 
           {activeTab === 'renewals' && (
-            <RenewalsView
+            <LazyRenewalsView
               vessels={vessels}
               clients={clients}
               onUpdateProposal={handleUpdateProposal}
@@ -907,7 +991,7 @@ export default function App() {
           )}
 
           {activeTab === 'tasks' && (
-            <MyTasks
+            <LazyMyTasks
               tasks={tasks}
               currentUser={currentUser}
               onUpdateTaskStatus={handleUpdateTaskStatus}
@@ -917,7 +1001,7 @@ export default function App() {
           )}
 
           {activeTab === 'proposals' && (
-            <ProposalsList
+            <LazyProposalsList
               proposals={proposals}
               vessels={vessels}
               clients={clients}
@@ -932,7 +1016,7 @@ export default function App() {
           )}
 
           {activeTab === 'service-orders' && (
-            <ServiceOrdersView
+            <LazyServiceOrdersView
               serviceOrders={serviceOrders}
               currentUser={currentUser}
               onOpenOrder={openOsDetail}
@@ -942,7 +1026,7 @@ export default function App() {
           )}
 
           {activeTab === 'financial' && (
-            <FinancialView
+            <LazyFinancialView
               vessels={vessels}
               financialEntries={financialEntries}
               currentUser={currentUser}
@@ -954,7 +1038,7 @@ export default function App() {
           )}
 
           {activeTab === 'protocols' && (
-            <ProtocolsView
+            <LazyProtocolsView
               protocols={protocols}
               vessels={vessels}
               currentUser={currentUser}
@@ -966,9 +1050,9 @@ export default function App() {
           )}
 
           {activeTab === 'team' && (
-            <TeamView
+            <LazyTeamView
               users={users}
-              tasks={tasks}
+              serviceOrders={serviceOrders}
               onUpdateUserRole={(id, role) => {
                 setUsers(users.map((u) => (u.id === id ? { ...u, role } : u)));
               }}
@@ -977,16 +1061,16 @@ export default function App() {
           )}
 
           {activeTab === 'documents' && (
-            <GlobalDocumentSearch tasks={tasks} vessels={vessels} />
+            <LazyGlobalDocumentSearch serviceOrders={serviceOrders} vessels={vessels} />
           )}
 
           {activeTab === 'settings' && (
-            <SettingsView
+            <LazySettingsView
               currentUser={currentUser}
-              users={users}
               emailConfig={emailConfig}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}
+              users={users}
               onCreateUser={handleCreateUser}
               onUpdateUser={handleUpdateUser}
               onUpdateEmailConfig={handleUpdateEmailConfig}
@@ -996,6 +1080,7 @@ export default function App() {
               onOpenProfile={() => setIsProfileModalOpen(true)}
             />
           )}
+            </React.Suspense>
           </RouteErrorBoundary>
         </main>
       </div>
@@ -1033,6 +1118,7 @@ export default function App() {
           vessel={selectedVessel}
           clients={clients}
           tasks={tasks}
+          serviceOrders={serviceOrders}
           proposals={proposals}
           financialEntries={financialEntries}
           users={users}
@@ -1041,9 +1127,21 @@ export default function App() {
           onUpdateVessel={handleUpdateVessel}
           onUpdateVesselStatus={handleUpdateVesselStatus}
           onUpdateTaskStatus={handleUpdateTaskStatus}
+          onOpenServiceOrder={(osId) => {
+            setSelectedVessel(null);
+            setSelectedOsId(osId);
+            setActiveTab('service-orders');
+          }}
           onCreateTask={handleCreateTask}
+          onUploadTaskFile={handleUploadTaskFile}
           onAddPayment={handleAddPayment}
-          onSelectProposal={(p) => setSelectedProposalForView(p)}
+          onSelectProposal={(p) => {
+            setSelectedVessel(null);
+            setActiveTab('proposals');
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('open-proposal', { detail: p.id }));
+            }, 300);
+          }}
           onCreateProposalForVessel={(v) => {
             setSelectedVessel(null);
             setActiveTab('proposals');

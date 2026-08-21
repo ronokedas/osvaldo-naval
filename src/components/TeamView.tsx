@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import { User, DocumentTask } from '../types';
+import { User, ServiceOrder } from '../types';
 import { Users, UserPlus, Shield, Key, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface TeamViewProps {
   users: User[];
-  tasks: DocumentTask[];
+  serviceOrders: ServiceOrder[];
   onUpdateUserRole: (userId: string, role: any) => void;
   onResetUserPassword: (userId: string) => Promise<string>;
 }
 
 export const TeamView: React.FC<TeamViewProps> = ({
   users,
-  tasks,
+  serviceOrders,
   onUpdateUserRole,
   onResetUserPassword,
 }) => {
@@ -47,7 +47,7 @@ export const TeamView: React.FC<TeamViewProps> = ({
       {/* User Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {users.map((u) => {
-          const activeTasks = tasks.filter((t) => t.responsavelId === u.id && t.status !== 'baixado');
+          const activeOs = serviceOrders.filter((os) => os.responsavelTecnicoId === u.id && !['finalizada', 'entregue', 'cancelada'].includes(os.status));
 
           return (
             <div
@@ -87,14 +87,14 @@ export const TeamView: React.FC<TeamViewProps> = ({
               {/* Active Task Count */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">Tarefas em andamento:</span>
-                  <span className="font-mono font-bold text-blue-900">{activeTasks.length} ativas</span>
+                  <span className="text-slate-500 font-medium">Ordens de Serviço em andamento:</span>
+                  <span className="font-mono font-bold text-blue-900">{activeOs.length} ativas</span>
                 </div>
 
                 <div className="space-y-1">
-                  {activeTasks.slice(0, 2).map((t) => (
-                    <p key={t.id} className="text-[11px] text-slate-700 truncate font-medium">
-                      • {t.titulo} ({t.embarcacaoNome})
+                  {activeOs.slice(0, 2).map((os) => (
+                    <p key={os.id} className="text-[11px] text-slate-700 truncate font-medium">
+                      • {os.numero} ({os.embarcacaoNome || 'Geral'})
                     </p>
                   ))}
                 </div>

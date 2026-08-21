@@ -294,6 +294,9 @@ export interface ServiceOrder {
   dataConclusao?: string;
   observacoes?: string;
   createdAt?: string;
+  documentos?: Document[];
+  submissoesExternas?: ExternalSubmission[];
+  entregas?: Delivery[];
 }
 
 export interface ServiceOrderItem {

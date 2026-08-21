@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
-import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus, Client } from '../types';
+import { Vessel, DocumentTask, Proposal, FinancialEntry, User, Certificadora, TaskStatus, Client, ServiceOrder } from '../types';
 import { generateTechnicalReport } from '../utils/pdfGenerator';
 import {
   X,
@@ -37,9 +37,12 @@ interface VesselDetailModalProps {
   onUpdateVesselStatus: (vesselId: string, newStatus: 'aberta' | 'concluida') => void;
   onUpdateTaskStatus: (taskId: string, newStatus: TaskStatus, certificadora?: Certificadora) => void;
   onCreateTask: (taskData: Partial<DocumentTask>) => void;
+  onUploadTaskFile?: (taskId: string, fileName: string, fileUrl: string) => void;
   onAddPayment: (paymentData: Partial<FinancialEntry>) => void;
   onSelectProposal: (proposal: Proposal) => void;
   onCreateProposalForVessel: (vessel: Vessel) => void;
+  serviceOrders?: ServiceOrder[];
+  onOpenServiceOrder?: (osId: string) => void;
 }
 
 export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
@@ -55,9 +58,12 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   onUpdateVesselStatus,
   onUpdateTaskStatus,
   onCreateTask,
+  onUploadTaskFile,
   onAddPayment,
   onSelectProposal,
   onCreateProposalForVessel,
+  serviceOrders = [],
+  onOpenServiceOrder,
 }) => {
   const [activeTab, setActiveTab] = useState<'documentos' | 'financeiro' | 'propostas'>('documentos');
 
@@ -106,6 +112,10 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   const [taskResponsavelId, setTaskResponsavelId] = useState(users[2]?.id || users[0]?.id || '');
   const [taskCertificadora, setTaskCertificadora] = useState<Certificadora>(vessel.certificadoraPrincipal);
   const [taskPrazo, setTaskPrazo] = useState('10 dias');
+  const [taskFile, setTaskFile] = useState<File | null>(null);
+  const [taskObservacoes, setTaskObservacoes] = useState('');
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+  const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
 
   // New payment modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -115,26 +125,110 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   const [payForma, setPayForma] = useState<'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque'>('PIX');
   const [payObs, setPayObs] = useState('');
 
-  const vesselTasks = tasks.filter((t) => t.embarcacaoId === vessel.id);
+  const vesselServiceOrders = serviceOrders.filter((os) => 
+    os.embarcacaoId === vessel.id
+  );
   const vesselProposals = proposals.filter((p) => p.embarcacaoId === vessel.id);
   const vesselPayments = financialEntries.filter((f) => f.embarcacaoId === vessel.id);
 
   const percentReceived = vessel.valorTotal > 0 ? Math.round((vessel.valorRecebido / vessel.valorTotal) * 100) : 0;
   const remainingBalance = vessel.valorTotal - vessel.valorRecebido;
 
-  const handleWhatsAppClient = () => {
-    const tasksCompleted = vesselTasks.filter(t => t.status === 'baixado' || t.status === 'pronto').length;
-    const total = vesselTasks.length;
+  const handleWhatsAppClient = async () => {
+    const tasksCompleted = vesselServiceOrders.filter(o => o.status === 'concluida').length;
+    const total = vesselServiceOrders.length;
+    
+    // Procura o cliente na lista fornecida ou busca do servidor
+    let matchedClient = clients.find(
+      (c) => (vessel.clienteId && c.id === vessel.clienteId) || (c.nome && c.nome.trim().toLowerCase() === (vessel.clienteNome || '').trim().toLowerCase())
+    );
+
+    if (!matchedClient && (vessel.clienteId || vessel.clienteNome)) {
+      try {
+        const res = await fetch('/api/clients');
+        if (res.ok) {
+          const clientList: Client[] = await res.json();
+          matchedClient = clientList.find(
+            (c) => (vessel.clienteId && c.id === vessel.clienteId) || (c.nome && c.nome.trim().toLowerCase() === (vessel.clienteNome || '').trim().toLowerCase())
+          );
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    const rawPhone = matchedClient?.whatsapp || matchedClient?.telefone || vessel.telefoneContato || '';
+    const digits = rawPhone.replace(/\D/g, '');
+    let phoneParam = '';
+    if (digits) {
+      if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+        phoneParam = digits;
+      } else if (digits.length === 10 || digits.length === 11) {
+        phoneParam = `55${digits}`;
+      } else {
+        phoneParam = digits;
+      }
+    }
     
     const text = `Olá, aqui é da Nautilus (Engenharia Naval).\n\nAtualização sobre sua embarcação *${vessel.nome}*:\n- Status: ${vessel.status === 'aberta' ? 'Em andamento' : 'Concluída'}\n- Documentos: ${tasksCompleted} de ${total} prontos.\n- Financeiro: R$ ${vessel.valorRecebido.toLocaleString('pt-BR')} recebidos (Saldo pendente: R$ ${remainingBalance.toLocaleString('pt-BR')}).\n\nQualquer dúvida estamos à disposição!`;
     
     const encodedText = encodeURIComponent(text);
-    window.open(`https://wa.me/?text=${encodedText}`, '_blank');
+    const waUrl = phoneParam 
+      ? `https://wa.me/${phoneParam}?text=${encodedText}`
+      : `https://wa.me/?text=${encodedText}`;
+
+    window.open(waUrl, '_blank');
   };
 
-  const handleCreateTaskSubmit = (e: React.FormEvent) => {
+  const handleDirectTaskFileUpload = async (taskId: string, file: File) => {
+    setUploadingTaskId(taskId);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Falha no envio');
+      const data = await res.json();
+      if (onUploadTaskFile) {
+        onUploadTaskFile(taskId, data.fileName, data.url);
+      }
+    } catch (err) {
+      alert('Não foi possível enviar o anexo.');
+      console.error(err);
+    } finally {
+      setUploadingTaskId(null);
+    }
+  };
+
+  const handleCreateTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskTitulo.trim()) return;
+
+    setIsSubmittingTask(true);
+    let uploadedFileName = '';
+    let uploadedUrl = '';
+
+    if (taskFile) {
+      try {
+        const formData = new FormData();
+        formData.append('file', taskFile);
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          uploadedFileName = data.fileName;
+          uploadedUrl = data.url;
+        } else {
+          alert('Aviso: Não foi possível enviar o arquivo anexo, mas o documento será registrado.');
+        }
+      } catch (err) {
+        console.error('Upload failed', err);
+      }
+    }
 
     const assignedUser = users.find((u) => u.id === taskResponsavelId);
 
@@ -149,11 +243,17 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
       responsavelCargo: assignedUser ? assignedUser.cargo : 'Técnico',
       certificadora: taskCertificadora,
       prazo: taskPrazo,
-      status: 'pendente',
+      status: uploadedUrl ? 'pronto' : 'pendente',
+      arquivoNome: uploadedFileName || undefined,
+      arquivoUrl: uploadedUrl || undefined,
+      observacoes: taskObservacoes || undefined,
     });
 
+    setIsSubmittingTask(false);
     setIsTaskModalOpen(false);
     setTaskTitulo('');
+    setTaskFile(null);
+    setTaskObservacoes('');
   };
 
   const handleAddPaymentSubmit = (e: React.FormEvent) => {
@@ -175,7 +275,12 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden my-auto border border-slate-200">
         {/* Top Header */}
         <div className="bg-[#0B192C] text-white p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800">
@@ -231,6 +336,8 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
 
             <button
               onClick={onClose}
+              aria-label="Fechar"
+              title="Fechar"
               className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
             >
               <X className="w-6 h-6" />
@@ -288,7 +395,7 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
             }`}
           >
             <FileText className="w-4 h-4" />
-            Documentos & Laudos ({vesselTasks.length})
+            Documentos & Laudos ({vesselServiceOrders.length})
           </button>
 
           <button
@@ -323,104 +430,43 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-bold text-slate-700">
-                  Documentos do escopo atribuídos aos ultrassonistas e desenhistas:
+                  Ordens de Serviço atreladas a esta embarcação:
                 </p>
-                <button
-                  onClick={() => setIsTaskModalOpen(true)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  Adicionar Documento / Laudo
-                </button>
               </div>
 
               <div className="space-y-3">
-                {vesselTasks.map((t) => (
+                {vesselServiceOrders.map((os) => (
                   <div
-                    key={t.id}
-                    className="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition space-y-3"
+                    key={os.id}
+                    className="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition flex items-center justify-between gap-3"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded">
-                          {t.tipo}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-800 text-sm">
+                          {os.numero}
                         </span>
-                        <h4 className="font-bold text-slate-900 text-sm mt-1">{t.titulo}</h4>
-                        <p className="text-xs text-slate-500">
-                          Responsável: <strong className="text-slate-800">{t.responsavelNome}</strong> ({t.responsavelCargo})
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Certifier select */}
-                        <span className="text-xs font-mono font-semibold bg-slate-100 px-2.5 py-1 rounded-lg text-slate-700">
-                          {t.certificadora}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
+                          {os.status.replace(/_/g, ' ')}
                         </span>
-
-                        {/* Status switcher */}
-                        <select
-                          value={t.status}
-                          onChange={(e) =>
-                            onUpdateTaskStatus(t.id, e.target.value as TaskStatus, t.certificadora)
-                          }
-                          className={`text-xs font-bold px-3 py-1.5 rounded-xl border cursor-pointer ${
-                            t.status === 'baixado'
-                              ? 'bg-slate-100 text-slate-700 border-slate-300'
-                              : t.status === 'enviado'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                              : t.status === 'execucao'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : t.status === 'exigencia'
-                              ? 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}
-                        >
-                          <option value="pendente">Pendente</option>
-                          <option value="execucao">Em execução</option>
-                          <option value="pronto">Pronto</option>
-                          <option value="enviado">Enviado à Certificadora</option>
-                          <option value="exigencia">Exigência Recebida</option>
-                          <option value="baixado">Baixado</option>
-                        </select>
                       </div>
-                    </div>
-
-                    {t.observacoes && (
-                      <p className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-slate-600">
-                        {t.observacoes}
+                      <p className="text-xs text-slate-500 mt-1">
+                        Responsável: <strong className="text-slate-800">{users.find(u => u.id === os.responsavelTecnicoId)?.nome || 'Nenhum'}</strong>
                       </p>
-                    )}
-
-                    {t.arquivoNome && (
-                      <div className="flex items-center gap-2 text-xs font-mono text-blue-700 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
-                        <Paperclip className="w-4 h-4 text-blue-600" />
-                        <span className="truncate">{t.arquivoNome}</span>
-                        <a
-                          href={t.arquivoUrl || '#'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ml-auto text-blue-600 hover:underline font-bold flex items-center gap-1"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Baixar
-                        </a>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-end pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() => generateTechnicalReport(t, vessel)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-slate-500" />
-                        Gerar Laudo / Relatório Técnico (PDF)
-                      </button>
                     </div>
+                    {onOpenServiceOrder && (
+                      <button
+                        onClick={() => onOpenServiceOrder(os.id)}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0 transition"
+                      >
+                        Abrir Ordem de Serviço
+                      </button>
+                    )}
                   </div>
                 ))}
 
-                {vesselTasks.length === 0 && (
+                {vesselServiceOrders.length === 0 && (
                   <div className="text-center py-8 text-slate-400 text-xs">
-                    Nenhum documento ou laudo adicionado a esta embarcação ainda.
+                    Nenhuma ordem de serviço gerada para esta embarcação ainda.
                   </div>
                 )}
               </div>
@@ -648,16 +694,70 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                 </select>
               </div>
 
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Anexar Documento / Laudo (PDF, Imagem, CAD, DOCX)</label>
+                <div className="flex items-center gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-2 p-3 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl cursor-pointer bg-slate-50 hover:bg-blue-50/50 transition">
+                    <Upload className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="text-xs font-semibold text-slate-700 truncate">
+                      {taskFile ? taskFile.name : 'Clique para selecionar o arquivo no seu computador'}
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => setTaskFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                  {taskFile && (
+                    <button
+                      type="button"
+                      onClick={() => setTaskFile(null)}
+                      className="p-2 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer"
+                      title="Remover anexo selecionado"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Observações (opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Observações do documento ou da vistoria realizada..."
+                  value={taskObservacoes}
+                  onChange={(e) => setTaskObservacoes(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
                   type="button"
-                  onClick={() => setIsTaskModalOpen(false)}
-                  className="px-3 py-1.5 border rounded-lg"
+                  onClick={() => {
+                    setIsTaskModalOpen(false);
+                    setTaskFile(null);
+                    setTaskObservacoes('');
+                  }}
+                  disabled={isSubmittingTask}
+                  className="px-3 py-1.5 border rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded-lg">
-                  Salvar
+                <button
+                  type="submit"
+                  disabled={isSubmittingTask}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1.5 shadow-sm"
+                >
+                  {isSubmittingTask ? (
+                    <>
+                      <Upload className="w-3.5 h-3.5 animate-spin" />
+                      Salvando & Anexando...
+                    </>
+                  ) : (
+                    'Salvar'
+                  )}
                 </button>
               </div>
             </form>

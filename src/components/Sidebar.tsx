@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'protocols' as TabType,
       label: 'Protocolos & Entregas',
       icon: Send,
-      roles: [],
+      roles: ['admin', 'financeiro', 'tecnico'],
     },
     {
       id: 'documents' as TabType,

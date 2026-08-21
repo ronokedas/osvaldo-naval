@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
 import { FinancialEntry, Vessel, SignatureConfig, LogoConfig } from '../types';
 import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck } from 'lucide-react';
@@ -21,24 +21,48 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   logoConfig,
   onClose,
 }) => {
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(true);
+  const pdfFrameRef = useRef<HTMLIFrameElement>(null);
   const receiptNum = entry.reciboNumero || `REC-${entry.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}`;
   const clientName = vessel?.clienteNome || entry.clienteNome || 'Cliente / Armador';
 
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    setPdfLoading(true);
+    generateReceiptPdf(entry, logoConfig).then((blob) => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPdfUrl(objectUrl);
+    }).finally(() => active && setPdfLoading(false));
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [entry, logoConfig]);
+
   const handlePrint = () => {
-    window.print();
+    pdfFrameRef.current?.contentWindow?.print();
   };
 
-  const handleDownload = () => {
-    const blob = generateReceiptPdf(entry, logoConfig);
+  const handleDownload = async () => {
+    const blob = await generateReceiptPdf(entry, logoConfig);
     downloadBlob(blob, `Recibo_${receiptNum.replace(/\//g, '-')}.pdf`);
   };
 
   const receiptTitle = entry.tipo === 'quitacao' ? 'Comprovante de Quitação' : 'Recibo de Pagamento';
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto">
+    <div
+      className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
       {/* Modal Card container */}
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden print:shadow-none print:border-none print:w-full print:max-w-none">
+      <div
+        className="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden print:shadow-none print:border-none print:w-full print:max-w-none"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         
         {/* Top Control Bar (Hidden on Print) */}
         <div className="bg-slate-900 text-white p-4 flex items-center justify-between print:hidden">
@@ -70,8 +94,22 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
           </div>
         </div>
 
-        {/* PRINTABLE RECEIPT CONTAINER */}
-        <div className="p-8 sm:p-10 space-y-6 text-slate-800 bg-white print:p-6 print:text-black">
+        {pdfLoading && (
+          <div className="h-[78vh] min-h-[620px] flex items-center justify-center text-sm text-slate-500">
+            Gerando o novo modelo de recibo...
+          </div>
+        )}
+        {pdfUrl && (
+          <iframe
+            ref={pdfFrameRef}
+            title={`Recibo ${receiptNum}`}
+            src={pdfUrl}
+            className="w-full h-[82vh] min-h-[680px] bg-white border-0"
+          />
+        )}
+
+        {/* PRINTABLE RECEIPT CONTAINER (fallback while the PDF is loading) */}
+        <div className={`${pdfUrl || pdfLoading ? 'hidden' : ''} p-8 sm:p-10 space-y-6 text-slate-800 bg-white print:p-6 print:text-black`}>
           
           {/* Header with Logo / Company Details */}
           <div className="flex flex-col sm:flex-row justify-between items-start border-b-2 border-slate-800 pb-6 gap-4">

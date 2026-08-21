@@ -556,149 +556,101 @@ export const generateProtocolPdf = (protocol: Protocol, logoConfig?: LogoConfig)
   doc.save(`Protocolo_${protocol.numeroProtocolo}.pdf`);
 };
 
-export const generateReceiptPdf = (entry: FinancialEntry, logoConfig?: LogoConfig): Blob => {
-  const doc = new jsPDF();
-  const dateStr = new Date(entry.data).toLocaleDateString('pt-BR');
-  
-  const isQuitacao = entry.tipo === 'quitacao';
-  const reciboTitle = isQuitacao ? "Recibo de\nquitação" : "Recibo de\npagamento parcial";
-  
-  drawHeader(doc, `RECIBO OFICIAL\nREC-${entry.reciboNumero || entry.id.substring(0,6).toUpperCase()}/${new Date(entry.data).getFullYear()}`, `EMISSÃO\n${dateStr}`, logoConfig);
+const receiptMoney = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
-  // Hero section
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(20, 40, 170, 35, 4, 4, "F");
-  
-  doc.setTextColor(200, 200, 200);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("C O N T R O L E   F I N A N C E I R O", 30, 48);
+const drawReceiptSectionTitle = (doc: jsPDF, number: string, title: string, y: number) => {
+  doc.setFillColor(...PRIMARY_DARK); doc.circle(23, y - 1.5, 3, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
+  doc.text(number, 23, y, { align: "center" });
+  doc.setFontSize(9); doc.setTextColor(...PRIMARY_DARK); doc.text(title, 29, y);
+};
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.text(reciboTitle, 30, 56);
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(200, 200, 200);
-  doc.text("Documento vinculado à baixa financeira original.", 30, 68);
+const drawReceiptHeader = (doc: jsPDF, receiptNumber: string, date: string, logo: string | null) => {
+  if (logo) {
+    try {
+      const properties = doc.getImageProperties(logo);
+      const scale = Math.min(45 / properties.width, 18 / properties.height);
+      const width = properties.width * scale;
+      const height = properties.height * scale;
+      doc.addImage(logo, "PNG", 20, 20 - height / 2, width, height, undefined, "FAST");
+    } catch {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(...PRIMARY_DARK);
+      doc.text("NAUTILUS", 20, 21);
+    }
+  } else {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(...PRIMARY_DARK);
+    doc.text("NAUTILUS", 20, 21); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+    doc.text("ENGENHARIA NAVAL", 20, 26);
+  }
 
-  doc.setTextColor(150, 150, 150);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.text("VALOR RECEBIDO", 120, 48);
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text(`R$ ${entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 120, 58);
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(118, 11, 55, 9, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(160, 181, 229); doc.text("RECIBO OFICIAL", 123, 15.2);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text(receiptNumber, 123, 18.3);
+  doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240); doc.roundedRect(177, 11, 33, 9, 1.5, 1.5, "FD");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("EMISSÃO", 180, 15.2);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PRIMARY_DARK); doc.text(date, 180, 18.3);
+  doc.setDrawColor(...PRIMARY_DARK); doc.setLineWidth(0.8); doc.line(20, 30, 190, 30);
+};
 
-  doc.setFillColor(40, 60, 90);
-  doc.roundedRect(120, 62, 50, 6, 3, 3, "F");
-  doc.setFillColor(16, 185, 129); // green-500
-  doc.circle(123, 65, 1.5, "F");
-  doc.setFontSize(6);
-  doc.text("PAGAMENTO CONFIRMADO", 127, 66.5);
+export const generateReceiptPdf = async (entry: FinancialEntry, logoConfig?: LogoConfig): Promise<Blob> => {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const date = new Date(entry.data).toLocaleDateString('pt-BR');
+  const year = new Date(entry.data).getFullYear();
+  const receiptNumber = `REC-${entry.reciboNumero || entry.id.substring(0, 6).toUpperCase()}/${year}`;
+  const amount = Number(entry.valor) || 0;
+  const payer = entry.clienteNome || "ARMADOR / RESPONSÁVEL PELA EMBARCAÇÃO";
+  const extraEntry = entry as FinancialEntry & { propostaNumero?: string; proposta?: { numero?: string } };
+  const proposalNumber = extraEntry.propostaNumero || extraEntry.proposta?.numero || entry.observacao.match(/DS\s*\d+\/\d+/i)?.[0] || "Não informado";
+  const reference = entry.observacao || "Pagamento de serviços de engenharia naval";
+  const logo = await getOfficialLogoDataUrl();
 
-  // Quote Box
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(20, 80, 170, 30, 3, 3, "S");
-  doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  const receivedText = `Recebemos de ${entry.clienteNome || "ARMADOR / RESPONSÁVEL"}, a quantia de R$ ${entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}, referente à ${entry.observacao || "Pagamento de serviços"}.`;
-  doc.text(doc.splitTextToSize(receivedText, 150), 30, 90);
-  
-  doc.setTextColor(150, 150, 150);
-  doc.setFontSize(7);
-  doc.text("VALOR POR EXTENSO", 30, 105);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(TEXT_DARK[0], TEXT_DARK[1], TEXT_DARK[2]);
-  doc.setFontSize(9);
-  doc.text(numberToWords(entry.valor), 60, 105);
+  drawReceiptHeader(doc, receiptNumber, date, logo);
 
-  let currentY = 120;
-  
-  drawSectionTitle(doc, "1", "DADOS DO PAGAMENTO", currentY);
-  currentY += 8;
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(20, 36, 170, 35, 4, 4, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(201, 138, 37); doc.text("C O N T R O L E   F I N A N C E I R O", 30, 44);
+  doc.setFontSize(16); doc.setTextColor(255, 255, 255); doc.text(entry.tipo === "quitacao" ? "Recibo de quitação" : "Recibo de pagamento", 30, 52);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(190, 204, 230); doc.text("Documento vinculado à baixa financeira original.", 30, 63);
+  doc.setDrawColor(107, 130, 173); doc.setLineWidth(.4); doc.line(126, 43, 126, 62);
+  doc.setFontSize(7); doc.setTextColor(160, 181, 229); doc.text("VALOR RECEBIDO", 132, 45);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(21); doc.setTextColor(255, 255, 255); doc.text(receiptMoney(amount), 132, 55);
+  doc.setFillColor(48, 76, 124); doc.roundedRect(132, 59, 50, 6, 3, 3, "F"); doc.setFillColor(96, 211, 165); doc.circle(135, 62, 1.5, "F");
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(220, 228, 246); doc.text("PAGAMENTO CONFIRMADO", 139, 63.5);
 
-  const drawInfoBox = (x: number, w: number, title: string, val: string, subtitle: string) => {
-    doc.setFillColor(LIGHT_GREY[0], LIGHT_GREY[1], LIGHT_GREY[2]);
-    doc.roundedRect(x, currentY, w, 15, 2, 2, "F");
-    doc.setTextColor(150, 150, 150);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
-    doc.text(title, x + 3, currentY + 4);
-    doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-    doc.setFontSize(9);
-    doc.text(val, x + 3, currentY + 9);
-    doc.setTextColor(150, 150, 150);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
-    doc.text(subtitle, x + 3, currentY + 13);
+  doc.setDrawColor(226, 232, 240); doc.setLineWidth(.4); doc.roundedRect(20, 77, 170, 30, 3, 3, "S");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(224, 204, 159); doc.text('“', 25, 84);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...TEXT_DARK);
+  const receivedText = `Recebemos de ${payer}, inscrito no CPF/CNPJ sob nº ________________________, a quantia de ${receiptMoney(amount)}, referente à ${reference}.`;
+  doc.text(doc.splitTextToSize(receivedText, 150), 30, 87, { lineHeightFactor: 1.35 });
+  doc.setDrawColor(226, 232, 240); doc.line(30, 98, 184, 98); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("VALOR POR EXTENSO", 30, 103);
+  doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(...TEXT_DARK); doc.text(numberToWords(amount), 60, 103);
+
+  let y = 114;
+  drawReceiptSectionTitle(doc, "1", "DADOS DO PAGAMENTO", y); y += 8;
+  const drawReceiptInfoBox = (x: number, width: number, title: string, value: string, subtitle: string, accent = false) => {
+    const fill: [number, number, number] = accent ? [236, 240, 255] : [241, 245, 249];
+    doc.setFillColor(...fill); doc.roundedRect(x, y, width, 17, 2, 2, "F");
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(accent ? 51 : 148, accent ? 68 : 163, accent ? 186 : 184); doc.text(title, x + 3, y + 5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PRIMARY_DARK); doc.text(value.slice(0, 26), x + 3, y + 10);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text(subtitle, x + 3, y + 14);
   };
+  drawReceiptInfoBox(20, 40, "DATA DO PAGAMENTO", date, "Data da baixa financeira");
+  drawReceiptInfoBox(62, 40, "FORMA DE PAGAMENTO", entry.formaPagamento, "Conta cadastrada no sistema", true);
+  drawReceiptInfoBox(104, 46, "CLIENTE / PAGADOR", entry.clienteNome || "Armador responsável", "CPF/CNPJ vinculado ao cadastro");
+  drawReceiptInfoBox(152, 38, "PROPOSTA / PROCESSO", proposalNumber, "Processo operacional vinculado");
 
-  drawInfoBox(20, 40, "DATA DO PAGAMENTO", dateStr, "Data da baixa financeira");
-  drawInfoBox(62, 40, "FORMA DE PAGAMENTO", entry.formaPagamento, "Registrada no sistema");
-  drawInfoBox(104, 40, "CLIENTE / PAGADOR", entry.clienteNome || "Armador", "Vinculado ao cadastro");
-  drawInfoBox(146, 44, "PROCESSO", entry.embarcacaoNome, "Embarcação vinculada");
+  y += 25; drawReceiptSectionTitle(doc, "2", "REFERÊNCIA DO RECEBIMENTO", y); y += 8;
+  doc.setDrawColor(226, 232, 240); doc.roundedRect(20, y, 105, 20, 3, 3, "S"); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("SERVIÇO CONTRATADO", 24, y + 5);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...PRIMARY_DARK); doc.text(reference.slice(0, 58), 24, y + 11); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...TEXT_GREY); doc.text("Serviço registrado na baixa financeira.", 24, y + 16);
+  doc.setFillColor(255, 248, 235); doc.setDrawColor(224, 204, 159); doc.roundedRect(129, y, 61, 20, 3, 3, "FD"); doc.setFontSize(6); doc.setTextColor(159, 116, 39); doc.text("EMBARCAÇÃO VINCULADA", 133, y + 5); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...PRIMARY_DARK); doc.text(entry.embarcacaoNome.slice(0, 18), 133, y + 12); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(159, 116, 39); doc.text("Tipo: Embarcação", 133, y + 17);
 
-  currentY += 25;
-  drawSectionTitle(doc, "2", "RESUMO FINANCEIRO", currentY);
-  currentY += 8;
+  y += 29; drawReceiptSectionTitle(doc, "3", "RESUMO FINANCEIRO DA PROPOSTA", y); y += 8;
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(20, y, 170, 25, 3, 3, "F"); doc.setFillColor(...LIGHT_GREY); doc.rect(20, y + 7, 170, 18, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(255, 255, 255); doc.text("COMPOSIÇÃO DOS VALORES", 25, y + 5);
+  [[25, "SUBTOTAL", amount], [65, "DESCONTO", 0], [105, "TOTAL LÍQUIDO", amount], [147, "VALOR DESTE RECIBO", amount]].forEach(([x, label, value]) => { const boxX = Number(x); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text(String(label), boxX, y + 12); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...PRIMARY_DARK); doc.text(receiptMoney(Number(value)), boxX, y + 19); });
 
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(20, currentY, 170, 25, 3, 3, "F");
-  doc.setFillColor(LIGHT_GREY[0], LIGHT_GREY[1], LIGHT_GREY[2]);
-  doc.rect(20, currentY + 7, 170, 18, "F"); // cover bottom rounded corners to make it flat inside
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.text("COMPOSIÇÃO DOS VALORES", 25, currentY + 5);
-
-  doc.setTextColor(150, 150, 150);
-  doc.text("VALOR DESTE RECIBO", 140, currentY + 12);
-  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.setFontSize(14);
-  doc.text(`R$ ${entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 140, currentY + 20);
-
-  currentY += 35;
-  
-  // Doc Emitido section
-  doc.setFillColor(LIGHT_GREY[0], LIGHT_GREY[1], LIGHT_GREY[2]);
-  doc.roundedRect(20, currentY, 80, 50, 3, 3, "F");
-  doc.setFillColor(16, 185, 129);
-  doc.circle(28, currentY + 8, 4, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("V", 26.5, currentY + 10.5); // checkmark fake
-
-  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.text("DOCUMENTO EMITIDO PELO SISTEMA NAUTILUS", 35, currentY + 9);
-  
-  doc.setTextColor(TEXT_GREY[0], TEXT_GREY[1], TEXT_GREY[2]);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.text(doc.splitTextToSize("Este recibo é numerado por ano, vinculado à baixa financeira correspondente e preservado de forma imutável após sua emissão.", 70), 25, currentY + 20);
-
-  // Assinatura Box
-  doc.setDrawColor(220, 220, 220);
-  doc.roundedRect(110, currentY, 80, 50, 3, 3, "S");
-  
-  doc.setDrawColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.line(120, currentY + 35, 180, currentY + 35);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.text(entry.lancadoPorNome, 150, currentY + 40, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6);
-  doc.setTextColor(TEXT_GREY[0], TEXT_GREY[1], TEXT_GREY[2]);
-  doc.text("Administrativo / Financeiro", 150, currentY + 44, { align: "center" });
-
+  y += 27; doc.setFillColor(...LIGHT_GREY); doc.roundedRect(20, y, 88, 48, 3, 3, "F"); doc.setFillColor(42, 125, 91); doc.circle(28, y + 8, 4, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text("✓", 26.2, y + 10.5); doc.setTextColor(...PRIMARY_DARK); doc.text("DOCUMENTO EMITIDO PELO SISTEMA NAUTILUS", 35, y + 9); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...TEXT_GREY); doc.text(doc.splitTextToSize("Este recibo é numerado por ano, vinculado à baixa financeira correspondente e preservado de forma imutável após sua emissão.", 78), 25, y + 19, { lineHeightFactor: 1.35 }); doc.setFontSize(6); doc.setTextColor(148, 163, 184); doc.text("IDENTIFICADOR DO PAGAMENTO", 25, y + 37); doc.line(25, y + 40, 68, y + 40); doc.text("DATA E HORA DA GERAÇÃO", 72, y + 37); doc.line(72, y + 40, 103, y + 40);
+  doc.setDrawColor(...PRIMARY_DARK); doc.roundedRect(112, y, 78, 48, 3, 3, "S"); doc.line(118, y + 35, 184, y + 35); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PRIMARY_DARK); doc.text(entry.lancadoPorNome || "Deisy Saldanha", 151, y + 40, { align: "center" }); doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(...TEXT_GREY); doc.text("Administrativo / Financeiro", 151, y + 44, { align: "center" }); doc.text("Nautilus Projetos Navais LTDA", 151, y + 47, { align: "center" });
+  doc.setFillColor(250, 248, 244); doc.rect(20, 270, 170, 8, "F"); doc.setFillColor(201, 138, 37); doc.rect(20, 270, 1, 8, "F"); doc.setFont("helvetica", "bold"); doc.setFontSize(6); doc.setTextColor(...PRIMARY_DARK); doc.text("Importante:", 24, 275); doc.setFont("helvetica", "normal"); doc.text("este recibo comprova exclusivamente o pagamento informado e não substitui nota fiscal de serviço quando sua emissão for legalmente exigida.", 39, 275);
   drawFooter(doc, 1, 1);
   return doc.output("blob");
 };
@@ -708,4 +660,78 @@ export const generateTechnicalReport = (task: DocumentTask, vessel: Vessel) => {
   // Existing functionality retained as fallback
   doc.text("Report", 20, 20);
   doc.save(`Report_${task.id}.pdf`);
+};
+
+export const generateFinancialReportPdf = async (
+  entries: FinancialEntry[],
+  logoConfig?: LogoConfig,
+  periodText: string = "Relatório Geral"
+): Promise<Blob> => {
+  const doc = new jsPDF();
+  let currentY = 40;
+
+  drawHeader(doc, "RELATÓRIO FINANCEIRO", periodText, logoConfig);
+
+  // Resumo
+  const totalReceitas = entries.filter(e => e.tipo !== 'despesa').reduce((acc, curr) => acc + curr.valor, 0);
+  const totalDespesas = entries.filter(e => e.tipo === 'despesa').reduce((acc, curr) => acc + curr.valor, 0);
+  const saldo = totalReceitas - totalDespesas;
+
+  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
+  doc.roundedRect(20, currentY, 170, 25, 2, 2, "F");
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  
+  doc.text("Total Entradas", 30, currentY + 10);
+  doc.text(`R$ ${totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 30, currentY + 18);
+
+  doc.text("Total Saídas", 90, currentY + 10);
+  doc.text(`R$ ${totalDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 90, currentY + 18);
+
+  doc.text("Saldo do Período", 150, currentY + 10);
+  doc.text(`R$ ${saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 150, currentY + 18);
+
+  currentY += 40;
+
+  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Detalhamento de Transações", 20, currentY);
+  currentY += 5;
+
+  const tableData = entries.map(entry => [
+    formatShortDate(entry.data),
+    entry.embarcacaoNome,
+    entry.tipo.toUpperCase(),
+    entry.formaPagamento,
+    entry.observacao || '-',
+    `R$ ${entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+  ]);
+
+  (doc as any).autoTable({
+    startY: currentY,
+    head: [['Data', 'Embarcação', 'Tipo', 'Forma Pagamento', 'Observação', 'Valor']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: PRIMARY_DARK,
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold',
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: TEXT_DARK,
+    },
+    alternateRowStyles: {
+      fillColor: LIGHT_GREY,
+    },
+    didDrawPage: function (data: any) {
+      drawFooter(doc, data.pageNumber, data.pageCount || data.pageNumber);
+    },
+  });
+
+  return doc.output("blob");
 };

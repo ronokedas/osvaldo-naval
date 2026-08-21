@@ -4,6 +4,7 @@ import { X, Calendar, FileText, Upload, Send, CheckCircle2, AlertTriangle, Truck
 import { formatPhone } from '../utils/input-formatters';
 import { formatDateBR, formatDateTimeBR } from '../utils/date-formatters';
 import { OsWorkflowStepper } from './OsWorkflowStepper';
+import { compressImage } from '../utils/image-compressor';
 
 interface Props {
   detail: ServiceOrderDetail;
@@ -27,6 +28,127 @@ const SCHEDULE_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   const minutes = index % 2 === 0 ? '00' : '30';
   return `${hours}:${minutes}`;
 });
+
+
+
+const ExternalSubmissionModal: React.FC<{ detail: any, onClose: () => void, onSubmit: (data: any) => Promise<void>, onRefresh: () => void }> = ({ detail, onClose, onSubmit, onRefresh }) => {
+  const [orgaoSelect, setOrgaoSelect] = useState('Capitania Fluvial');
+  const [orgaoText, setOrgaoText] = useState('');
+  const [gerarProtocolo, setGerarProtocolo] = useState(false);
+  const [selectedDocId, setSelectedDocId] = useState('');
+  const [versaoEnviada, setVersaoEnviada] = useState(1);
+
+  const handleDocChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const docId = e.target.value;
+    setSelectedDocId(docId);
+    const doc = (detail.documentos || []).find((d: any) => d.id === docId);
+    if (doc) {
+      setVersaoEnviada(doc.versaoAtual || 1);
+    }
+  };
+
+  return (
+    <Modal title="Registrar Envio Externo" onClose={onClose}>
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        try {
+          const f = e.target as any;
+          const docId = f.doc.value;
+          const versao = Number(f.versao.value);
+          
+          await onSubmit({
+            documentoId: docId || undefined,
+            versaoEnviada: versao || undefined,
+            orgaoOuCertificadora: orgaoSelect === 'Outro' ? orgaoText : orgaoSelect,
+            protocolo: f.protocolo?.value || '',
+            observacao: f.obs.value,
+            gerarProtocoloOFicial: gerarProtocolo
+          });
+          
+          onClose();
+          onRefresh();
+        } catch (error: any) {
+          window.alert(error?.message || 'Erro ao registrar envio externo.');
+        }
+      }} className="space-y-3 text-sm">
+        
+        <Field label="Documento">
+          <select name="doc" value={selectedDocId} onChange={handleDocChange} className="w-full px-3 py-2 border rounded-lg text-xs">
+            <option value="">Selecionar Documento</option>
+            {(detail.documentos || []).map((d: any) => (
+              <option key={d.id} value={d.id}>{d.titulo} (V{d.versaoAtual})</option>
+            ))}
+          </select>
+        </Field>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Versão Enviada">
+            <input name="versao" type="number" min={1} value={versaoEnviada} onChange={e => setVersaoEnviada(Number(e.target.value))} className="w-full px-3 py-2 border rounded-lg text-xs" />
+          </Field>
+          <Field label="Data Envio">
+            <input name="data" type="date" defaultValue={new Date().toISOString().split('T')[0]} className="w-full px-3 py-2 border rounded-lg text-xs" />
+          </Field>
+        </div>
+        
+        <Field label="Órgão / Certificadora / Cliente">
+          <select 
+            value={orgaoSelect}
+            onChange={(e) => setOrgaoSelect(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg text-xs font-medium bg-slate-50"
+          >
+            <option value="Capitania Fluvial">Capitania Fluvial (Marinha)</option>
+            <option value="DPC">DPC</option>
+            <option value="ABS">ABS</option>
+            <option value="DNV">DNV</option>
+            <option value="RBNA">RBNA</option>
+            <option value="Cliente">Cliente Direto (Armador)</option>
+            <option value="Outro">Outro...</option>
+          </select>
+        </Field>
+        
+        {orgaoSelect === 'Outro' && (
+          <Field label="Especificar Órgão/Empresa">
+            <input 
+              value={orgaoText}
+              onChange={(e) => setOrgaoText(e.target.value)}
+              required 
+              placeholder="Digite o nome..."
+              className="w-full px-3 py-2 border rounded-lg text-xs" 
+            />
+          </Field>
+        )}
+
+        <Field label="Número do Protocolo / Rastreio (Opcional)">
+          <input name="protocolo" placeholder="Ex: RJ-123456/2026" className="w-full px-3 py-2 border rounded-lg text-xs" />
+        </Field>
+        
+        <Field label="Observação">
+          <textarea name="obs" className="w-full px-3 py-2 border rounded-lg text-xs" />
+        </Field>
+
+        <label className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition">
+          <input 
+            type="checkbox"
+            checked={gerarProtocolo}
+            onChange={(e) => setGerarProtocolo(e.target.checked)}
+            className="w-4 h-4 text-blue-600 rounded"
+          />
+          <div className="flex flex-col">
+            <span className="text-sm font-bold text-blue-900">Gerar Protocolo Oficial na aba Protocolos</span>
+            <span className="text-[10px] text-blue-700 font-medium">Isso permite gerar um recibo em PDF para assinaturas.</span>
+          </div>
+        </label>
+        
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <button type="button" onClick={onClose} className="px-3 py-1.5 border rounded-lg text-xs cursor-pointer">Cancelar</button>
+          <button type="submit" className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold cursor-pointer transition">
+            Registrar Envio
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
 
 export const ServiceOrderDetailView: React.FC<Props> = ({
   detail, currentUser, users, onClose, onRefresh,
@@ -128,10 +250,19 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
   const handleItemUpload = async (itemId: string, file: File | undefined) => {
     if (!file) return;
     try {
+      const processedFile = await compressImage(file);
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', processedFile);
       const upload = await fetch('/api/upload', { method: 'POST', body: fd });
-      const data = await upload.json();
+      
+      let data;
+      const contentType = upload.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await upload.json();
+      } else {
+        throw new Error(`Erro no servidor (${upload.status}). A foto pode ser muito grande ou ocorreu um problema de conexão.`);
+      }
+
       if (!upload.ok) throw new Error(data.error || 'Falha no upload');
       await updateServiceItem(itemId, { relatorioUrl: data.url, relatorioNome: data.fileName });
     } catch (error: any) {
@@ -416,22 +547,12 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
       )}
 
       {showSubmit && (
-        <Modal title="Registrar Envio Externo" onClose={() => setShowSubmit(false)}>
-          <form onSubmit={async (e) => { e.preventDefault(); const f = e.target as any; const docId = f.doc.value; const versao = Number(f.versao.value); await onSubmitExternal({ documentoId: docId || undefined, versaoEnviada: versao || undefined, orgaoOuCertificadora: f.orgao.value, protocolo: f.protocolo.value, observacao: f.obs.value }); setShowSubmit(false); onRefresh(); }} className="space-y-3 text-sm">
-            <Field label="Documento"><select name="doc" className="w-full px-3 py-2 border rounded-lg text-xs"><option value="">Selecionar</option>{(detail.documentos || []).map((d) => <option key={d.id} value={d.id}>{d.titulo} (V{d.versaoAtual})</option>)}</select></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Versão Enviada"><input name="versao" type="number" min={1} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-              <Field label="Data Envio"><input name="data" type="date" defaultValue={new Date().toISOString().split('T')[0]} className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-            </div>
-            <Field label="Órgão/Certificadora"><input name="orgao" required className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-            <Field label="Protocolo"><input name="protocolo" className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-            <Field label="Observação"><textarea name="obs" className="w-full px-3 py-2 border rounded-lg text-xs" /></Field>
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button type="button" onClick={() => setShowSubmit(false)} className="px-3 py-1.5 border rounded-lg text-xs">Cancelar</button>
-              <button type="submit" className="px-4 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-bold cursor-pointer">Registrar</button>
-            </div>
-          </form>
-        </Modal>
+        <ExternalSubmissionModal 
+          detail={detail} 
+          onClose={() => setShowSubmit(false)} 
+          onSubmit={onSubmitExternal} 
+          onRefresh={onRefresh} 
+        />
       )}
 
       {showResponse && (

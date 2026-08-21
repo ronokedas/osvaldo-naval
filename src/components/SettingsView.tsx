@@ -25,6 +25,10 @@ import {
   PenTool,
   Image as ImageIcon,
   RotateCcw,
+  Database,
+  Download,
+  AlertTriangle,
+  RefreshCcw,
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -59,7 +63,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isAdmin = currentUser.role === 'admin';
 
   // Active Tab inside Settings
-  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'logo' | 'email' | 'signature'>('employees');
+  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'logo' | 'email' | 'signature' | 'data'>('employees');
 
   // Employee Modal state
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -103,6 +107,128 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   });
   const [logoSavedToast, setLogoSavedToast] = useState(false);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Data Management state
+  const restoreFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isWiping, setIsWiping] = useState(false);
+
+  const handleBackup = async () => {
+    try {
+      const res = await fetch('/api/settings/data/backup', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) throw new Error("Erro ao gerar backup");
+      const data = await res.json();
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `nautilus_backup_${new Date().toISOString().slice(0,10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || 'Falha ao baixar backup.');
+    }
+  };
+
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!window.confirm("ATENÇÃO: Restaurar um backup apagará TODOS os dados atuais do sistema e os substituirá pelos dados do arquivo. Tem certeza?")) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsRestoring(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const jsonString = event.target?.result as string;
+          const parsed = JSON.parse(jsonString);
+          
+          const res = await fetch('/api/settings/data/restore', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(parsed)
+          });
+          
+          if (!res.ok) {
+            let errorMessage = "Erro ao restaurar";
+            try {
+              const errData = await res.json();
+              errorMessage = errData.error || errorMessage;
+            } catch {
+              // Mantém a mensagem padrão se a resposta não for JSON.
+            }
+            throw new Error(errorMessage);
+          }
+          
+          alert("Backup restaurado com sucesso! O sistema será recarregado.");
+          window.location.reload();
+        } catch (err: any) {
+          alert("Erro na leitura/envio do arquivo: " + err.message);
+        } finally {
+          setIsRestoring(false);
+        }
+      };
+      reader.onerror = () => {
+        alert("Falha ao ler o arquivo de backup.");
+        setIsRestoring(false);
+      };
+      reader.readAsText(file);
+    } catch (err: any) {
+      alert("Falha ao ler arquivo: " + err.message);
+      setIsRestoring(false);
+    }
+    e.target.value = '';
+  };
+
+  const handleWipe = async (level: 'transactions' | 'all') => {
+    const msg = level === 'transactions' 
+      ? "ATENÇÃO: Você está prestes a apagar todas as Ordens de Serviço, Propostas e Financeiro. Esta ação é IRREVERSÍVEL. Continuar?"
+      : "PERIGO: Você está prestes a apagar TODOS os dados do sistema (exceto usuários e configurações). O sistema ficará zerado. Esta ação é IRREVERSÍVEL. Continuar?";
+      
+    if (!window.confirm(msg)) return;
+
+    if (level === 'all') {
+      const confirmText = window.prompt("Digite 'CONFIRMAR' para zerar o banco de dados:");
+      if (confirmText !== 'CONFIRMAR') {
+        alert("Ação cancelada.");
+        return;
+      }
+    }
+
+    setIsWiping(true);
+    try {
+      const res = await fetch('/api/settings/data/wipe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ level })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Erro ao limpar dados");
+      }
+
+      alert("Limpeza concluída com sucesso! A página será recarregada.");
+      window.location.reload();
+    } catch (err: any) {
+      alert("Falha ao limpar: " + err.message);
+    } finally {
+      setIsWiping(false);
+    }
+  };
 
   // Handle User Create submit
   const handleAddUserSubmit = async (e: React.FormEvent) => {
@@ -359,6 +485,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }`}
           />
         </button>
+
+        {isAdmin && (
+          <button
+            onClick={() => setActiveSubTab('data')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+              activeSubTab === 'data'
+                ? 'bg-[#0B192C] text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Database className="w-4 h-4 text-blue-500" />
+            <span>Gestão de Dados</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: GESTÃO DE FUNCIONÁRIOS */}
@@ -1069,6 +1209,104 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
         </form>
+      )}
+
+      {/* DATA MANAGEMENT TAB */}
+      {activeSubTab === 'data' && isAdmin && (
+        <div className="space-y-6 animate-fade-in pb-12">
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+              <h2 className="text-base font-bold text-[#0B192C] flex items-center gap-2">
+                <Database className="w-5 h-5 text-blue-600" />
+                Backup e Restauração de Dados
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 font-medium">
+                Exporte todo o conteúdo textual do banco de dados ou importe um backup anterior.
+                Atenção: Os arquivos físicos (PDFs e Imagens anexadas) não são incluídos no arquivo JSON.
+              </p>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">Exportar Backup Atual</h3>
+                  <p className="text-xs text-slate-500 mb-4">Gera um arquivo .json com todos os registros do sistema para guarda local.</p>
+                  <button
+                    onClick={handleBackup}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B192C] hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition shadow-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Baixar Backup (JSON)
+                  </button>
+                </div>
+                
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">Restaurar de Backup</h3>
+                  <p className="text-xs text-slate-500 mb-4">Substitui a base atual pelo arquivo fornecido. Requer arquivo .json válido.</p>
+                  <input 
+                    type="file" 
+                    accept=".json" 
+                    className="hidden" 
+                    ref={restoreFileInputRef}
+                    onChange={handleRestore}
+                  />
+                  <button
+                    onClick={() => restoreFileInputRef.current?.click()}
+                    disabled={isRestoring}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold transition"
+                  >
+                    {isRestoring ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {isRestoring ? "Restaurando..." : "Importar Backup (JSON)"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-red-50/50 border border-red-200 rounded-2xl overflow-hidden shadow-sm">
+            <div className="p-6 border-b border-red-100 bg-red-100/50">
+              <h2 className="text-base font-bold text-red-700 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                Zona de Perigo - Limpeza de Sistema
+              </h2>
+              <p className="text-xs text-red-600/80 mt-1 font-medium">
+                Estas ações apagam dados permanentemente. Faça um backup antes de prosseguir.
+              </p>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <div className="flex-1 bg-white border border-red-200 rounded-xl p-4">
+                  <h3 className="text-sm font-bold text-red-800 mb-1">Limpar Apenas Transações</h3>
+                  <p className="text-xs text-red-600/70 mb-4">
+                    Apaga Ordens de Serviço, Tarefas, Propostas e Financeiro. Mantém clientes e embarcações.
+                  </p>
+                  <button
+                    onClick={() => handleWipe('transactions')}
+                    disabled={isWiping}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Limpar Transações
+                  </button>
+                </div>
+                
+                <div className="flex-1 bg-red-600 border border-red-700 rounded-xl p-4 text-white shadow-md">
+                  <h3 className="text-sm font-bold mb-1">Zerar Sistema Completo</h3>
+                  <p className="text-xs text-red-100 mb-4">
+                    Apaga absolutamente TUDO (incluindo clientes). Mantém apenas as configurações e contas de usuário.
+                  </p>
+                  <button
+                    onClick={() => handleWipe('all')}
+                    disabled={isWiping}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-800 hover:bg-red-900 text-white rounded-lg text-xs font-bold transition shadow-inner"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Zerar Banco de Dados
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL: CADASTRAR NOVO FUNCIONÁRIO */}
