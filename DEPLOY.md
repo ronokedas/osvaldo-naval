@@ -32,4 +32,9 @@ tar -xzf backups/deploy/uploads.tar.gz
 sudo docker compose start app
 ```
 
+
+
+
 Nunca use `docker compose down -v`: apaga o banco. O backup é substituído a cada novo commit.
+
+

@@ -299,6 +299,19 @@ router.post("/data/wipe", requireRole(["admin"]), async (req, res) => {
           await tx.execute(sql.raw(`TRUNCATE TABLE "${tableName}" CASCADE;`));
         }
       }
+
+      if (level === "transactions") {
+        await tx.execute(sql`
+          UPDATE "vessels" 
+          SET "valor_total" = 0, 
+              "valor_recebido" = 0, 
+              "valor_sinal" = 0, 
+              "progresso" = 0, 
+              "status" = 'aberta',
+              "etapa_atual" = NULL
+        `);
+      }
+
       await tx.execute(sql`SET session_replication_role = 'origin';`);
     });
 
