@@ -205,12 +205,13 @@ export default function App() {
   const fetchData = React.useCallback(async (showAlerts = true) => {
     if (!currentUser) return;
     try {
+      const isNotTecnico = currentUser.role !== 'tecnico';
       const [vRes, clRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
         fetch('/api/vessels'),
         fetch('/api/clients'),
-        fetch('/api/proposals'),
+        isNotTecnico ? fetch('/api/proposals') : Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })),
         fetch('/api/tasks'),
-        fetch('/api/finance'),
+        isNotTecnico ? fetch('/api/finance') : Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })),
         fetch('/api/protocols'),
         fetch('/api/critical-pendings'),
         fetch('/api/settings/email'),
@@ -818,7 +819,7 @@ export default function App() {
     // Register version
     if (!selectedOsId) throw new Error('Ordem de Serviço não selecionada');
     await apiPost(`/api/service-orders/documents/${docId}/versions`, {
-      arquivoNomeFisico: up.url.replace('/uploads/', ''),
+        arquivoNomeFisico: decodeURIComponent(up.url.split('/').pop() || ''),
       arquivoNomeOriginal: up.fileName,
       tamanho: file.size,
       tipoMime: file.type,
@@ -1054,7 +1055,7 @@ export default function App() {
           )}
 
           {activeTab === 'documents' && (
-            <LazyGlobalDocumentSearch serviceOrders={serviceOrders} vessels={vessels} />
+            <LazyGlobalDocumentSearch currentUser={currentUser} users={users} onUpdateUser={handleUpdateUser} />
           )}
 
           {activeTab === 'settings' && (

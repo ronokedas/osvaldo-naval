@@ -216,6 +216,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
 
     if (editingProposalId) {
       onUpdateProposal(editingProposalId, {
+        clienteId: clienteId || undefined,
         destinatario,
         assunto,
         prazoEntregaDias: Number(prazoDias),
@@ -228,6 +229,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
       });
     } else {
       onCreateProposal({
+        clienteId,
         embarcacaoId,
         embarcacaoNome: selectedVessel ? selectedVessel.nome : 'Embarcação',
         clienteNome: selectedVessel ? selectedVessel.clienteNome : 'Cliente',
@@ -1270,11 +1272,23 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                         }
 
                         const payment = acceptanceInfo.payment;
+                        // The acceptance flow creates a temporary financial entry.
+                        // Carry the document from the proposal's client into the
+                        // receipt instead of relying on the entry alone.
+                        const proposalVessel = vessels.find((vessel) => vessel.id === selectedProposal.embarcacaoId);
+                        const proposalClient = clients.find(
+                          (client) =>
+                            ((selectedProposal.clienteId || proposalVessel?.clienteId) &&
+                              client.id === (selectedProposal.clienteId || proposalVessel?.clienteId)) ||
+                            client.nome.trim().toLowerCase() === selectedProposal.clienteNome.trim().toLowerCase()
+                        );
+                        const payerDocument = proposalClient?.cnpjCpf;
                         const receiptEntry: FinancialEntry = {
                           id: payment?.id || `aceite-${selectedProposal.id}`,
                           embarcacaoId: selectedProposal.embarcacaoId,
                           embarcacaoNome: selectedProposal.embarcacaoNome,
                           clienteNome: selectedProposal.clienteNome,
+                          clienteCnpjCpf: payerDocument,
                           data: payment?.data || acceptanceInfo.acceptance?.data || new Date().toISOString().split('T')[0],
                           valor: amount,
                           tipo: receivable.status === 'pago' ? 'quitacao' : 'parcela',
@@ -1284,7 +1298,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                           propostaNumero: selectedProposal.numero,
                         } as FinancialEntry & { propostaNumero: string };
 
-                        const blob = await generateReceiptPdf(receiptEntry, logoConfig, signatureConfig);
+                        const blob = await generateReceiptPdf(receiptEntry, logoConfig, signatureConfig, payerDocument);
                         downloadBlob(blob, `Recibo_${selectedProposal.numero.replace(/\//g, '-')}.pdf`);
                       })().catch((error) => {
                         console.error('Erro ao gerar recibo PDF:', error);

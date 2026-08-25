@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { Proposal, Protocol, FinancialEntry, Vessel, LogoConfig, DocumentTask, SignatureConfig } from '../types';
 import { numberToWords } from './numberToWords';
 
@@ -702,66 +702,79 @@ export const generateFinancialReportPdf = async (
   logoConfig?: LogoConfig,
   periodText: string = "Relatório Geral"
 ): Promise<Blob> => {
-  const doc = new jsPDF();
-  let currentY = 40;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  let currentY = 38;
 
   drawHeader(doc, "RELATÓRIO FINANCEIRO", periodText, logoConfig);
 
-  // Resumo
   const totalReceitas = entries.filter(e => e.tipo !== 'despesa').reduce((acc, curr) => acc + curr.valor, 0);
   const totalDespesas = entries.filter(e => e.tipo === 'despesa').reduce((acc, curr) => acc + curr.valor, 0);
   const saldo = totalReceitas - totalDespesas;
+  const entradasCount = entries.filter(e => e.tipo !== 'despesa').length;
+  const despesasCount = entries.filter(e => e.tipo === 'despesa').length;
 
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(20, currentY, 170, 25, 2, 2, "F");
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  
-  doc.text("Total Entradas", 30, currentY + 10);
-  doc.text(`R$ ${totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 30, currentY + 18);
-
-  doc.text("Total Saídas", 90, currentY + 10);
-  doc.text(`R$ ${totalDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 90, currentY + 18);
-
-  doc.text("Saldo do Período", 150, currentY + 10);
-  doc.text(`R$ ${saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 150, currentY + 18);
-
-  currentY += 40;
+  const money = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  const cards = [
+    { label: "ENTRADAS", value: money(totalReceitas), detail: `${entradasCount} lançamento(s)`, color: [16, 185, 129] as [number, number, number] },
+    { label: "SAÍDAS", value: money(totalDespesas), detail: `${despesasCount} lançamento(s)`, color: [239, 68, 68] as [number, number, number] },
+    { label: "SALDO LÍQUIDO", value: money(saldo), detail: `${entries.length} lançamento(s)`, color: [59, 130, 246] as [number, number, number] },
+  ];
+  cards.forEach((card, index) => {
+    const x = 20 + index * 57;
+    doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240); doc.roundedRect(x, currentY, 54, 25, 2, 2, "FD");
+    doc.setFillColor(...card.color); doc.roundedRect(x, currentY, 2, 25, 1, 1, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6); doc.setTextColor(100, 116, 139); doc.text(card.label, x + 6, currentY + 7);
+    doc.setFontSize(10); doc.setTextColor(...PRIMARY_DARK); doc.text(card.value, x + 6, currentY + 15);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(100, 116, 139); doc.text(card.detail, x + 6, currentY + 21);
+  });
+  currentY += 34;
 
   doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text("Detalhamento de Transações", 20, currentY);
-  currentY += 5;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...TEXT_GREY);
+  doc.text("Movimentações financeiras registradas no sistema", 20, currentY + 5);
+  currentY += 10;
 
   const tableData = entries.map(entry => [
     formatShortDate(entry.data),
-    entry.embarcacaoNome,
+    `${entry.embarcacaoNome}${entry.clienteNome ? `\n${entry.clienteNome}` : ''}`,
     entry.tipo.toUpperCase(),
     entry.formaPagamento,
     entry.observacao || '-',
-    `R$ ${entry.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    money(entry.valor),
   ]);
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: currentY,
-    head: [['Data', 'Embarcação', 'Tipo', 'Forma Pagamento', 'Observação', 'Valor']],
+    margin: { left: 20, right: 20, bottom: 20 },
+    head: [['Data', 'Embarcação / Cliente', 'Tipo', 'Pagamento', 'Observação', 'Valor']],
     body: tableData,
-    theme: 'grid',
+    theme: 'plain',
+    tableWidth: 170,
+    columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 38 }, 2: { cellWidth: 22 }, 3: { cellWidth: 27 }, 4: { cellWidth: 47 }, 5: { cellWidth: 18, halign: 'right' } },
     headStyles: {
       fillColor: PRIMARY_DARK,
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 7,
       fontStyle: 'bold',
     },
     bodyStyles: {
-      fontSize: 8,
+      fontSize: 7,
       textColor: TEXT_DARK,
+      cellPadding: 2.5,
+      lineColor: [226, 232, 240],
+      lineWidth: 0.1,
     },
     alternateRowStyles: {
       fillColor: LIGHT_GREY,
+    },
+    didParseCell: (data: any) => {
+      if (data.section === 'body' && data.column.index === 2) {
+        data.cell.styles.textColor = data.cell.raw === 'DESPESA' ? [185, 28, 28] : [4, 120, 87];
+        data.cell.styles.fontStyle = 'bold';
+      }
     },
     didDrawPage: function (data: any) {
       drawFooter(doc, data.pageNumber, data.pageCount || data.pageNumber);

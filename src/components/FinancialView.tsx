@@ -166,46 +166,56 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              if (financialEntries.length === 0) return;
+              if (filteredEntries.length === 0) return;
+              const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+              const money = (value: number) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+              const totalEntradas = filteredEntries.filter((entry) => entry.tipo !== 'despesa').reduce((sum, entry) => sum + Number(entry.valor || 0), 0);
+              const totalSaidas = filteredEntries.filter((entry) => entry.tipo === 'despesa').reduce((sum, entry) => sum + Number(entry.valor || 0), 0);
               const headers = [
                 'ID',
                 'Data',
-                'Embarcacao',
+                'Embarcação',
+                'Cliente',
                 'Tipo',
+                'Natureza',
                 'Forma de Pagamento',
                 'Nota Fiscal',
-                'Observacao',
-                'Lancado Por',
+                'Observação',
+                'Lançado Por',
                 'Valor (R$)',
               ];
               const csvContent = [
-                headers.join(','),
-
-                ...financialEntries.map((e) =>
-                  [
-                    e.id,
-                    e.data,
-                    `"${e.embarcacaoNome.replace(/"/g, '""')}"`,
-                    e.tipo,
-                    e.formaPagamento,
-                    `"${(e.notaFiscalNumero || '').replace(/"/g, '""')}"`,
-                    `"${e.observacao.replace(/"/g, '""')}"`,
-                    `"${e.lancadoPorNome}"`,
-                    e.valor,
-                  ].join(',')
-                ),
-              ].join('\n');
+                ['RELATÓRIO FINANCEIRO - NAUTILUS ENGENHARIA NAVAL'].map(csvEscape).join(';'),
+                ['Lançamentos', filteredEntries.length, 'Entradas (R$)', money(totalEntradas), 'Saídas (R$)', money(totalSaidas), 'Saldo (R$)', money(totalEntradas - totalSaidas)].map(csvEscape).join(';'),
+                '',
+                headers.map(csvEscape).join(';'),
+                ...filteredEntries.map((e) => [
+                  e.id,
+                  e.data,
+                  e.embarcacaoNome,
+                  e.clienteNome || '',
+                  e.tipo,
+                  e.natureza || (e.tipo === 'despesa' ? 'saida' : 'entrada'),
+                  e.formaPagamento,
+                  e.notaFiscalNumero || '',
+                  e.observacao,
+                  e.lancadoPorNome,
+                  Number(e.valor || 0).toFixed(2).replace('.', ','),
+                ].map(csvEscape).join(';')),
+              ].join('\r\n');
               const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
               const link = document.createElement('a');
-              link.href = URL.createObjectURL(blob);
+              const url = URL.createObjectURL(blob);
+              link.href = url;
               link.download = `relatorio_financeiro_nautilus.csv`;
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
             }}
-            disabled={financialEntries.length === 0}
+            disabled={filteredEntries.length === 0}
             className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition ${
-              financialEntries.length > 0
+              filteredEntries.length > 0
                 ? 'bg-slate-800 hover:bg-slate-900 text-white cursor-pointer'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
             }`}
@@ -546,6 +556,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                 <th className="p-3 text-right">Total Recebido</th>
                 <th className="p-3 text-right">Saldo Devedor</th>
                 <th className="p-3 text-center">Progresso</th>
+                <th className="p-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -578,6 +589,21 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                       </td>
                       <td className="p-3 text-center">
                         <span className="font-mono text-xs font-bold text-slate-700">{pct}%</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {pending > 0 && (
+                          <button
+                            onClick={() => {
+                              setSelectedVesselId(v.id);
+                              setPayValor(pending);
+                              setPayTipo('parcela');
+                              setIsModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer active:scale-95"
+                          >
+                            <DollarSign className="w-3.5 h-3.5" /> Dar Baixa
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

@@ -468,7 +468,7 @@ export const ServiceOrderDetailView: React.FC<Props> = ({
                         <div className="flex items-center gap-2 text-slate-500">
                           <span>{v.autorNome}</span>
                           {v.situacaoAprovacao === 'aprovado' && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                          <a href={`/uploads/${v.arquivoNomeFisico}`} target="_blank" rel="noreferrer" className="p-1 hover:text-blue-600"><Download className="w-4 h-4" /></a>
+                          <a href={`/api/upload/files/${encodeURIComponent(v.arquivoNomeFisico)}`} target="_blank" rel="noreferrer" className="p-1 hover:text-blue-600"><Download className="w-4 h-4" /></a>
                         </div>
                       </div>
                     ))}

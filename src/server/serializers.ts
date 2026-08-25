@@ -34,7 +34,9 @@ export const serializeTask = (task: any, vessel?: any) => ({
   certificadora: task.certificadora || vessel?.certificadoraPrincipal || "A definir",
   prazo: task.prazo || task.prazoVencimento || "Não informado",
   arquivoNome: task.arquivoNome || undefined,
-  arquivoUrl: task.arquivoUrl || undefined,
+  arquivoUrl: task.arquivoUrl?.startsWith('/uploads/')
+    ? `/api/upload/files/${encodeURIComponent(task.arquivoUrl.slice('/uploads/'.length))}`
+    : task.arquivoUrl || undefined,
   historicoNotas: task.historicoNotas || [],
   atualizadoEm: task.atualizadoEm || task.updatedAt || task.createdAt,
 });

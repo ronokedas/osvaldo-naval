@@ -23,6 +23,7 @@ import payablesRoutes from "./src/server/routes/payables.js";
 import commitmentsRoutes from "./src/server/routes/commitments.js";
 import certifiersRoutes from "./src/server/routes/certifiers.js";
 import servicesRoutes from "./src/server/routes/services.js";
+import documentLibraryRoutes from "./src/server/routes/document-library.js";
 import { pool } from "./src/db/index.js";
 
 
@@ -72,12 +73,6 @@ async function startServer() {
 
   app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
 
-  // Signed acceptance documents have their own authenticated route below.
-  app.use("/uploads", (req, res, next) => {
-    if (req.path.startsWith("/acceptances/")) return res.status(404).end();
-    return express.static(path.join(process.cwd(), "uploads"))(req, res, next);
-  });
-
   // API Routes
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
@@ -96,6 +91,7 @@ async function startServer() {
   app.use("/api/commitments", commitmentsRoutes);
   app.use("/api/certifiers", certifiersRoutes);
   app.use("/api/services", servicesRoutes);
+  app.use("/api/document-library", documentLibraryRoutes);
   // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("API Error:", err);

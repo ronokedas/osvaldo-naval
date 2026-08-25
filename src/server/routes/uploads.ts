@@ -40,8 +40,20 @@ router.post("/", requireAuth, upload.single("file"), (req, res) => {
   res.json({
     success: true,
     fileName: req.file.originalname,
-    url: `/uploads/${req.file.filename}`,
+    url: `/api/upload/files/${encodeURIComponent(req.file.filename)}`,
   });
+});
+
+// Legacy uploads are private too. The filename is never allowed to escape the
+// uploads directory and every read is authenticated.
+router.get("/files/:filename", requireAuth, (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const uploadDir = path.resolve(process.cwd(), "uploads");
+  const filePath = path.resolve(uploadDir, filename);
+  if (!filePath.startsWith(`${uploadDir}${path.sep}`)) return res.status(400).json({ error: "Caminho de arquivo inválido" });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Arquivo não encontrado" });
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.sendFile(filePath);
 });
 
 export default router;

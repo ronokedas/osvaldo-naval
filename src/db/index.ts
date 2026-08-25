@@ -18,9 +18,10 @@ const createPool = () => {
   }
 
   const host = process.env.SQL_HOST || "localhost";
-  const user = process.env.SQL_USER || "postgres";
-  const password = process.env.SQL_PASSWORD || "postgres";
-  const database = process.env.SQL_DB_NAME || "postgres";
+  // Support both the VPS SQL_* naming and the local Docker POSTGRES_* naming.
+  const user = process.env.SQL_USER || process.env.POSTGRES_USER || "postgres";
+  const password = process.env.SQL_PASSWORD || process.env.POSTGRES_PASSWORD || "postgres";
+  const database = process.env.SQL_DB_NAME || process.env.POSTGRES_DB || "postgres";
 
   // Cloud SQL Unix Socket format: /cloudsql/PROJECT_ID:REGION:INSTANCE_ID
   if (host.startsWith("/cloudsql/") || host.startsWith("/app/cloudsql/")) {

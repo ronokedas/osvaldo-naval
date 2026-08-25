@@ -1,193 +1,50 @@
-import React, { useState } from 'react';
-import { ServiceOrder, Vessel, Document } from '../types';
-import { Search, Filter, FileText, Calendar, Ship, Download, ExternalLink, Hash } from 'lucide-react';
-import { PdfViewerModal } from './PdfViewerModal';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArchiveRestore, Download, File, FileImage, FileText, Folder, FolderPlus, Grid2X2, List, Mail, Search, Settings, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { User } from '../types';
 
-interface GlobalDocumentSearchProps {
-  serviceOrders: ServiceOrder[];
-  vessels: Vessel[];
-}
+type FolderItem = { id: string; ownerUserId: string; parentId: string | null; name: string };
+type FileItem = { id: string; ownerUserId: string; folderId: string | null; originalName: string; mimeType?: string; size: number; uploadedAt: string; trashedAt?: string | null };
+type LibraryUser = Pick<User, 'id' | 'nome' | 'email' | 'avatarUrl'>;
+type Data = { users: LibraryUser[]; folders: FolderItem[]; files: FileItem[] };
+interface Props { currentUser: User; users: User[]; onUpdateUser: (id: string, data: Partial<User>) => void; }
+const can = (u: User, p: string) => u.role === 'admin' || !!u.permissions?.includes(p);
+const date = (v?: string) => v ? new Intl.DateTimeFormat('pt-BR').format(new Date(v)) : '—';
+const size = (n: number) => n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`;
+const dateMatch = (v: string, q: string) => !q || new Intl.DateTimeFormat('pt-BR').format(new Date(v)).replace(/\D/g, '').includes(q.replace(/\D/g, ''));
 
-interface FlattenedDoc {
-  doc: Document;
-  os: ServiceOrder;
-  vessel?: Vessel;
-}
-
-export const GlobalDocumentSearch: React.FC<GlobalDocumentSearchProps> = ({ serviceOrders, vessels }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [vesselTypeFilter, setVesselTypeFilter] = useState('');
-  const [viewingPdf, setViewingPdf] = useState<{ url: string; title: string } | null>(null);
-
-  // Extract all documents from OS
-  const allDocs: FlattenedDoc[] = [];
-  serviceOrders.forEach(os => {
-    const vessel = vessels.find(v => v.id === os.embarcacaoId);
-    if (os.documentos) {
-      os.documentos.forEach(doc => {
-        allDocs.push({ doc, os, vessel });
-      });
-    }
-  });
-
-  const filteredDocs = allDocs.filter(({ doc, os, vessel }) => {
-    const vesselType = vessel?.tipo || '';
-
-    const matchesSearch =
-      doc.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      os.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      os.embarcacaoNome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      os.clienteNome?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    const matchesType = typeFilter ? doc.tipo === typeFilter : true;
-    const matchesVesselType = vesselTypeFilter ? vesselType === vesselTypeFilter : true;
-
-    return matchesSearch && matchesType && matchesVesselType;
-  });
-
-  const uniqueVesselTypes = Array.from(new Set(vessels.map(v => v.tipo).filter(Boolean)));
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#0B192C]">Busca Global de Documentos</h1>
-          <p className="text-sm text-slate-500 font-medium mt-1">
-            Pesquise por laudos, certificados, relatórios e projetos anexados às Ordens de Serviço.
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nome do arquivo, OS ou embarcação..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-          />
-        </div>
-        
-        <div className="flex flex-col sm:flex-row gap-3">
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-          >
-            <option value="">Todos os tipos de doc</option>
-            <option value="ultrassom">Ultrassom</option>
-            <option value="desenho">Desenho Naval</option>
-            <option value="documental">Documental</option>
-            <option value="outro">Outro</option>
-          </select>
-
-          <select
-            value={vesselTypeFilter}
-            onChange={(e) => setVesselTypeFilter(e.target.value)}
-            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-          >
-            <option value="">Todas embarcações</option>
-            {uniqueVesselTypes.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {filteredDocs.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 font-bold">
-                  <th className="px-6 py-4">Arquivo / Documento</th>
-                  <th className="px-6 py-4">Embarcação</th>
-                  <th className="px-6 py-4">Tipo</th>
-                  <th className="px-6 py-4">Status Doc</th>
-                  <th className="px-6 py-4 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredDocs.map(({ doc, os, vessel }) => {
-                  const lastVersion = doc.versoes?.[doc.versoes.length - 1];
-                  const fileUrl = lastVersion?.pdfUrl;
-                  const fileName = lastVersion?.arquivoNomeOriginal || doc.titulo;
-                  
-                  return (
-                    <tr key={`${os.id}-${doc.id}`} className="hover:bg-slate-50/80 transition group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                            <FileText className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-slate-900 group-hover:text-blue-700 transition">
-                              {doc.titulo} (V{doc.versaoAtual})
-                            </p>
-                            <p className="text-xs text-slate-500">{os.numero}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Ship className="w-4 h-4 text-slate-400" />
-                          <span className="text-sm font-bold text-slate-700">{os.embarcacaoNome || 'Uso Geral'}</span>
-                        </div>
-                        <p className="text-xs text-slate-500 ml-6">{os.clienteNome}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-                          {doc.tipo}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
-                          {doc.status.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {fileUrl ? (
-                          <button
-                            onClick={() => setViewingPdf({ url: fileUrl, title: fileName })}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition"
-                            title="Visualizar/Baixar"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <span className="text-xs text-slate-400 italic">Link indisp.</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-16 px-4">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Nenhum documento encontrado</h3>
-            <p className="text-slate-500 text-sm max-w-md mx-auto">
-              Tente ajustar os filtros ou buscar por outros termos. Apenas OS com arquivos anexados aparecerão aqui.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* PDF Viewer Modal */}
-      {viewingPdf && (
-        <PdfViewerModal
-          pdfUrl={viewingPdf.url}
-          title={viewingPdf.title}
-          onClose={() => setViewingPdf(null)}
-        />
-      )}
-    </div>
-  );
+export const GlobalDocumentSearch: React.FC<Props> = ({ currentUser, users, onUpdateUser }) => {
+  const [data, setData] = useState<Data>(); const [active, setActive] = useState<{ owner: LibraryUser; folder?: FolderItem }>(); const [nested, setNested] = useState<{ folders: FolderItem[]; files: FileItem[] }>();
+  const [query, setQuery] = useState(''); const [view, setView] = useState<'grid'|'list'>(() => (localStorage.getItem('document-library-view') as 'grid'|'list') || 'grid'); const [folderName, setFolderName] = useState(''); const [newFolder, setNewFolder] = useState(false); const [busy, setBusy] = useState(false); const [loadError, setLoadError] = useState('');
+  const [preview, setPreview] = useState<FileItem>(); const [admin, setAdmin] = useState(false); const [trash, setTrash] = useState<FileItem[]>(); const [permanent, setPermanent] = useState<FileItem>(); const [confirmation, setConfirmation] = useState(''); const fileInput = useRef<HTMLInputElement>(null);
+  const load = async () => { try { const r = await fetch('/api/document-library/overview'); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Não foi possível carregar os documentos.'); setData(await r.json()); setLoadError(''); } catch (e: any) { setLoadError(e.message || 'Não foi possível carregar os documentos.'); } };
+  useEffect(() => { load(); }, []); useEffect(() => { localStorage.setItem('document-library-view', view); }, [view]);
+  useEffect(() => { if (!active?.folder) return setNested(undefined); fetch(`/api/document-library/folders/${active.folder.id}`).then(async r => r.ok && setNested(await r.json())); }, [active?.folder?.id]);
+  const map = useMemo(() => new Map((data?.folders || []).map(x => [x.id, x])), [data]);
+  const crumbs = useMemo(() => { const a: FolderItem[] = []; let f = active?.folder; while (f) { a.unshift(f); f = f.parentId ? map.get(f.parentId) : undefined; } return a; }, [active, map]);
+  const items = useMemo(() => { if (!data || !active) return { folders: [] as FolderItem[], files: [] as FileItem[] }; return active.folder ? (nested || { folders: [], files: [] }) : { folders: data.folders.filter(f => f.ownerUserId === active.owner.id && !f.parentId), files: data.files.filter(f => f.ownerUserId === active.owner.id && !f.folderId) }; }, [data, active, nested]);
+  const files = items.files.filter(f => !query || f.originalName.toLowerCase().includes(query.toLowerCase()) || dateMatch(f.uploadedAt, query));
+  const globalFiles = (data?.files || []).filter(f => f.originalName.toLowerCase().includes(query.toLowerCase()) || dateMatch(f.uploadedAt, query));
+  const writable = !!active && (currentUser.role === 'admin' || active.owner.id === currentUser.id) && can(currentUser, 'documents_upload');
+  const refresh = async () => { await load(); if (active?.folder) { const r = await fetch(`/api/document-library/folders/${active.folder.id}`); if (r.ok) setNested(await r.json()); } };
+  const createFolder = async () => { if (!active || !folderName.trim()) return; setBusy(true); const r = await fetch('/api/document-library/folders', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name:folderName.trim(), parentId:active.folder?.id, ownerUserId:active.owner.id }) }); setBusy(false); if (!r.ok) return alert((await r.json()).error); setFolderName(''); setNewFolder(false); refresh(); };
+  const upload = async (file?: File) => { if (!file || !active) return; setBusy(true); const body = new FormData(); body.append('file', file); body.append('ownerUserId', active.owner.id); if (active.folder) body.append('folderId', active.folder.id); const r = await fetch('/api/document-library/upload', {method:'POST',body}); setBusy(false); if (!r.ok) alert((await r.json()).error); else refresh(); };
+  const moveTrash = async (file: FileItem) => { if (!confirm(`Mover “${file.originalName}” para a lixeira?`)) return; const r = await fetch(`/api/document-library/files/${file.id}/trash`,{method:'POST'}); if (!r.ok) return alert((await r.json()).error); setPreview(undefined); refresh(); };
+  const openTrash = async () => { const r = await fetch('/api/document-library/trash'); if (r.ok) { setTrash(await r.json()); setAdmin(false); } };
+  const restore = async (file: FileItem) => { const r = await fetch(`/api/document-library/files/${file.id}/restore`,{method:'POST'}); if (!r.ok) return alert((await r.json()).error); await openTrash(); refresh(); };
+  const erase = async () => { if (!permanent) return; const r = await fetch(`/api/document-library/files/${permanent.id}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmName:confirmation})}); if (!r.ok) return alert((await r.json()).error); setPermanent(undefined); setConfirmation(''); await openTrash(); refresh(); };
+  const setPermission = async (u: User, p: string, yes: boolean) => { const perms = new Set(u.permissions || []); yes ? perms.add(p) : perms.delete(p); const r = await fetch(`/api/users/${u.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({permissions:[...perms]})}); if (!r.ok) return alert('Não foi possível atualizar.'); onUpdateUser(u.id,{permissions:[...perms]}); load(); };
+  if (!can(currentUser, 'documents_access')) return <div className="rounded-2xl bg-white border border-slate-200 p-12 text-center"><ShieldCheck className="w-10 h-10 text-slate-300 mx-auto mb-3"/><h1 className="font-bold text-lg">Acesso não autorizado</h1><p className="text-sm text-slate-500">Solicite acesso ao administrador.</p></div>;
+  if (!data) return <div className="py-24 text-center text-slate-500">{loadError ? <><p>{loadError}</p><button onClick={load} className="mt-3 rounded-xl bg-blue-600 text-white px-4 py-2 font-bold">Tentar novamente</button></> : 'Carregando documentos…'}</div>;
+  const FileIcon = ({ f }: { f: FileItem }) => f.mimeType?.startsWith('image/') ? <FileImage className="w-5 h-5"/> : <FileText className="w-5 h-5"/>;
+  return <div className="space-y-5"><header className="flex flex-col sm:flex-row gap-3 sm:justify-between"><div><h1 className="text-2xl font-extrabold text-[#0B192C]">Documentos compartilhados</h1><p className="text-sm text-slate-500 mt-1">Repositório seguro da equipe.</p></div>{currentUser.role==='admin'&&<button onClick={()=>setAdmin(true)} className="bg-slate-900 text-white rounded-xl px-4 py-2 font-bold text-sm inline-flex gap-2 items-center"><Settings className="w-4 h-4"/>Administrar acesso</button>}</header>
+  <section className="bg-white border border-slate-200 rounded-2xl p-4"><div className="relative"><Search className="absolute w-5 h-5 left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-3 text-sm" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar em todos os documentos por nome ou data (dd/mm/aaaa)"/></div></section>
+  {!active ? (query ? <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y">{globalFiles.map(f=><button key={f.id} onClick={()=>{const owner=data.users.find(u=>u.id===f.ownerUserId); if(owner)setActive({owner,folder:f.folderId?data.folders.find(x=>x.id===f.folderId):undefined}); setQuery('');}} className="w-full p-4 flex gap-3 text-left items-center hover:bg-slate-50"><FileIcon f={f}/><span className="font-bold text-sm flex-1 truncate">{f.originalName}</span><span className="text-xs text-slate-500">{date(f.uploadedAt)}</span></button>)}{!globalFiles.length&&<p className="p-10 text-center text-slate-500">Nenhum documento encontrado.</p>}</div> : <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{data.users.map(u => { const n=data.files.filter(f=>f.ownerUserId===u.id).length; return <button key={u.id} onClick={()=>setActive({owner:u})} className="bg-white text-left border border-slate-200 rounded-2xl p-5 hover:border-blue-400 hover:shadow-md"><div className="flex gap-3 items-center"><div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">{u.avatarUrl?<img src={u.avatarUrl} className="w-full h-full object-cover rounded-xl"/>:u.nome.charAt(0)}</div><div><p className="font-bold">{u.nome}</p><p className="text-xs text-slate-500">{n} documento{n===1?'':'s'}</p></div></div></button>})}</div>) : <><section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-4"><div className="text-sm flex flex-wrap gap-2 items-center"><button className="text-blue-600 font-bold" onClick={()=>setActive(undefined)}>Documentos</button><span>/</span><button className="font-semibold" onClick={()=>setActive({owner:active.owner})}>{active.owner.nome}</button>{crumbs.map(f=><React.Fragment key={f.id}><span>/</span><button className="font-semibold" onClick={()=>setActive({owner:active.owner,folder:f})}>{f.name}</button></React.Fragment>)}</div><div className="flex flex-col lg:flex-row gap-3"><div className="flex gap-2"><button onClick={()=>setView('grid')} className={`p-2.5 rounded-xl border ${view==='grid'?'bg-blue-600 border-blue-600 text-white':'border-slate-200'}`}><Grid2X2 className="w-5 h-5"/></button><button onClick={()=>setView('list')} className={`p-2.5 rounded-xl border ${view==='list'?'bg-blue-600 border-blue-600 text-white':'border-slate-200'}`}><List className="w-5 h-5"/></button>{writable&&<><button onClick={()=>setNewFolder(true)} className="border rounded-xl px-3 text-sm font-bold inline-flex items-center gap-1"><FolderPlus className="w-4 h-4"/>Pasta</button><button onClick={()=>fileInput.current?.click()} className="bg-blue-600 text-white rounded-xl px-3 text-sm font-bold inline-flex items-center gap-1"><Upload className="w-4 h-4"/>Enviar</button><input ref={fileInput} className="hidden" type="file" onChange={e=>upload(e.target.files?.[0])}/></>}</div></div></section>
+  {view==='grid'?<div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{items.folders.map(f=><button key={f.id} onClick={()=>setActive({owner:active.owner,folder:f})} className="bg-white rounded-2xl border border-slate-200 p-4 text-left hover:border-amber-400"><Folder className="w-8 h-8 text-amber-400 mb-3"/><p className="font-bold truncate">{f.name}</p><p className="text-xs text-slate-500">Pasta</p></button>)}{files.map(f=><button key={f.id} onClick={()=>setPreview(f)} className="bg-white rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-400"><div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3"><FileIcon f={f}/></div><p className="font-bold text-sm truncate">{f.originalName}</p><p className="text-xs text-slate-500 mt-1">{date(f.uploadedAt)} · {size(f.size)}</p></button>)}</div>:<div className="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y">{items.folders.map(f=><button key={f.id} onClick={()=>setActive({owner:active.owner,folder:f})} className="w-full p-4 flex gap-3 text-left"><Folder className="text-amber-400"/><span className="font-bold">{f.name}</span></button>)}{files.map(f=><button key={f.id} onClick={()=>setPreview(f)} className="w-full p-4 flex gap-3 text-left items-center"><span className="text-blue-600"><FileIcon f={f}/></span><span className="font-bold text-sm flex-1 truncate">{f.originalName}</span><span className="text-xs text-slate-500">{date(f.uploadedAt)}</span></button>)}</div>}{!items.folders.length&&!files.length&&<div className="py-16 text-center bg-white rounded-2xl border border-dashed text-slate-500">Nenhum documento ou pasta encontrado.</div>}</>}
+  {newFolder&&<Modal title="Nova pasta" close={()=>setNewFolder(false)}><input autoFocus className="w-full border rounded-xl p-3" value={folderName} onChange={e=>setFolderName(e.target.value)} placeholder="Nome da pasta"/><button disabled={busy} onClick={createFolder} className="mt-4 w-full bg-blue-600 disabled:opacity-50 text-white rounded-xl py-2.5 font-bold">{busy?'Criando…':'Criar pasta'}</button></Modal>}
+  {preview&&<Preview file={preview} close={()=>setPreview(undefined)} trash={()=>moveTrash(preview)} canTrash={can(currentUser,'documents_delete')}/>}
+  {admin&&<Modal title="Permissões do módulo" close={()=>setAdmin(false)}><p className="text-xs text-slate-500 mb-3">Acesso, envio e lixeira são concedidos por usuário.</p><div className="max-h-[55vh] overflow-y-auto divide-y">{users.map(u=><div className="py-3" key={u.id}><p className="font-bold text-sm">{u.nome}{u.role==='admin'&&<span className="text-blue-600 text-xs ml-2">Administrador</span>}</p>{u.role!=='admin'&&<div className="flex gap-4 mt-2 text-xs">{[['documents_access','Acessar'],['documents_upload','Enviar'],['documents_delete','Lixeira']].map(([p,l])=><label key={p} className="flex gap-1 items-center"><input type="checkbox" checked={!!u.permissions?.includes(p)} onChange={e=>setPermission(u,p,e.target.checked)}/>{l}</label>)}</div>}</div>)}</div><button onClick={openTrash} className="mt-4 w-full bg-slate-900 text-white rounded-xl py-2.5 font-bold inline-flex justify-center gap-2"><Trash2 className="w-4 h-4"/>Abrir lixeira</button></Modal>}
+  {trash&&<Modal title="Lixeira" close={()=>setTrash(undefined)}>{trash.length?<div className="space-y-2">{trash.map(f=><div key={f.id} className="border rounded-xl p-3"><p className="font-bold text-sm truncate">{f.originalName}</p><p className="text-xs text-slate-500">Na lixeira desde {date(f.trashedAt||'')}</p><div className="flex gap-3 mt-3"><button onClick={()=>restore(f)} className="text-blue-600 text-xs font-bold inline-flex gap-1"><ArchiveRestore className="w-4 h-4"/>Restaurar</button><button onClick={()=>setPermanent(f)} className="text-red-600 text-xs font-bold inline-flex gap-1"><Trash2 className="w-4 h-4"/>Excluir definitivamente</button></div></div>)}</div>:<p className="text-sm text-slate-500">A lixeira está vazia.</p>}</Modal>}
+  {permanent&&<Modal title="Excluir definitivamente" close={()=>setPermanent(undefined)}><p className="text-sm">Digite <strong>{permanent.originalName}</strong> para apagar este arquivo do VPS.</p><input className="w-full mt-4 border rounded-xl p-3" value={confirmation} onChange={e=>setConfirmation(e.target.value)}/><button disabled={confirmation!==permanent.originalName} onClick={erase} className="mt-4 w-full bg-red-600 disabled:bg-slate-200 text-white rounded-xl py-2.5 font-bold">Excluir definitivamente</button></Modal>}</div>;
 };
+const Modal: React.FC<{title:string;close:()=>void;children:React.ReactNode}>=({title,close,children})=><div className="fixed inset-0 z-50 bg-slate-950/60 p-4 flex items-center justify-center"><div className="bg-white rounded-2xl p-5 w-full max-w-lg shadow-2xl"><div className="flex justify-between items-center mb-4"><h2 className="font-extrabold text-lg">{title}</h2><button onClick={close}><X/></button></div>{children}</div></div>;
+const Preview: React.FC<{file:FileItem;close:()=>void;trash:()=>void;canTrash:boolean}>=({file,close,trash,canTrash})=>{const url=`/api/document-library/files/${file.id}/content`;const preview=file.mimeType?.startsWith('image/')||file.mimeType==='application/pdf';const full=`${window.location.origin}${url}`;return <div className="fixed inset-0 z-50 bg-slate-950/80 p-3 sm:p-6 flex items-center justify-center"><div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden"><div className="p-4 border-b flex justify-between"><p className="font-bold truncate">{file.originalName}</p><button onClick={close}><X/></button></div><div className="flex-1 bg-slate-100 p-3">{preview?<iframe className="w-full h-full bg-white rounded-xl" src={url} title={file.originalName}/>:<div className="h-full flex flex-col justify-center items-center text-slate-500"><File className="w-12 h-12 mb-3"/>Sem visualização para este formato.</div>}</div><div className="p-3 border-t flex gap-2 flex-wrap"><a className="bg-blue-600 text-white px-3 py-2 rounded-xl text-sm font-bold inline-flex gap-1" href={`${url}?download=1`}><Download className="w-4 h-4"/>Baixar</a><a className="bg-slate-100 px-3 py-2 rounded-xl text-sm font-bold inline-flex gap-1" href={`mailto:?subject=${encodeURIComponent(file.originalName)}&body=${encodeURIComponent(`Acesse o documento protegido: ${full}`)}`}><Mail className="w-4 h-4"/>E-mail</a><a target="_blank" rel="noreferrer" className="bg-emerald-50 text-emerald-700 px-3 py-2 rounded-xl text-sm font-bold" href={`https://wa.me/?text=${encodeURIComponent(`Acesse o documento protegido: ${full}`)}`}>WhatsApp</a>{canTrash&&<button onClick={trash} className="ml-auto bg-red-50 text-red-600 px-3 py-2 rounded-xl text-sm font-bold inline-flex gap-1"><Trash2 className="w-4 h-4"/>Lixeira</button>}</div></div></div>};

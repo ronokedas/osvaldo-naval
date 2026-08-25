@@ -204,7 +204,19 @@ router.put("/items/:itemId", requireAuth, async (req: any, res: any) => {
     );
     const admins = await db.select().from(users).where(and(eq(users.role, "admin"), eq(users.ativo, true)));
     const allItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, current.osId));
-    if (allItems.length && allItems.every((item) => item.status === "concluido")) for (const admin of admins) await notify(admin.id, "os_itens_concluidos", "Serviços concluídos", "Todos os itens da OS foram concluídos e aguardam validação administrativa.", current.osId, "alta");
+    if (allItems.length && allItems.every((item) => item.status === "concluido")) {
+      // Avançar automaticamente a OS para "documentação em elaboração" (Laudos & Revisão)
+      const currentOs = (await db.select().from(service_orders).where(eq(service_orders.id, current.osId)))[0];
+      if (currentOs && ["visita_agendada", "vistoria_em_execucao"].includes(currentOs.status)) {
+        await db.update(service_orders).set({
+          status: "documentacao_em_elaboracao",
+          updatedAt: new Date(),
+        }).where(eq(service_orders.id, current.osId));
+        await logEvent(current.osId, "transicao_automatica", actor, "Todos os serviços concluídos. OS avançou automaticamente para Documentação em Elaboração.");
+      }
+      for (const admin of admins)
+        await notify(admin.id, "os_itens_concluidos", "Serviços concluídos", "Todos os itens da OS foram concluídos. A OS avançou para Documentação em Elaboração.", current.osId, "alta");
+    }
     res.json(updated);
   } catch (error) { console.error(error); res.status(500).json({ error: "Não foi possível atualizar o item da OS" }); }
 });
@@ -295,7 +307,12 @@ router.get("/:id", requireAuth, async (req: any, res: any) => {
 
     const allItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, id));
     const currentUser = (await db.select().from(users).where(eq(users.id, req.session.userId)))[0];
-    const items = currentUser?.role === "admin" || currentUser?.role === "financeiro"
+    const canViewEntireOrder = currentUser?.role === "admin" || currentUser?.role === "financeiro";
+    const isAssignedToOrder = allItems.some((item) => item.tecnicoResponsavelId === currentUser?.id) || os.responsavelTecnicoId === currentUser?.id;
+    if (!canViewEntireOrder && !isAssignedToOrder) {
+      return res.status(403).json({ error: "Você não está atribuído a esta Ordem de Serviço." });
+    }
+    const items = canViewEntireOrder
       ? allItems
       : allItems.filter((item) => item.tecnicoResponsavelId === currentUser?.id);
     const itemIds = items.map((item) => item.id);

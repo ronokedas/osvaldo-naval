@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   senha: text("senha").notNull(),
   avatarUrl: text("avatar_url"),
   permissions: jsonb("permissions").default([]), // array of permission strings
+  passwordResetExpiresAt: timestamp("password_reset_expires_at"),
   legacy: boolean("legacy").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -388,6 +389,47 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/** Repositório compartilhado, independente dos anexos de Ordem de Serviço. */
+export const documentLibraryFolders = pgTable("document_library_folders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  parentId: uuid("parent_id"),
+  name: text("name").notNull(),
+  createdById: uuid("created_by_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const documentLibraryFiles = pgTable("document_library_files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  folderId: uuid("folder_id").references(() => documentLibraryFolders.id, { onDelete: "cascade" }),
+  originalName: text("original_name").notNull(),
+  storedName: text("stored_name").notNull(),
+  mimeType: text("mime_type"),
+  size: integer("size").notNull().default(0),
+  uploadedById: uuid("uploaded_by_id").references(() => users.id).notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  trashedAt: timestamp("trashed_at"),
+  trashedById: uuid("trashed_by_id").references(() => users.id),
+});
+
+export const documentLibraryAudit = pgTable("document_library_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fileId: uuid("file_id"),
+  folderId: uuid("folder_id"),
+  actorId: uuid("actor_id").references(() => users.id).notNull(),
+  action: text("action").notNull(),
+  details: jsonb("details").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Snake-case aliases keep generic backup/restore tooling compatible with the
+// table names used by the rest of the schema.
+export const document_library_folders = documentLibraryFolders;
+export const document_library_files = documentLibraryFiles;
+export const document_library_audit = documentLibraryAudit;
 
 export const document_versions = pgTable("document_versions", {
   id: uuid("id").primaryKey().defaultRandom(),

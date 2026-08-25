@@ -24,7 +24,7 @@ export const requireRole = (roles: string[]) => {
     }
     try {
       const userList = await db.select().from(users).where(eq(users.id, req.session.userId));
-      if (userList.length === 0) {
+      if (userList.length === 0 || userList[0].ativo === false) {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const user = userList[0];
@@ -46,7 +46,7 @@ export const requirePermission = (perms: Permission[]) => {
     }
     try {
       const userList = await db.select().from(users).where(eq(users.id, req.session.userId));
-      if (userList.length === 0) {
+      if (userList.length === 0 || userList[0].ativo === false) {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const user = userList[0];

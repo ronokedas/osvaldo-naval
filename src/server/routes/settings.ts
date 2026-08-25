@@ -5,6 +5,8 @@ import * as schema from "../../db/schema.js";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth.js";
 import express from "express";
+import fs from "fs";
+import path from "path";
 
 const router = Router();
 
@@ -17,7 +19,7 @@ router.get("/:type", requireAuth, async (req, res) => {
     // Hide password for non-admins maybe, but the UI expects it for now
     // In a real app we wouldn't send SMTP password to the UI. We'll nullify it if not admin.
     let data = configList[0].data as any;
-    if (type === "email" && req.session.userRole !== "admin") {
+    if (type === "email" && (req as any).user?.role !== "admin") {
       data = { ...data, senha: "" };
     }
     
@@ -103,7 +105,7 @@ const DATA_TABLES = [
   "service_order_items", "schedules", "documents", "document_versions", 
   "external_submissions", "external_responses", "deliveries", "os_events", 
   "notifications", "services", "service_order_item_comments", "commitments", 
-  "commitment_attachments"
+  "commitment_attachments", "document_library_folders", "document_library_files", "document_library_audit"
 ];
 
 // Ordem de restauração respeitando as dependências das chaves estrangeiras.
@@ -115,7 +117,7 @@ const RESTORE_ORDER = [
   "financial_entries", "financial_attachments", "protocols", "critical_pendings",
   "service_order_items", "schedules", "documents", "document_versions",
   "external_submissions", "external_responses", "deliveries", "os_events", "commitments",
-  "commitment_attachments", "service_order_item_comments", "notifications", "app_configs"
+  "commitment_attachments", "document_library_folders", "document_library_files", "document_library_audit", "service_order_item_comments", "notifications", "app_configs"
 ];
 
 const DATA_TABLE_SET = new Set(DATA_TABLES);
@@ -192,7 +194,24 @@ router.post("/data/restore", requireRole(["admin"]), express.json({ limit: '200m
       for (const tableName of RESTORE_ORDER) {
         if ((schema as any)[tableName] && backupData[tableName]?.length > 0) {
           const tableConfig = (schema as any)[tableName];
-          const rows = backupData[tableName];
+          let rows = backupData[tableName];
+          // Self-referencing folders must be restored parent-first so the
+          // foreign key remains enabled during a restore.
+          if (tableName === "document_library_folders") {
+            const pending = [...rows];
+            const ordered: any[] = [];
+            const insertedIds = new Set<string>();
+            while (pending.length) {
+              const ready = pending.filter((row: any) => !row.parentId || insertedIds.has(row.parentId));
+              if (!ready.length) throw new Error("A restauração contém uma hierarquia de pastas inválida.");
+              for (const row of ready) {
+                ordered.push(row);
+                insertedIds.add(row.id);
+                pending.splice(pending.indexOf(row), 1);
+              }
+            }
+            rows = ordered;
+          }
 
           for (let i = 0; i < rows.length; i += 100) {
             const batchNumber = Math.floor(i / 100) + 1;
@@ -284,12 +303,25 @@ router.post("/data/wipe", requireRole(["admin"]), async (req, res) => {
         "service_orders", "service_order_items", "schedules", "documents",
         "document_versions", "external_submissions", "external_responses",
         "deliveries", "os_events", "notifications", "service_order_item_comments",
-        "commitments", "commitment_attachments"
+        "commitments", "commitment_attachments", "document_library_files", "document_library_audit", "document_library_folders"
       ];
     } else if (level === "all") {
       tablesToWipe = DATA_TABLES.filter(t => t !== "users" && t !== "app_configs");
     } else {
       return res.status(400).json({ error: "Nível de wipe inválido" });
+    }
+
+    // Database truncation does not remove document bytes. Clean only the
+    // exact files tracked by the document-library table before truncating it.
+    if (tablesToWipe.includes("document_library_files")) {
+      const libraryFiles = await db.select({ storedName: schema.document_library_files.storedName }).from(schema.document_library_files);
+      const libraryDir = path.resolve(process.cwd(), "uploads", "document-library");
+      for (const file of libraryFiles) {
+        const diskPath = path.resolve(libraryDir, path.basename(file.storedName));
+        if (diskPath.startsWith(`${libraryDir}${path.sep}`)) {
+          try { await fs.promises.unlink(diskPath); } catch (error: any) { if (error.code !== "ENOENT") throw error; }
+        }
+      }
     }
 
     await db.transaction(async (tx) => {

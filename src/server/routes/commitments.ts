@@ -66,7 +66,7 @@ router.post("/:id/anexos", requireRole(["admin"]), pdfUpload.array("files", 10),
     const [c] = await db.select().from(commitments).where(eq(commitments.id, req.params.id)); if (!c) return res.status(404).json({ error: "Pendência não encontrada" });
     const files = (req.files || []) as Express.Multer.File[];
     if (!files.length) return res.status(400).json({ error: "Selecione ao menos um PDF" });
-    const inserted = await db.insert(commitment_attachments).values(files.map(f => ({ compromissoId: c.id, nomeOriginal: f.originalname, nomeFisico: f.filename, url: `/uploads/${f.filename}`, tipoMime: f.mimetype, tamanho: f.size, autorId: req.user.id }))).returning();
+    const inserted = await db.insert(commitment_attachments).values(files.map(f => ({ compromissoId: c.id, nomeOriginal: f.originalname, nomeFisico: f.filename, url: `/api/upload/files/${encodeURIComponent(f.filename)}`, tipoMime: f.mimetype, tamanho: f.size, autorId: req.user.id }))).returning();
     res.status(201).json(inserted);
   } catch (e: any) { res.status(400).json({ error: e?.message || "Falha no upload" }); }
 });

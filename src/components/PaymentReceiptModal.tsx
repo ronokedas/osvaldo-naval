@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
 import { FinancialEntry, Vessel, Client, SignatureConfig, LogoConfig } from '../types';
-import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck } from 'lucide-react';
+import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck, MessageCircle, Mail } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
 import { generateReceiptPdf, downloadBlob } from '../utils/pdfGenerator';
 import { numberToWords } from '../utils/numberToWords';
@@ -25,6 +25,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 }) => {
   const [pdfUrl, setPdfUrl] = useState('');
   const [pdfLoading, setPdfLoading] = useState(true);
+  const [sharing, setSharing] = useState(false);
   const pdfFrameRef = useRef<HTMLIFrameElement>(null);
   const receiptNum = entry.reciboNumero || `REC-${entry.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}`;
   const clientName = vessel?.clienteNome || entry.clienteNome || 'Cliente / Armador';
@@ -53,7 +54,39 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
     downloadBlob(blob, `Recibo_${receiptNum.replace(/\//g, '-')}.pdf`);
   };
 
+  const receiptFileName = `Recibo_${receiptNum.replace(/\//g, '-')}.pdf`;
   const receiptTitle = entry.tipo === 'quitacao' ? 'Comprovante de Quitação' : 'Recibo de Pagamento';
+  const shareText = `${receiptTitle} ${receiptNum} - ${clientName} - ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(entry.valor) || 0)}.`;
+
+  const handleShare = async (channel: 'whatsapp' | 'email') => {
+    setSharing(true);
+    try {
+      const blob = await generateReceiptPdf(entry, logoConfig, signatureConfig, client?.cnpjCpf);
+      const file = new File([blob], receiptFileName, { type: 'application/pdf' });
+
+      // Mobile browsers can share the actual PDF file to WhatsApp or an email app.
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: receiptTitle, text: shareText, files: [file] });
+        return;
+      }
+
+      // Desktop fallback: open the destination with a ready-to-send message and
+      // download the PDF so it can be attached manually when needed.
+      downloadBlob(blob, receiptFileName);
+      if (channel === 'whatsapp') {
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+      } else {
+        const subject = encodeURIComponent(`${receiptTitle} - ${receiptNum}`);
+        const body = encodeURIComponent(`${shareText}\n\nO PDF foi baixado automaticamente para ser anexado a esta mensagem.`);
+        window.location.href = `mailto:${encodeURIComponent(client?.email || '')}?subject=${subject}&body=${body}`;
+      }
+    } catch (error: any) {
+      // Closing the native share sheet is not an error for the user.
+      if (error?.name !== 'AbortError') console.error('Erro ao compartilhar recibo:', error);
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <div
@@ -75,10 +108,29 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownload}
+              disabled={sharing}
               className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4" />
               Baixar PDF
+            </button>
+            <button
+              onClick={() => void handleShare('whatsapp')}
+              disabled={sharing}
+              title="Compartilhar recibo pelo WhatsApp"
+              className="inline-flex items-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition cursor-pointer shadow-sm disabled:opacity-60"
+            >
+              <MessageCircle className="w-4 h-4" />
+              WhatsApp
+            </button>
+            <button
+              onClick={() => void handleShare('email')}
+              disabled={sharing}
+              title={client?.email ? `Enviar recibo para ${client.email}` : 'Enviar recibo por e-mail'}
+              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition cursor-pointer shadow-sm disabled:opacity-60"
+            >
+              <Mail className="w-4 h-4" />
+              E-mail
             </button>
             <button
               onClick={handlePrint}

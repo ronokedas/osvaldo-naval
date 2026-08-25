@@ -115,9 +115,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'documents' as TabType,
-      label: 'Busca de Documentos',
+      label: 'Documentos',
       icon: Search,
-      roles: ['admin', 'financeiro', 'tecnico'],
+      roles: currentUser.role === 'admin' || currentUser.permissions?.includes('documents_access') ? [currentUser.role] : [],
     },
     {
       id: 'settings' as TabType,

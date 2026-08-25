@@ -120,6 +120,20 @@
       "when": 1785893000000,
       "tag": "0022_financial_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787655600000,
+      "tag": "0023_document_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787659200000,
+      "tag": "0024_security_hardening",
+      "breakpoints": true
     }
   ]
 }

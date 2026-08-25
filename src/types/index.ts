@@ -138,6 +138,7 @@ export interface Proposal {
   id: string;
   embarcacaoId: string;
   embarcacoesIds?: string[];
+  clienteId?: string;
   renovacaoDeId?: string | null;
   embarcacaoNome: string;
   clienteNome: string;
