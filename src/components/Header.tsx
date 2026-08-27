@@ -159,11 +159,17 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Notifications */}
           <div className="relative">
-            <button type="button" onClick={onOpenNotifications} className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative" aria-label="Abrir notificações">
+            <button
+              type="button"
+              onClick={onOpenNotifications}
+              className={`p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition relative ${pendingAlertsCount > 0 ? 'animate-pulse text-amber-300' : ''}`}
+              aria-label={pendingAlertsCount > 0 ? `Abrir notificações (${pendingAlertsCount} não lidas)` : 'Abrir notificações'}
+              title={pendingAlertsCount > 0 ? `${pendingAlertsCount} notificação(ões) não lida(s)` : 'Nenhuma notificação nova'}
+            >
               <Bell className="w-5 h-5" />
               {pendingAlertsCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center animate-pulse">
-                  {pendingAlertsCount}
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-amber-500 text-slate-950 font-mono font-bold text-[10px] rounded-full flex items-center justify-center ring-2 ring-[#061224]">
+                  {pendingAlertsCount > 99 ? '99+' : pendingAlertsCount}
                 </span>
               )}
             </button>

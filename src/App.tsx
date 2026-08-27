@@ -352,7 +352,7 @@ export default function App() {
       }
     };
     fetchOs();
-    const osRefreshInterval = window.setInterval(fetchOs, 30000);
+    const osRefreshInterval = window.setInterval(fetchOs, 10000);
     return () => window.clearInterval(osRefreshInterval);
   }, [currentUser, selectedOsId]);
 
@@ -987,7 +987,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
         searchResults={globalSearchResults}
         onSelectSearchResult={handleGlobalSearchResult}
-        pendingAlertsCount={criticalPendings.length}
+        pendingAlertsCount={criticalPendings.length + notifications.filter((notification) => !notification.lida).length}
         onGoHome={() => {
           navigateTab('dashboard');
           setSelectedVessel(null);

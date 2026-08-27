@@ -235,6 +235,7 @@ export interface Protocol {
   comprovanteNome?: string;
   comprovanteUrl?: string;
   observacoes?: string;
+  entregaStatus?: string | null;
 }
 
 export interface ProtocolDispatchDocument {

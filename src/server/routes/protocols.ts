@@ -32,12 +32,15 @@ async function nextProtocolNumber(tx: any) {
 async function hydrateProtocols(rows: any[]) {
   if (!rows.length) return [];
   const ids = rows.map((row) => row.id);
-  const [dispatches, responses, attachments, events, finalFiles] = await Promise.all([
+  const [dispatches, responses, attachments, events, finalFiles, deliveryRows] = await Promise.all([
     db.select().from(protocol_dispatches).where(inArray(protocol_dispatches.protocoloId, ids)).orderBy(protocol_dispatches.ciclo),
     db.select().from(protocol_responses).where(inArray(protocol_responses.protocoloId, ids)).orderBy(protocol_responses.createdAt),
     db.select().from(protocol_attachments).where(inArray(protocol_attachments.protocoloId, ids)).orderBy(protocol_attachments.createdAt),
     db.select().from(protocol_events).where(inArray(protocol_events.protocoloId, ids)).orderBy(protocol_events.createdAt),
     db.select().from(approved_document_files).where(inArray(approved_document_files.protocoloId, ids)).orderBy(approved_document_files.createdAt),
+    rows.some((row) => row.osId)
+      ? db.select().from(deliveries).where(inArray(deliveries.osId, rows.map((row) => row.osId).filter(Boolean)))
+      : [],
   ]);
   const dispatchIds = dispatches.map((item) => item.id);
   const responseIds = responses.map((item) => item.id);
@@ -61,6 +64,7 @@ async function hydrateProtocols(rows: any[]) {
       ...row, remessas: rowDispatches,
       anexos: attachments.filter((item) => item.protocoloId === row.id),
       arquivosFinais: finalFiles.filter((item) => item.protocoloId === row.id),
+      entregaStatus: deliveryRows.find((item) => item.osId === row.osId)?.status || null,
       eventos: events.filter((item) => item.protocoloId === row.id),
       documentosIncluidos: latestDocuments.size ? [...latestDocuments.values()].map((item) => `${item.tituloDocumento} (V${item.versao})`) : row.documentosIncluidos || [],
     });

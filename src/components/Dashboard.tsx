@@ -28,6 +28,14 @@ import { hasModuleAccess } from '../access-control';
 
 const hasPerm = (user: User | null | undefined, permission: string) => !!user && (user.role === 'admin' || (user.permissions || []).includes(permission));
 
+const getGreeting = (date = new Date()) => {
+  const hour = date.getHours();
+  if (hour < 5) return 'Boa madrugada';
+  if (hour < 12) return 'Bom dia';
+  if (hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+};
+
 interface DashboardProps {
   currentUser: User;
   users: User[];
@@ -299,7 +307,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C] tracking-tight">
-            Boa tarde, {currentUser.nome}
+            {getGreeting()}, {currentUser.nome}
           </h1>
           <p className="text-sm text-slate-500 font-medium mt-1">
             Aqui está o pulso da operação da Nautilus hoje.
