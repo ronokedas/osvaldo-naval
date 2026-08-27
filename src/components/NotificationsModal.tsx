@@ -8,6 +8,7 @@ interface NotificationsModalProps {
   notifications: InternalNotification[];
   criticalPendings?: any[];
   onMarkAsRead?: (id: string) => void;
+  onMarkAllAsRead?: () => Promise<void>;
   onNavigateToOS?: (osId: string) => void;
   onNavigateToCommitment?: (id: string) => void;
 }
@@ -18,6 +19,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   notifications,
   criticalPendings = [],
   onMarkAsRead,
+  onMarkAllAsRead,
   onNavigateToOS,
   onNavigateToCommitment,
 }) => {
@@ -182,6 +184,15 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         {/* Footer */}
         {allItems.length > 0 && (
           <div className="p-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+            {notifications.some((notification) => !notification.lida) && onMarkAllAsRead && (
+              <button
+                type="button"
+                onClick={() => void onMarkAllAsRead()}
+                className="mb-2 w-full py-2 px-4 border border-blue-200 bg-white hover:bg-blue-50 text-blue-700 font-bold text-xs rounded-lg transition"
+              >
+                ✓ Marcar todas como lidas
+              </button>
+            )}
             <button
               onClick={onClose}
               className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-lg transition"

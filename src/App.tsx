@@ -987,7 +987,7 @@ export default function App() {
         onSearchChange={setSearchQuery}
         searchResults={globalSearchResults}
         onSelectSearchResult={handleGlobalSearchResult}
-        pendingAlertsCount={criticalPendings.length + notifications.filter((notification) => !notification.lida).length}
+        pendingAlertsCount={notifications.filter((notification) => !notification.lida).length}
         onGoHome={() => {
           navigateTab('dashboard');
           setSelectedVessel(null);
@@ -1277,9 +1277,26 @@ export default function App() {
           setIsNotificationsModalOpen(false);
         }}
         onMarkAsRead={async (id) => {
-          const updated = notifications.map((n) => (n.id === id ? { ...n, lida: true } : n));
-          setNotifications(updated);
-          await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
+          try {
+            const response = await fetch(`/api/service-orders/notifications/${id}/read`, { method: 'POST' });
+            if (!response.ok) throw new Error('Não foi possível confirmar a leitura.');
+            setNotifications((current) => current.map((notification) => (
+              notification.id === id ? { ...notification, lida: true } : notification
+            )));
+          } catch (error) {
+            console.error('Erro ao marcar notificação como lida:', error);
+            alert('Não foi possível confirmar a leitura. Tente novamente.');
+          }
+        }}
+        onMarkAllAsRead={async () => {
+          try {
+            const response = await fetch('/api/service-orders/notifications/read-all', { method: 'POST' });
+            if (!response.ok) throw new Error('Não foi possível marcar as notificações como lidas.');
+            setNotifications((current) => current.map((notification) => ({ ...notification, lida: true })));
+          } catch (error) {
+            console.error('Erro ao marcar todas as notificações como lidas:', error);
+            alert('Não foi possível limpar os avisos. Tente novamente.');
+          }
         }}
       />
 

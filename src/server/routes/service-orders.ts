@@ -160,6 +160,17 @@ router.get("/notifications", requireAuth, async (req: any, res: any) => {
   }
 });
 
+router.post("/notifications/read-all", requireAuth, async (req: any, res: any) => {
+  try {
+    await db.update(notifications)
+      .set({ lida: true })
+      .where(and(eq(notifications.usuarioId, req.session.userId), eq(notifications.lida, false)));
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Não foi possível marcar as notificações como lidas" });
+  }
+});
+
 router.post("/notifications/:id/read", requireAuth, async (req: any, res: any) => {
   try {
     const updated = await db.update(notifications).set({ lida: true })
