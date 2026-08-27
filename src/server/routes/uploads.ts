@@ -25,10 +25,10 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
   fileFilter: (req, file, cb) => {
-    const allowed = /\.(pdf|doc|docx|xls|xlsx|dwg|dxf|png|jpe?g|gif|bmp|tiff?)$/i;
+    const allowed = /\.(pdf|doc|docx|xls|xlsx|dwg|dxf|png|jpe?g|gif|bmp|tiff?|eml|msg)$/i;
     const ext = path.extname(file.originalname);
     if (allowed.test(ext)) return cb(null, true);
-    cb(new Error('Tipo de arquivo não permitido. Aceitos: PDF, DOC/DOCX, XLS/XLSX, DWG/DXF e imagens.'));
+    cb(new Error('Tipo de arquivo não permitido. Aceitos: PDF, DOC/DOCX, XLS/XLSX, DWG/DXF, EML/MSG e imagens.'));
   },
 });
 

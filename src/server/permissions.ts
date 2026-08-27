@@ -6,9 +6,12 @@ export const PERMISSIONS = {
   REVISAR_DOCUMENTOS: "revisar_documentos",
   APROVAR_TECNICAMENTE: "aprovar_tecnicamente",
   REGISTRAR_ENVIO_RESPOSTA_EXTERNA: "registrar_envio_resposta_externa",
+  EXECUTAR_ENTREGAS: "executar_entregas",
   ENTREGAR_CONCLUIR: "entregar_concluir",
   FINANCEIRO_ADMINISTRACAO: "financeiro_administracao",
 } as const;
+
+export { MODULE_ACCESS, MODULE_ACCESS_MARKER, MODULE_CATALOG, defaultModulesForRole, hasModuleAccess, initializeModuleAccess, mergeModuleAccess, moduleIdsFromPermissions, modulePermission } from "../access-control.js";
 
 export type PermissionKey = keyof typeof PERMISSIONS;
 export type Permission = (typeof PERMISSIONS)[PermissionKey];

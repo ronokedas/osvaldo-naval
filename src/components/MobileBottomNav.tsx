@@ -1,6 +1,7 @@
 import React from 'react';
 import { TabType } from './Sidebar';
 import { User } from '../types';
+import { hasModuleAccess, ModuleId } from '../access-control';
 import { 
   LayoutDashboard, 
   Ship, 
@@ -33,18 +34,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       id: 'vessels' as TabType,
       label: 'Frota',
       icon: Ship,
-      roles: ['admin', 'tecnico'],
+      module: 'vessels' as ModuleId,
     },
     {
       id: 'proposals' as TabType,
       label: 'Propostas',
       icon: FileText,
-      roles: ['admin', 'financeiro'],
+      module: 'proposals' as ModuleId,
     },
-    { id: 'commitments' as TabType, label: 'Pendências', icon: BellRing, roles: ['admin', 'financeiro', 'tecnico'] },
+    { id: 'commitments' as TabType, label: 'Pendências', icon: BellRing, module: 'commitments' as ModuleId },
   ];
 
-  const visibleItems = navItems.filter((item) => item.roles.includes(currentUser.role));
+  const visibleItems = navItems.filter((item) => !item.module || hasModuleAccess(currentUser, item.module));
 
   return (
     <div 

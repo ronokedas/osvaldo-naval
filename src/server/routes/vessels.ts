@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { vessels, certifiers } from "../../db/schema.js";
-import { eq, desc } from "drizzle-orm";
+import { vessels, certifiers, service_orders, documents, document_versions, accounts_receivable, payments } from "../../db/schema.js";
+import { eq, desc, inArray } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import { serializeVessel } from "../serializers.js";
+import { receivableBalance } from "../financial-balance.js";
 
 const router = Router();
 
@@ -55,6 +56,28 @@ router.put("/:id", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES
   try {
     const { id } = req.params;
     const data = req.body;
+
+    if (data.status === "concluida") {
+      const orders = await db.select().from(service_orders).where(eq(service_orders.embarcacaoId, id));
+      const activeOrders = orders.filter((item) => !["concluida", "cancelada"].includes(item.status));
+      if (activeOrders.length) return res.status(409).json({ error: `A embarcação possui ${activeOrders.length} Ordem(ns) de Serviço ainda não concluída(s).` });
+      const orderIds = orders.map((item) => item.id);
+      const docs = orderIds.length ? await db.select().from(documents).where(inArray(documents.osId, orderIds)) : [];
+      const docIds = docs.map((item) => item.id);
+      const versions = docIds.length ? await db.select().from(document_versions).where(inArray(document_versions.documentoId, docIds)).orderBy(desc(document_versions.versao)) : [];
+      const pendingDocs = docs.filter((doc) => {
+        const latest = versions.find((version) => version.documentoId === doc.id);
+        return !latest || latest.situacaoRevisao !== "revisado" || latest.situacaoAprovacao !== "aprovado" || (doc.aplicavelAnaliseExterna && doc.status !== "aprovado");
+      });
+      if (pendingDocs.length) return res.status(409).json({ error: `A embarcação possui ${pendingDocs.length} documento(s) pendente(s).` });
+      const receivables = (await db.select().from(accounts_receivable).where(eq(accounts_receivable.embarcacaoId, id))).filter((item) => item.status !== "cancelado");
+      const receivableIds = receivables.map((item) => item.id);
+      const paidRows = receivableIds.length ? await db.select().from(payments).where(inArray(payments.contaReceberId, receivableIds)) : [];
+      const balance = receivables.reduce((sum, receivable) => {
+        return sum + receivableBalance(receivable.valorOriginal, paidRows.filter((payment) => payment.contaReceberId === receivable.id));
+      }, 0);
+      if (balance > 0.009) return res.status(409).json({ error: `A embarcação possui saldo financeiro pendente de R$ ${balance.toFixed(2).replace(".", ",")}.` });
+    }
     
     const updateData: any = { updatedAt: new Date() };
     if (data.nome !== undefined) updateData.nome = data.nome;

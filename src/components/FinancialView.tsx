@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { formatDateBR } from '../utils/date-formatters';
-import { Vessel, FinancialEntry, User, Client, SignatureConfig, LogoConfig } from '../types';
+import { Vessel, FinancialEntry, User, Client, SignatureConfig, LogoConfig, AccountReceivable, FinancialSummary } from '../types';
 import {
   DollarSign,
   TrendingUp,
@@ -25,40 +25,77 @@ import { CurrencyInput } from './CurrencyInput';
 interface FinancialViewProps {
   vessels: Vessel[];
   financialEntries: FinancialEntry[];
+  receivables: AccountReceivable[];
   clients?: Client[];
   currentUser: User;
   signatureConfig?: SignatureConfig;
   logoConfig?: LogoConfig;
   onAddPayment: (paymentData: Partial<FinancialEntry>) => void;
-  onUpdatePayment?: (entryId: string, updatedFields: Partial<FinancialEntry>) => void;
+  onRecordReceivablePayment: (receivableId: string, paymentData: Partial<FinancialEntry>) => Promise<void>;
+  onUpdatePayment?: (entryId: string, updatedFields: Partial<FinancialEntry>) => Promise<void>;
+  initialFilter?: 'pending';
+  financialSummary?: FinancialSummary | null;
+  onDataChanged?: () => Promise<void>;
 }
 
 export const FinancialView: React.FC<FinancialViewProps> = ({
   vessels,
   financialEntries,
+  receivables,
   clients = [],
   currentUser,
   signatureConfig,
   logoConfig,
   onAddPayment,
+  onRecordReceivablePayment,
   onUpdatePayment,
+  initialFilter,
+  financialSummary,
+  onDataChanged,
 }) => {
+  const canManageFinance = currentUser.role === 'admin' || !!currentUser.permissions?.includes('financeiro_administracao');
   const [search, setSearch] = useState('');
+  const [entryNature, setEntryNature] = useState<'todas' | 'entrada' | 'saida'>('todas');
+  const [entryType, setEntryType] = useState<'todos' | FinancialEntry['tipo']>('todos');
+  const [entryVesselId, setEntryVesselId] = useState('todos');
+  const [entryStartDate, setEntryStartDate] = useState('');
+  const [entryEndDate, setEntryEndDate] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedReceiptEntry, setSelectedReceiptEntry] = useState<FinancialEntry | null>(null);
   const [attachNfModalEntry, setAttachNfModalEntry] = useState<FinancialEntry | null>(null);
-  const [financeTab, setFinanceTab] = useState<'resumo' | 'pagar'>('resumo');
+  const [isSavingNf, setIsSavingNf] = useState(false);
+  const [financeTab, setFinanceTab] = useState<'resumo' | 'receber' | 'pagar' | 'lancamentos'>('resumo');
   const [payables, setPayables] = useState<any[]>([]);
-  const [payableForm, setPayableForm] = useState({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' });
+  const [payableCategories, setPayableCategories] = useState<any[]>([]);
+  const [payableSuppliers, setPayableSuppliers] = useState<any[]>([]);
+  const [payableForm, setPayableForm] = useState({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '', fornecedorId: '', categoriaId: '' });
+  const [showPendingOnly, setShowPendingOnly] = useState(initialFilter === 'pending');
+  const [receivableSearch, setReceivableSearch] = useState('');
+  const [receivableStatus, setReceivableStatus] = useState<'todos' | 'pendentes' | 'pagos'>('todos');
+  const [expandedReceivableId, setExpandedReceivableId] = useState<string | null>(null);
+  const [receivableDetails, setReceivableDetails] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    setShowPendingOnly(initialFilter === 'pending');
+    if (initialFilter === 'pending') setFinanceTab('receber');
+  }, [initialFilter]);
 
   const loadPayables = async () => {
-    const response = await fetch('/api/payables');
+    const [response, categoriesResponse, suppliersResponse] = await Promise.all([
+      fetch('/api/payables'),
+      fetch('/api/payables/categories'),
+      fetch('/api/payables/suppliers'),
+    ]);
     if (response.ok) setPayables(await response.json());
+    if (categoriesResponse.ok) setPayableCategories(await categoriesResponse.json());
+    if (suppliersResponse.ok) setPayableSuppliers(await suppliersResponse.json());
   };
-  useEffect(() => { if (financeTab === 'pagar') loadPayables(); }, [financeTab]);
+  useEffect(() => { if (financeTab === 'pagar' || financeTab === 'resumo') loadPayables(); }, [financeTab]);
 
   // Modal Form State (New Entry)
   const [selectedVesselId, setSelectedVesselId] = useState(vessels[0]?.id || '');
+  const [selectedReceivableId, setSelectedReceivableId] = useState('');
+  const [isSettlementMode, setIsSettlementMode] = useState(false);
   const [payValor, setPayValor] = useState(5000);
   const [payTipo, setPayTipo] = useState<'sinal' | 'parcela' | 'quitacao' | 'despesa'>('sinal');
   const [payForma, setPayForma] = useState<'PIX' | 'Transferência Bancária' | 'Boleto' | 'Cheque' | 'Dinheiro'>('PIX');
@@ -72,22 +109,88 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
   const [nfNumInput, setNfNumInput] = useState('');
   const [nfFileInput, setNfFileInput] = useState<File | null>(null);
 
-  const totalServices = vessels.reduce((acc, v) => acc + v.valorTotal, 0);
-  const totalReceived = vessels.reduce((acc, v) => acc + v.valorRecebido, 0);
+  const activeReceivables = receivables.filter((account) => account.status !== 'cancelado');
+  const receivablesForVessel = (vesselId: string) => activeReceivables.filter((account) => account.embarcacaoId === vesselId && (account.saldo || 0) > 0.009);
+  const selectedReceivable = activeReceivables.find((account) => account.id === selectedReceivableId);
+  const financialVessels = vessels.map((vessel) => {
+    const accounts = activeReceivables.filter((account) => account.embarcacaoId === vessel.id);
+    const total = accounts.reduce((sum, account) => sum + account.valorOriginal, 0);
+    const received = accounts.reduce((sum, account) => sum + (account.valorPago || 0), 0);
+    return { vessel, total, received, pending: Math.max(0, total - received) };
+  }).filter((item) => (showPendingOnly ? item.pending > 0.009 : item.total > 0 || item.received > 0));
+  const totalServices = activeReceivables.reduce((acc, account) => acc + account.valorOriginal, 0);
+  const totalReceived = activeReceivables.reduce((acc, account) => acc + (account.valorPago || 0), 0);
   const totalToReceive = totalServices - totalReceived;
   const totalExpenses = financialEntries.filter((e) => e.tipo === 'despesa').reduce((acc, e) => acc + e.valor, 0);
   const netProfit = totalReceived - totalExpenses;
+  const summary = financialSummary || {
+    totalBilled: totalServices,
+    totalReceived,
+    totalToReceive,
+    totalExpenses,
+    netProfit,
+    receivablesCount: activeReceivables.length,
+    pendingReceivablesCount: activeReceivables.filter((account) => (account.saldo || 0) > 0.009).length,
+    overdueReceivablesCount: 0,
+    payablesOpen: payables.filter((account) => account.status !== 'cancelado').reduce((sum, account) => sum + Number(account.saldo ?? account.valorOriginal ?? 0), 0),
+    payablesPaid: payables.reduce((sum, account) => sum + Number(account.valorPago || 0), 0),
+    payablesOverdueCount: 0,
+    payablesCount: payables.length,
+  };
+  const filteredReceivables = activeReceivables.filter((account) => {
+    const text = `${account.propostaNumero || ''} ${account.osNumero || ''} ${vessels.find((v) => v.id === account.embarcacaoId)?.nome || ''} ${clients.find((c) => c.id === account.clienteId)?.nome || ''}`.toLowerCase();
+    const matchesSearch = text.includes(receivableSearch.toLowerCase());
+    const matchesStatus = receivableStatus === 'todos' || (receivableStatus === 'pendentes' ? (account.saldo || 0) > 0.009 : (account.saldo || 0) <= 0.009);
+    return matchesSearch && matchesStatus;
+  });
+
+  const openReceivableDetails = async (accountId: string) => {
+    if (expandedReceivableId === accountId) {
+      setExpandedReceivableId(null);
+      return;
+    }
+    setExpandedReceivableId(accountId);
+    if (!receivableDetails[accountId]) {
+      const response = await fetch(`/api/receivables/${accountId}`);
+      if (response.ok) {
+        const detail = await response.json();
+        setReceivableDetails((current) => ({ ...current, [accountId]: detail }));
+      }
+    }
+  };
 
   const filteredEntries = financialEntries.filter(
     (e) =>
       e.embarcacaoNome.toLowerCase().includes(search.toLowerCase()) ||
+      (e.clienteNome || '').toLowerCase().includes(search.toLowerCase()) ||
       e.observacao.toLowerCase().includes(search.toLowerCase()) ||
       (e.notaFiscalNumero && e.notaFiscalNumero.toLowerCase().includes(search.toLowerCase()))
-  );
+  ).filter((e) => {
+    const nature = e.natureza || (e.tipo === 'despesa' ? 'saida' : 'entrada');
+    return (entryNature === 'todas' || nature === entryNature)
+      && (entryType === 'todos' || e.tipo === entryType)
+      && (entryVesselId === 'todos' || e.embarcacaoId === entryVesselId)
+      && (!entryStartDate || e.data >= entryStartDate)
+      && (!entryEndDate || e.data <= entryEndDate);
+  });
+
+  useEffect(() => {
+    const options = receivablesForVessel(selectedVesselId);
+    if (options.length === 1) setSelectedReceivableId(options[0].id);
+    else if (!options.some((account) => account.id === selectedReceivableId)) setSelectedReceivableId('');
+  }, [selectedVesselId, receivables]);
 
   const handleCreatePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (payValor <= 0) return;
+    if (isSettlementMode && payTipo !== 'despesa' && !selectedReceivableId) {
+      alert('Selecione a conta/proposta que esta baixa deve quitar.');
+      return;
+    }
+    if (payTipo !== 'despesa' && selectedReceivable && payValor > (selectedReceivable.saldo || 0) + 0.009) {
+      alert(`O valor informado supera o saldo desta conta (R$ ${(selectedReceivable.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).`);
+      return;
+    }
 
     const vessel = vessels.find((v) => v.id === selectedVesselId);
     let uploadedNfUrl: string | undefined;
@@ -99,7 +202,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       uploadedNfUrl = (await upload.json()).url;
     }
 
-    onAddPayment({
+    const payload: Partial<FinancialEntry> = {
       embarcacaoId: payTipo === 'despesa' ? undefined : selectedVesselId || undefined,
       embarcacaoNome: vessel ? vessel.nome : 'Despesa da empresa',
       clienteNome: vessel ? vessel.clienteNome : '',
@@ -114,7 +217,10 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       natureza: payTipo === 'despesa' ? 'saida' : 'entrada',
       fornecedorNome: payTipo === 'despesa' ? payFornecedorNome || undefined : undefined,
       categoriaNome: payTipo === 'despesa' ? payCategoriaNome : undefined,
-    });
+    };
+
+    if (payTipo !== 'despesa' && selectedReceivableId) await onRecordReceivablePayment(selectedReceivableId, payload);
+    else await onAddPayment(payload);
 
     setIsModalOpen(false);
     setPayObs('');
@@ -135,15 +241,22 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       if (!upload.ok) return;
       uploadedUrl = (await upload.json()).url;
     }
-    onUpdatePayment(attachNfModalEntry.id, {
-      notaFiscalNumero: nfNumInput || undefined,
-      notaFiscalNome: nfFileInput ? nfFileInput.name : attachNfModalEntry.notaFiscalNome || `NF_${nfNumInput}.pdf`,
-      notaFiscalUrl: uploadedUrl,
-    });
-
-    setAttachNfModalEntry(null);
-    setNfNumInput('');
-    setNfFileInput(null);
+    setIsSavingNf(true);
+    try {
+      await onUpdatePayment(attachNfModalEntry.id, {
+        notaFiscalNumero: nfNumInput || undefined,
+        notaFiscalNome: nfFileInput ? nfFileInput.name : attachNfModalEntry.notaFiscalNome || `NF_${nfNumInput}.pdf`,
+        notaFiscalUrl: uploadedUrl,
+      });
+      setAttachNfModalEntry(null);
+      setNfNumInput('');
+      setNfFileInput(null);
+    } catch (error) {
+      console.error('Erro ao salvar nota fiscal:', error);
+      alert('Não foi possível salvar a nota fiscal. Tente novamente.');
+    } finally {
+      setIsSavingNf(false);
+    }
   };
 
   const openAttachNfModal = (entry: FinancialEntry) => {
@@ -165,6 +278,15 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
+            onClick={() => setFinanceTab('lancamentos')}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-bold text-blue-800 shadow-sm transition hover:bg-blue-100"
+            title="Abrir histórico de lançamentos, notas fiscais e recibos"
+          >
+            <Receipt className="w-4 h-4" />
+            <span className="hidden sm:inline">Histórico & recibos</span>
+          </button>
+          {canManageFinance && <button
             onClick={() => {
               if (filteredEntries.length === 0) return;
               const csvEscape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -222,7 +344,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           >
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Exportar CSV</span>
-          </button>
+          </button>}
 
           <button
             onClick={async () => {
@@ -251,20 +373,101 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             <span className="hidden sm:inline">Exportar PDF</span>
           </button>
 
-          <button
-            onClick={() => setIsModalOpen(true)}
+          {canManageFinance && <button
+            onClick={() => {
+              setSelectedReceivableId('');
+              setIsSettlementMode(false);
+              setPayTipo('sinal');
+              setIsModalOpen(true);
+            }}
             className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer"
           >
             <Plus className="w-5 h-5" />
             Lançar Entrada / Saída
-          </button>
+          </button>}
         </div>
       </div>
 
-      <div className="flex gap-2 bg-white p-2 rounded-xl border border-slate-200 w-fit">
-        <button onClick={() => setFinanceTab('resumo')} className={`px-4 py-2 rounded-lg text-xs font-bold ${financeTab === 'resumo' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>Resumo e lançamentos</button>
-        <button onClick={() => setFinanceTab('pagar')} className={`px-4 py-2 rounded-lg text-xs font-bold ${financeTab === 'pagar' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>Contas a pagar</button>
+      <div className="flex flex-wrap gap-2 bg-white p-2 rounded-xl border border-slate-200 w-fit" aria-label="Seções do Financeiro">
+        {([
+          ['resumo', 'Resumo'],
+          ['receber', 'Contas a receber'],
+          ['pagar', 'Contas a pagar'],
+          ['lancamentos', `Histórico (${financialEntries.length})`],
+        ] as const).map(([tab, label]) => (
+          <button key={tab} type="button" onClick={() => setFinanceTab(tab)} aria-pressed={financeTab === tab} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${financeTab === tab ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
+            {label}
+          </button>
+        ))}
       </div>
+
+      {financeTab === 'receber' && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-blue-700">Contas a receber</p>
+                <h2 className="mt-1 text-xl font-black text-slate-900">Acompanhe os valores de propostas aceitas</h2>
+                <p className="mt-1 text-sm text-slate-600">Os recebíveis são criados automaticamente no aceite da proposta e baixados nesta tela.</p>
+              </div>
+              <div className="rounded-xl bg-white border border-blue-100 px-5 py-3 shadow-sm">
+                <p className="text-[10px] font-bold uppercase text-slate-500">Saldo pendente</p>
+                <p className="text-2xl font-black font-mono text-amber-700">R$ {summary.totalToReceive.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Recebíveis por proposta</h3>
+                <p className="text-xs text-slate-500">{filteredReceivables.length} de {activeReceivables.length} conta(s) exibida(s)</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input value={receivableSearch} onChange={(event) => setReceivableSearch(event.target.value)} placeholder="Buscar proposta, cliente..." className="w-full sm:w-64 pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50" />
+                </div>
+                <select value={receivableStatus} onChange={(event) => setReceivableStatus(event.target.value as typeof receivableStatus)} className="border border-slate-200 rounded-xl px-3 py-2 text-xs bg-white font-bold">
+                  <option value="todos">Todos os status</option>
+                  <option value="pendentes">Pendentes</option>
+                  <option value="pagos">Pagos</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredReceivables.length === 0 ? (
+              <div className="text-center py-12 text-slate-400"><Receipt className="w-10 h-10 mx-auto mb-2 opacity-40" /><p className="font-bold text-slate-600 text-sm">Nenhuma conta a receber encontrada</p><p className="text-xs mt-1">Contas são criadas quando uma proposta é aceita.</p></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                  <thead><tr className="bg-[#0B192C] text-white uppercase font-bold tracking-wider text-[10px]"><th className="p-3">Proposta / OS</th><th className="p-3">Embarcação / Cliente</th><th className="p-3 text-right">Original</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Saldo</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Ações</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {filteredReceivables.map((account) => {
+                      const vessel = vessels.find((item) => item.id === account.embarcacaoId);
+                      const client = clients.find((item) => item.id === account.clienteId);
+                      const pending = Number(account.saldo || 0) > 0.009;
+                      const details = receivableDetails[account.id];
+                      return <React.Fragment key={account.id}>
+                        <tr className="hover:bg-slate-50 transition">
+                          <td className="p-3 font-bold text-slate-900">{account.propostaNumero || 'Proposta aceita'}<span className="block text-[10px] font-normal text-slate-500">{account.osNumero ? `OS ${account.osNumero}` : 'Sem OS vinculada'}</span></td>
+                          <td className="p-3 text-slate-700">{vessel?.nome || 'Embarcação não informada'}<span className="block text-[10px] text-slate-500">{client?.nome || vessel?.clienteNome || 'Cliente não informado'}</span></td>
+                          <td className="p-3 text-right font-mono font-bold">R$ {Number(account.valorOriginal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700">R$ {Number(account.valorPago || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right font-mono font-black text-amber-700">R$ {Number(account.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-center"><span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${pending ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>{pending ? (Number(account.valorPago || 0) > 0 ? 'Parcial' : 'Pendente') : 'Pago'}</span></td>
+                          <td className="p-3 text-center whitespace-nowrap"><div className="flex justify-center gap-2"><button type="button" onClick={() => openReceivableDetails(account.id)} className="text-blue-700 font-bold hover:underline">{expandedReceivableId === account.id ? 'Ocultar' : 'Detalhes'}</button>{canManageFinance && pending && <button type="button" onClick={() => { setSelectedVesselId(account.embarcacaoId || ''); setSelectedReceivableId(account.id); setIsSettlementMode(true); setPayValor(Number(account.saldo || 0)); setPayTipo('parcela'); setIsModalOpen(true); }} className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg"><DollarSign className="w-3 h-3" /> Baixar</button>}</div></td>
+                        </tr>
+                        {expandedReceivableId === account.id && <tr><td colSpan={7} className="p-4 bg-slate-50"><div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-bold text-slate-800">Histórico de pagamentos</p>{details?.pagamentos?.length ? <div className="mt-2 space-y-2">{details.pagamentos.map((payment: any) => { const entry = financialEntries.find((item) => item.id === payment.financialEntryId); return <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{formatDateBR(payment.data)} · {payment.formaPagamento || 'Forma não informada'}</span><div className="flex items-center gap-3"><span className="font-mono font-bold text-emerald-700">R$ {Number(payment.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>{entry && <button type="button" onClick={() => setSelectedReceiptEntry(entry)} className="font-bold text-blue-700 hover:underline">Recibo PDF</button>}</div></div>; })}</div> : <p className="mt-2 text-xs text-slate-500">{details ? 'Nenhum pagamento registrado.' : 'Carregando histórico...'}</p>}</div></td></tr>}
+                      </React.Fragment>;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Pagar Tab - Contas a Pagar Organizado */}
       {financeTab === 'pagar' && (
@@ -314,7 +517,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           </div>
 
           {/* Form Cadastro de Nova Conta a Pagar */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+          {canManageFinance && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
@@ -328,7 +531,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             </div>
 
             <form
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3"
               onSubmit={async (event) => {
                 event.preventDefault();
                 const response = await fetch('/api/payables', {
@@ -337,8 +540,9 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                   body: JSON.stringify(payableForm),
                 });
                 if (response.ok) {
-                  setPayableForm({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '' });
-                  loadPayables();
+                  setPayableForm({ descricao: '', valorOriginal: 0, vencimento: '', competencia: '', fornecedorId: '', categoriaId: '' });
+                  await loadPayables();
+                  await onDataChanged?.();
                 } else {
                   alert('Preencha os campos obrigatórios.');
                 }
@@ -375,6 +579,22 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Fornecedor</label>
+                <select value={payableForm.fornecedorId} onChange={(e) => setPayableForm({ ...payableForm, fornecedorId: e.target.value })} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50">
+                  <option value="">Não informado</option>
+                  {payableSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.nome}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Categoria</label>
+                <select value={payableForm.categoriaId} onChange={(e) => setPayableForm({ ...payableForm, categoriaId: e.target.value })} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs bg-slate-50">
+                  <option value="">Não informado</option>
+                  {payableCategories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}
+                </select>
+              </div>
+
               <div className="flex items-end">
                 <button
                   type="submit"
@@ -384,7 +604,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                 </button>
               </div>
             </form>
-          </div>
+          </div>}
 
           {/* Tabela de Contas a Pagar */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
@@ -477,7 +697,8 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                             R$ {saldoAtual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="p-3 text-center whitespace-nowrap">
-                            {account.status !== 'pago' && account.status !== 'cancelado' ? (
+                            <div className="flex items-center justify-center gap-2">
+                            {canManageFinance && account.status !== 'pago' && account.status !== 'cancelado' ? (
                               <button
                                 onClick={async () => {
                                   const raw = window.prompt(`Valor da baixa para "${account.descricao}":`, String(saldoAtual));
@@ -489,16 +710,18 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ valor }),
                                   });
-                                  if (response.ok) loadPayables();
+                                  if (response.ok) { await loadPayables(); await onDataChanged?.(); }
                                   else alert('Erro ao registrar baixa.');
                                 }}
                                 className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition shadow-2xs cursor-pointer active:scale-95"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" /> Dar Baixa
                               </button>
-                            ) : (
+                            ) : canManageFinance ? (
                               <span className="text-[11px] font-bold text-slate-400">Liquidado</span>
-                            )}
+                            ) : <span className="text-[11px] text-slate-400">Somente consulta</span>}
+                            {canManageFinance && account.status !== 'pago' && account.status !== 'cancelado' && <button type="button" className="text-[10px] font-bold text-red-600 hover:underline" onClick={async () => { const motivo = window.prompt('Motivo do cancelamento:'); if (!motivo?.trim()) return; const response = await fetch(`/api/payables/${account.id}/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }) }); if (response.ok) { await loadPayables(); await onDataChanged?.(); } else alert('Não foi possível cancelar a conta.'); }}>Cancelar</button>}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -512,39 +735,72 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       )}
 
       {/* Financial Top Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+      {(financeTab === 'resumo') && <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1">
           <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Total Faturado</p>
           <p className="text-xl font-black font-mono text-slate-900">
-            R$ {totalServices.toLocaleString('pt-BR')}
+            R$ {summary.totalBilled.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-emerald-500">
           <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Total Recebido</p>
           <p className="text-xl font-black font-mono text-emerald-700">
-            R$ {totalReceived.toLocaleString('pt-BR')}
+            R$ {summary.totalReceived.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-amber-500">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Total a Receber</p>
+          <p className="text-xl font-black font-mono text-amber-700">R$ {summary.totalToReceive.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          <p className="text-[10px] text-slate-500">{summary.pendingReceivablesCount} conta(s) pendente(s)</p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-red-500">
           <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">Despesas / Custos</p>
           <p className="text-xl font-black font-mono text-red-700">
-            R$ {totalExpenses.toLocaleString('pt-BR')}
+            R$ {summary.totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-blue-500">
           <p className="text-[10px] uppercase tracking-wider font-bold text-blue-700">Lucro Líquido</p>
           <p className="text-xl font-black font-mono text-blue-700">
-            R$ {netProfit.toLocaleString('pt-BR')}
+            R$ {summary.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </p>
         </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-1 border-l-4 border-l-red-500">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">Contas vencidas</p>
+          <p className="text-xl font-black font-mono text-red-700">{summary.overdueReceivablesCount}</p>
+          <p className="text-[10px] text-slate-500">recebíveis em atraso</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-white p-2 text-blue-700 shadow-sm"><Receipt className="h-5 w-5" /></div>
+          <div>
+            <p className="font-bold text-slate-900">Histórico de recebimentos e documentos</p>
+            <p className="mt-0.5 text-xs text-slate-600">Cada baixa registrada entra no histórico. Lá você pode anexar a NF-e e baixar o recibo em PDF.</p>
+          </div>
+        </div>
+        <button type="button" onClick={() => setFinanceTab('lancamentos')} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-800 sm:mt-0 sm:w-auto">
+          <Receipt className="h-4 w-4" /> Ver histórico ({financialEntries.length})
+        </button>
       </div>
 
       {/* Financial Breakdown Table per Vessel */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
-        <h3 className="font-bold text-slate-900 text-base border-b pb-3">Posição Financeira por Embarcação</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          <h3 className="font-bold text-slate-900 text-base">Posição Financeira por Embarcação</h3>
+          {showPendingOnly && (
+            <button type="button" onClick={() => setShowPendingOnly(false)} className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100">
+              Apenas pendentes ({financialVessels.length}) ×
+            </button>
+          )}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -560,29 +816,28 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {vessels.filter(v => v.valorTotal > 0 || v.valorRecebido > 0 || v.valorSinal > 0).length === 0 ? (
+              {financialVessels.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
                     Nenhuma embarcação com registro financeiro ativo no momento.
                   </td>
                 </tr>
               ) : (
-                vessels.filter(v => v.valorTotal > 0 || v.valorRecebido > 0 || v.valorSinal > 0).map((v) => {
-                  const pending = v.valorTotal - v.valorRecebido;
-                  const pct = v.valorTotal > 0 ? Math.round((v.valorRecebido / v.valorTotal) * 100) : 0;
+                financialVessels.map(({ vessel: v, total, received, pending }) => {
+                  const pct = total > 0 ? Math.round((received / total) * 100) : 0;
 
                   return (
                     <tr key={v.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-bold text-slate-900">{v.nome}</td>
                       <td className="p-3 text-slate-600">{v.clienteNome}</td>
                       <td className="p-3 text-right font-mono font-bold text-slate-900">
-                        R$ {v.valorTotal.toLocaleString('pt-BR')}
+                            R$ {total.toLocaleString('pt-BR')}
                       </td>
                       <td className="p-3 text-right font-mono text-blue-800">
-                        R$ {v.valorSinal.toLocaleString('pt-BR')}
+                            R$ {Math.min(v.valorSinal, received).toLocaleString('pt-BR')}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-emerald-700">
-                        R$ {v.valorRecebido.toLocaleString('pt-BR')}
+                            R$ {received.toLocaleString('pt-BR')}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-amber-700">
                         R$ {pending.toLocaleString('pt-BR')}
@@ -591,11 +846,14 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                         <span className="font-mono text-xs font-bold text-slate-700">{pct}%</span>
                       </td>
                       <td className="p-3 text-center">
-                        {pending > 0 && (
+                        {canManageFinance && pending > 0 && (
                           <button
                             onClick={() => {
                               setSelectedVesselId(v.id);
-                              setPayValor(pending);
+                              const options = receivablesForVessel(v.id);
+                              setSelectedReceivableId(options.length === 1 ? options[0].id : '');
+                              setIsSettlementMode(true);
+                              setPayValor(options.length === 1 ? (options[0].saldo || pending) : pending);
                               setPayTipo('parcela');
                               setIsModalOpen(true);
                             }}
@@ -613,9 +871,10 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
           </table>
         </div>
       </div>
+      </>}
 
       {/* History of Entries & Receipts / Nota Fiscal */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+      {financeTab === 'lancamentos' && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
           <div>
             <h3 className="font-bold text-slate-900 text-base">
@@ -625,18 +884,26 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               Emissão de recibos oficiais em PDF e controle de NF-e por parcela.
             </p>
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Buscar por embarcação, NF..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 border rounded-xl text-xs bg-slate-50"
-            />
+          <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+            <div className="relative w-full sm:w-56">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input type="text" placeholder="Buscar lançamento, NF..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-xl text-xs bg-slate-50" />
+            </div>
+            <select value={entryNature} onChange={(e) => setEntryNature(e.target.value as typeof entryNature)} className="border rounded-xl px-2.5 py-2 text-xs bg-white"><option value="todas">Entradas e saídas</option><option value="entrada">Entradas</option><option value="saida">Saídas</option></select>
+            <select value={entryType} onChange={(e) => setEntryType(e.target.value as typeof entryType)} className="border rounded-xl px-2.5 py-2 text-xs bg-white"><option value="todos">Todos os tipos</option><option value="sinal">Sinal</option><option value="parcela">Parcela</option><option value="quitacao">Quitação</option><option value="despesa">Despesa</option></select>
+            <select value={entryVesselId} onChange={(e) => setEntryVesselId(e.target.value)} className="border rounded-xl px-2.5 py-2 text-xs bg-white max-w-48"><option value="todos">Todas as embarcações</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.nome}</option>)}</select>
+            <input type="date" aria-label="Data inicial" value={entryStartDate} onChange={(e) => setEntryStartDate(e.target.value)} className="border rounded-xl px-2.5 py-2 text-xs bg-white" />
+            <input type="date" aria-label="Data final" value={entryEndDate} onChange={(e) => setEntryEndDate(e.target.value)} className="border rounded-xl px-2.5 py-2 text-xs bg-white" />
           </div>
         </div>
 
+        {filteredEntries.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
+            <Receipt className="mx-auto mb-2 h-9 w-9 text-slate-400" />
+            <p className="text-sm font-bold text-slate-700">Nenhum lançamento encontrado</p>
+            <p className="mt-1 text-xs text-slate-500">As baixas e os novos recebimentos aparecerão aqui, com NF-e e recibo disponíveis.</p>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -670,6 +937,9 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                       <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
                         {e.tipo}
                       </span>
+                      {e.situacaoConciliacao === 'requer_conciliacao' && (
+                        <span className="block mt-1 text-[9px] uppercase font-bold text-amber-700">Requer conciliação</span>
+                      )}
                     </td>
                     <td className="p-2.5 text-slate-600 font-mono whitespace-nowrap">
                       {e.formaPagamento}
@@ -683,22 +953,31 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                             <FileText className="w-3 h-3 text-emerald-600" />
                             {e.notaFiscalNumero}
                           </span>
-                          <button
+                          {e.notaFiscalUrl && <a
+                            href={e.notaFiscalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-bold text-blue-700 hover:underline"
+                            title="Abrir arquivo da nota fiscal"
+                          >
+                            Ver NF
+                          </a>}
+                          {canManageFinance && <button
                             onClick={() => openAttachNfModal(e)}
                             className="text-[10px] text-slate-400 hover:text-slate-700 underline"
                             title="Editar Nota Fiscal"
                           >
                             Editar
-                          </button>
+                          </button>}
                         </div>
                       ) : (
-                        <button
+                        canManageFinance ? <button
                           onClick={() => openAttachNfModal(e)}
                           className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer"
                         >
                           <FilePlus className="w-3 h-3 text-amber-600" />
                           Anexar NF
-                        </button>
+                        </button> : <span className="text-[10px] text-slate-400">Sem NF</span>
                       )}
                     </td>
 
@@ -725,10 +1004,11 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+        )}
+      </div>}
 
       {/* MODAL 1: Lançar Novo Pagamento */}
-      {isModalOpen && (
+      {canManageFinance && isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
@@ -746,6 +1026,36 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                   {vessels.map((v) => <option key={v.id} value={v.id}>{v.nome} ({v.clienteNome})</option>)}
                 </select>
               </div>}
+
+              {payTipo !== 'despesa' && selectedVesselId && (
+                <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-1.5">
+                  <label className="block font-bold text-emerald-900">Conta a receber / OS</label>
+                  {receivablesForVessel(selectedVesselId).length === 0 ? (
+                    <p className="text-[11px] text-amber-800">Entrada não conciliada: este lançamento ficará no caixa, mas não reduzirá o saldo de nenhuma OS.</p>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedReceivableId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedReceivableId(id);
+                          const account = activeReceivables.find((item) => item.id === id);
+                          if (account) setPayValor(account.saldo || 0);
+                        }}
+                        className="w-full px-3 py-2 border border-emerald-300 rounded-lg text-xs bg-white"
+                      >
+                        <option value="">{isSettlementMode ? 'Selecione a conta a baixar' : 'Não vincular a uma OS (entrada não conciliada)'}</option>
+                        {receivablesForVessel(selectedVesselId).map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.propostaNumero || 'Proposta'} · {account.osNumero || 'Sem OS'} · saldo R$ {(account.saldo || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedReceivable && <p className="text-[11px] text-emerald-800">Esta baixa será vinculada à {selectedReceivable.propostaNumero || 'proposta'} e à {selectedReceivable.osNumero || 'OS vinculada'}.</p>}
+                    </>
+                  )}
+                </div>
+              )}
 
               {payTipo === 'despesa' && (
                 <div className="grid grid-cols-2 gap-2">
@@ -864,7 +1174,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       )}
 
       {/* MODAL 2: Anexar Nota Fiscal em Lançamento Existente */}
-      {attachNfModalEntry && (
+      {canManageFinance && attachNfModalEntry && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
@@ -925,7 +1235,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-lg cursor-pointer hover:bg-emerald-700"
                 >
-                  Salvar Nota Fiscal
+                  {isSavingNf ? 'Salvando...' : 'Salvar Nota Fiscal'}
                 </button>
               </div>
             </form>

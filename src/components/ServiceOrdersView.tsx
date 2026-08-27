@@ -29,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
   exigencia_externa: 'bg-red-50 text-red-800 border-red-300/80 animate-pulse',
   aprovado_externamente: 'bg-teal-50 text-teal-800 border-teal-300/80',
   aguardando_entrega: 'bg-orange-50 text-orange-800 border-orange-300/80',
+  validacao_final: 'bg-teal-50 text-teal-800 border-teal-300/80',
   concluida: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
   cancelada: 'bg-slate-100 text-slate-500 border-slate-200',
 };
@@ -44,6 +45,7 @@ const ST_LABELS: Record<string, string> = {
   exigencia_externa: 'Exigência',
   aprovado_externamente: 'Aprovado Ext.',
   aguardando_entrega: 'Aguard. Entrega',
+  validacao_final: 'Validação Final',
   concluida: 'Concluída',
   cancelada: 'Cancelada',
 };
@@ -92,11 +94,19 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
   },
   {
     id: 'entrega',
-    title: '5. Entrega & Fim',
+    title: '5. Entrega & Pendências',
     icon: CheckCircle2,
-    statuses: ['aguardando_entrega', 'concluida'],
-    color: 'text-emerald-700 border-emerald-300',
-    bgHeader: 'bg-emerald-50/80 border-emerald-200 text-emerald-900',
+    statuses: ['aguardando_entrega'],
+    color: 'text-orange-700 border-orange-300',
+    bgHeader: 'bg-orange-50/80 border-orange-200 text-orange-900',
+  },
+  {
+    id: 'validacao',
+    title: '6. Validação Final',
+    icon: CheckCircle2,
+    statuses: ['validacao_final'],
+    color: 'text-teal-700 border-teal-300',
+    bgHeader: 'bg-teal-50/80 border-teal-200 text-teal-900',
   },
 ];
 
@@ -106,6 +116,7 @@ interface Props {
   onOpenOrder: (id: string) => void;
   onRefresh: () => void;
   filteredStatus?: string | null;
+  filteredStatuses?: string[];
 }
 
 export const ServiceOrdersView: React.FC<Props> = ({
@@ -114,18 +125,27 @@ export const ServiceOrdersView: React.FC<Props> = ({
   onOpenOrder,
   onRefresh,
   filteredStatus,
+  filteredStatuses,
 }) => {
   const [viewMode, setViewMode] = useState<'kanban' | 'grid'>('kanban');
-  const [filter, setFilter] = useState<string>(filteredStatus || 'all');
+  const [filter, setFilter] = useState<string>(filteredStatuses?.length ? '__dashboard__' : filteredStatus || 'all');
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    if (filteredStatus) setFilter(filteredStatus);
-  }, [filteredStatus]);
+    setFilter(filteredStatuses?.length ? '__dashboard__' : filteredStatus || 'all');
+  }, [filteredStatus, filteredStatuses]);
+
+  // O quadro operacional deve destacar somente o trabalho em andamento.
+  // OS concluídas (e canceladas) ficam disponíveis nos filtros próprios.
+  const activeOrders = serviceOrders.filter((os) => !['concluida', 'cancelada'].includes(os.status));
 
   // Filter orders by search & status
   const filtered = serviceOrders.filter((os) => {
-    const matchesStatus = filter === 'all' || os.status === filter;
+    const matchesStatus = filter === '__dashboard__'
+      ? Boolean(filteredStatuses?.includes(os.status))
+      : filter === 'all'
+      ? !['concluida', 'cancelada'].includes(os.status)
+      : os.status === filter;
     const matchesSearch =
       !searchTerm ||
       (os.numero && os.numero.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -142,7 +162,7 @@ export const ServiceOrdersView: React.FC<Props> = ({
       <div
         key={os.id}
         onClick={() => onOpenOrder(os.id)}
-        className={`group bg-white rounded-2xl border transition-all duration-200 text-left p-4 cursor-pointer flex flex-col justify-between hover:shadow-lg hover:-translate-y-0.5 ${
+        className={`nautilus-os-card group bg-white rounded-2xl border transition-all duration-200 text-left p-4 cursor-pointer flex flex-col justify-between hover:shadow-lg hover:-translate-y-0.5 ${
           isExigencia
             ? 'border-red-400 ring-2 ring-red-200/50'
             : os.servicosSemResponsavel
@@ -206,7 +226,7 @@ export const ServiceOrdersView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="nautilus-service-orders-view space-y-6 pb-12">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -220,10 +240,10 @@ export const ServiceOrdersView: React.FC<Props> = ({
 
         <div className="flex items-center gap-3">
           {/* View Toggle */}
-          <div className="bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 border border-slate-300/60 shadow-inner">
+          <div className="nautilus-view-toggle bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 border border-slate-300/60 shadow-inner">
             <button
               onClick={() => setViewMode('kanban')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`nautilus-view-toggle-button inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'kanban'
                   ? 'bg-white text-[#0B192C] shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -233,7 +253,7 @@ export const ServiceOrdersView: React.FC<Props> = ({
             </button>
             <button
               onClick={() => setViewMode('grid')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`nautilus-view-toggle-button inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'grid'
                   ? 'bg-white text-[#0B192C] shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -253,7 +273,7 @@ export const ServiceOrdersView: React.FC<Props> = ({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="nautilus-service-orders-filters bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Search Input */}
         <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -267,16 +287,24 @@ export const ServiceOrdersView: React.FC<Props> = ({
         </div>
 
         {/* Quick Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-          <button
+          <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+            {filter === '__dashboard__' && (
+              <button
+                onClick={() => setFilter('all')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer border border-blue-600 bg-blue-600 text-white shadow-sm"
+              >
+                Filtro do dashboard ({filtered.length}) ×
+              </button>
+            )}
+            <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+            className={`nautilus-filter-pill px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
               filter === 'all'
                 ? 'bg-[#0B192C] text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Todas ({serviceOrders.length})
+            Todas ({activeOrders.length})
           </button>
           {Object.keys(ST_LABELS).map((st) => {
             const count = serviceOrders.filter((os) => os.status === st).length;
@@ -285,7 +313,7 @@ export const ServiceOrdersView: React.FC<Props> = ({
               <button
                 key={st}
                 onClick={() => setFilter(st)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border transition-all ${
+                className={`nautilus-filter-pill px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer border transition-all ${
                   filter === st
                     ? 'bg-[#0B192C] text-white border-[#0B192C] shadow-sm'
                     : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -315,15 +343,15 @@ export const ServiceOrdersView: React.FC<Props> = ({
             return (
               <div
                 key={col.id}
-                className="bg-slate-100/70 border border-slate-200/80 rounded-2xl p-3 flex flex-col gap-3 min-h-[480px] shadow-sm"
+                className={`nautilus-kanban-column nautilus-kanban-column-${col.id} bg-slate-100/70 border border-slate-200/80 rounded-2xl p-3 flex flex-col gap-3 min-h-[480px] shadow-sm`}
               >
                 {/* Column Header */}
-                <div className={`flex items-center justify-between p-2.5 rounded-xl border font-bold text-xs shadow-xs ${col.bgHeader}`}>
+                <div className={`nautilus-kanban-header nautilus-kanban-header-${col.id} flex items-center justify-between p-2.5 rounded-xl border font-bold text-xs shadow-xs ${col.bgHeader}`}>
                   <div className="flex items-center gap-1.5">
                     <ColIcon className="w-4 h-4" />
                     <span>{col.title}</span>
                   </div>
-                  <span className="bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[11px] shadow-xs">
+                  <span className="nautilus-kanban-count bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-full text-[11px] shadow-xs">
                     {colOrders.length}
                   </span>
                 </div>

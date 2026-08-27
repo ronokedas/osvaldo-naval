@@ -14,8 +14,11 @@ import {
   EmailConfig,
   SignatureConfig,
   LogoConfig,
+  AccountReceivable,
+  DashboardSummary,
+  FinancialSummary,
 } from './types';
-import { Header } from './components/Header';
+import { Header, GlobalSearchResult } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { VesselsList } from './components/VesselsList';
@@ -38,6 +41,8 @@ import { RegistrationsView } from './components/RegistrationsView';
 import CommitmentsView from './components/CommitmentsView';
 import { RenewalsView } from './components/RenewalsView';
 import { NotificationsModal } from './components/NotificationsModal';
+import { hasModuleAccess, ModuleId } from './access-control';
+import { applyThemePreference } from './theme';
 
 // Lazy loaded views
 const LazyDashboard = React.lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -59,6 +64,14 @@ const TAB_PATHS: TabType[] = [
   'dashboard', 'vessels', 'tasks', 'proposals', 'service-orders', 'financial',
   'protocols', 'team', 'documents', 'settings', 'commitments', 'registrations', 'renewals',
 ];
+
+type DashboardDestination = {
+  tab: TabType;
+  serviceOrderStatuses?: string[];
+  proposalStatuses?: string[];
+  vesselStatus?: 'aberta' | 'concluida' | 'todos';
+  financialFilter?: 'pending';
+};
 
 const tabFromCurrentPath = (): TabType => {
   const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
@@ -123,16 +136,23 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    applyThemePreference(currentUser?.themePreference);
+  }, [currentUser?.themePreference, currentUser?.id]);
   const [clients, setClients] = useState<Client[]>([]);
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasks, setTasks] = useState<DocumentTask[]>([]);
   const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>([]);
+  const [receivables, setReceivables] = useState<AccountReceivable[]>([]);
   const [criticalPendings, setCriticalPendings] = useState<CriticalPending[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [emailConfig, setEmailConfig] = useState<EmailConfig>(({} as EmailConfig));
   const [signatureConfig, setSignatureConfig] = useState<SignatureConfig>(({} as SignatureConfig));
   const [logoConfig, setLogoConfig] = useState<LogoConfig>(({} as LogoConfig));
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
 
   // UI States
   const [activeTab, setActiveTab] = useState<TabType>(tabFromCurrentPath);
@@ -142,16 +162,44 @@ export default function App() {
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isNotificationsModalOpen, setIsNotificationsModalOpen] = useState(false);
+  const [dashboardDestination, setDashboardDestination] = useState<DashboardDestination | null>(null);
+
+  const moduleForTab: Partial<Record<TabType, ModuleId>> = {
+    vessels: 'vessels', registrations: 'registrations', commitments: 'commitments', tasks: 'tasks',
+    proposals: 'proposals', renewals: 'renewals', 'service-orders': 'service-orders', financial: 'financial',
+    protocols: 'protocols', documents: 'documents', settings: 'settings', team: 'settings',
+  };
+  const canAccessTab = (tab: TabType, user = currentUser) => !moduleForTab[tab] || hasModuleAccess(user, moduleForTab[tab]!);
+
+  const navigateTab = (tab: TabType) => {
+    if (!canAccessTab(tab)) {
+      setActiveTab('dashboard');
+      return;
+    }
+    setDashboardDestination(null);
+    setActiveTab(tab);
+  };
+
+  const navigateFromDashboard = (destination: DashboardDestination) => {
+    if (!canAccessTab(destination.tab as TabType)) return;
+    setDashboardDestination(destination);
+    setActiveTab(destination.tab);
+  };
 
   // Sincronizar activeTab com a URL para navegação visível no navegador
   React.useEffect(() => {
     const handlePopState = () => {
-      setActiveTab(tabFromCurrentPath());
+      const nextTab = tabFromCurrentPath();
+      setActiveTab(canAccessTab(nextTab) ? nextTab : 'dashboard');
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (currentUser && !canAccessTab(activeTab)) setActiveTab('dashboard');
+  }, [activeTab, currentUser]);
 
   React.useEffect(() => {
     const targetPath = `/${activeTab}`;
@@ -205,18 +253,22 @@ export default function App() {
   const fetchData = React.useCallback(async (showAlerts = true) => {
     if (!currentUser) return;
     try {
-      const isNotTecnico = currentUser.role !== 'tecnico';
-      const [vRes, clRes, pRes, tRes, fRes, prRes, cRes, emRes, sigRes, logRes] = await Promise.all([
-        fetch('/api/vessels'),
-        fetch('/api/clients'),
-        isNotTecnico ? fetch('/api/proposals') : Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })),
-        fetch('/api/tasks'),
-        isNotTecnico ? fetch('/api/finance') : Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })),
-        fetch('/api/protocols'),
-        fetch('/api/critical-pendings'),
-        fetch('/api/settings/email'),
-        fetch('/api/settings/signature'),
-        fetch('/api/settings/logo'),
+      const can = (module: ModuleId) => hasModuleAccess(currentUser, module);
+      const emptyResponse = (body: string) => Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      const [vRes, clRes, pRes, tRes, fRes, arRes, prRes, cRes, emRes, sigRes, logRes, dashboardRes, financialSummaryRes] = await Promise.all([
+        can('vessels') || can('registrations') || can('proposals') || can('renewals') ? fetch('/api/vessels') : emptyResponse('[]'),
+        can('registrations') || can('vessels') || can('proposals') || can('renewals') ? fetch('/api/clients') : emptyResponse('[]'),
+        can('proposals') ? fetch('/api/proposals') : emptyResponse('[]'),
+        can('tasks') ? fetch('/api/tasks') : emptyResponse('[]'),
+        can('financial') ? fetch('/api/finance') : emptyResponse('[]'),
+        can('financial') ? fetch('/api/receivables') : emptyResponse('[]'),
+        can('protocols') ? fetch('/api/protocols') : emptyResponse('[]'),
+        can('commitments') ? fetch('/api/critical-pendings') : emptyResponse('[]'),
+        currentUser.role === 'admin' ? fetch('/api/settings/email') : emptyResponse('{}'),
+        currentUser.role === 'admin' ? fetch('/api/settings/signature') : emptyResponse('{}'),
+        currentUser.role === 'admin' ? fetch('/api/settings/logo') : emptyResponse('{}'),
+        fetch('/api/dashboard/summary'),
+        can('financial') ? fetch('/api/finance/summary') : emptyResponse('{}'),
       ]);
       
       const rawVessels: any[] = vRes.ok ? await vRes.json() : [];
@@ -228,18 +280,21 @@ export default function App() {
       if (pRes.ok) setProposals((await pRes.json()).map(normalizeProposal));
       if (tRes.ok) setTasks((await tRes.json()).map((task: any) => normalizeTask(task, vesselById)));
       if (fRes.ok) setFinancialEntries((await fRes.json()).map(normalizeFinancialEntry));
+      if (arRes.ok) setReceivables(await arRes.json());
       if (prRes.ok) setProtocols(await prRes.json());
       if (cRes.ok) setCriticalPendings(await cRes.json());
       if (emRes.ok) setEmailConfig(await emRes.json());
       if (sigRes.ok) setSignatureConfig(await sigRes.json());
       if (logRes.ok) setLogoConfig(await logRes.json());
+      if (dashboardRes.ok) setDashboardSummary(await dashboardRes.json());
+      if (financialSummaryRes.ok) setFinancialSummary(await financialSummaryRes.json());
       
-      if (currentUser.role !== 'tecnico') {
+      if (currentUser.role === 'admin') {
          const uRes = await fetch('/api/users');
          if (uRes.ok) setUsers(await uRes.json());
       }
 
-      const responses = [vRes, clRes, pRes, tRes, fRes, prRes, cRes];
+      const responses = [vRes, clRes, pRes, tRes, fRes, arRes, prRes, cRes, dashboardRes];
       if (showAlerts && responses.some(r => !r.ok)) {
         console.warn('Algumas requisições iniciais falharam.');
         alert('Algumas informações não puderam ser carregadas do servidor. Se o problema persistir, atualize a página.');
@@ -272,7 +327,11 @@ export default function App() {
   }, [activeTab, currentUser, fetchData]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !hasModuleAccess(currentUser, 'service-orders')) {
+      setServiceOrders([]);
+      setNotifications([]);
+      return;
+    }
 
     // Fetch service orders + notifications
     const fetchOs = async () => {
@@ -340,7 +399,7 @@ export default function App() {
     setCurrentUser(u);
     // If technician, switch tab to my tasks default
     if (u.role === 'tecnico') {
-      setActiveTab('tasks');
+      navigateTab('tasks');
     }
   };
 
@@ -632,58 +691,32 @@ export default function App() {
 
     const createdEntry = normalizeFinancialEntry(await apiPost('/api/finance', newEntry));
     setFinancialEntries((prev) => [createdEntry, ...prev]);
-
-    if (createdEntry.natureza === 'saida' || createdEntry.tipo === 'despesa') return;
-
-    // Update vessel's received total
-    setVessels((prevVessels) =>
-      prevVessels.map((v) => {
-        if (v.id === createdEntry.embarcacaoId) {
-          const newReceived = v.valorRecebido + createdEntry.valor;
-          const newSinal = createdEntry.tipo === 'sinal' ? createdEntry.valor : v.valorSinal;
-          return { ...v, valorRecebido: newReceived, valorSinal: newSinal };
-        }
-        return v;
-      })
-    );
-
-    if (selectedVessel && selectedVessel.id === createdEntry.embarcacaoId) {
-      setSelectedVessel({
-        ...selectedVessel,
-        valorRecebido: selectedVessel.valorRecebido + createdEntry.valor,
-        valorSinal: createdEntry.tipo === 'sinal' ? createdEntry.valor : selectedVessel.valorSinal,
-      });
-    }
+    await fetchData(false);
   };
 
-  const handleUpdatePayment = (entryId: string, updatedFields: Partial<FinancialEntry>) => {
+  const handleRecordReceivablePayment = async (receivableId: string, paymentData: Partial<FinancialEntry>) => {
+    await apiPost(`/api/receivables/${receivableId}/payments`, paymentData);
+    await fetchData(false);
+  };
+
+  const handleUpdatePayment = async (entryId: string, updatedFields: Partial<FinancialEntry>) => {
+    const updatedEntry = normalizeFinancialEntry(await apiPut(`/api/finance/${entryId}`, updatedFields));
     setFinancialEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, ...updatedFields } : e))
+      prev.map((entry) => (entry.id === entryId ? updatedEntry : entry))
     );
-    apiPut(`/api/finance/${entryId}`, updatedFields);
+    await fetchData(false);
   };
 
   // Protocol Actions
-  const handleCreateProtocol = async (protocolData: Partial<Protocol>) => {
-    const newProt: Protocol = {
-      id: '',
-      numeroProtocolo: protocolData.numeroProtocolo || `PROT-${Date.now().toString().slice(-4)}`,
+  const handleCreateProtocol = async (protocolData: Partial<Protocol> & Record<string, any>): Promise<Protocol> => {
+    const createdProtocol = await apiPost('/api/protocols', {
+      ...protocolData,
       dataEnvio: protocolData.dataEnvio || new Date().toISOString().split('T')[0],
-      embarcacaoId: protocolData.embarcacaoId || '',
-      embarcacaoNome: protocolData.embarcacaoNome || '',
-      clienteNome: protocolData.clienteNome || '',
-      tipoProtocolo: protocolData.tipoProtocolo || 'capitania_dpc',
-      destinatario: protocolData.destinatario || 'Seção de Análise',
-      orgaoOuEmpresa: protocolData.orgaoOuEmpresa || 'Marinha do Brasil',
-      documentosIncluidos: protocolData.documentosIncluidos || ['Documento Técnico'],
       responsavelEnvioNome: currentUser.nome,
-      status: protocolData.status || 'em_trânsito',
-      codigoRastreio: protocolData.codigoRastreio,
-      observacoes: protocolData.observacoes,
-    };
-
-    const createdProtocol = await apiPost('/api/protocols', newProt);
+    });
     setProtocols((prev) => [createdProtocol, ...prev]);
+    await refreshOsList();
+    return createdProtocol;
   };
 
   const handleUpdateProtocol = (id: string, updatedFields: Partial<Protocol>) => {
@@ -698,11 +731,10 @@ export default function App() {
     (t) => t.responsavelId === currentUser?.id && t.status !== 'baixado'
   ).length;
 
-  const handleUpdateProfile = (updatedFields: Partial<User>) => {
-    const updatedUser = { ...currentUser, ...updatedFields };
+  const handleUpdateProfile = async (updatedFields: Partial<User>) => {
+    const updatedUser = await apiPut('/api/auth/me', updatedFields);
     setCurrentUser(updatedUser);
     setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updatedUser : u)));
-    apiPut(`/api/users/${currentUser.id}`, updatedFields);
   };
 
   // Settings & Employee Management Handlers
@@ -711,9 +743,9 @@ export default function App() {
     setUsers((prev) => [...prev, created]);
   };
 
-  const handleUpdateUser = (userId: string, updatedFields: Partial<User>) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...updatedFields } : u)));
-    apiPut(`/api/users/${userId}`, updatedFields);
+  const handleUpdateUser = async (userId: string, updatedFields: Partial<User>) => {
+    const updated = await apiPut(`/api/users/${userId}`, updatedFields);
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
   };
 
   const handleResetUserPassword = async (userId: string) => {
@@ -753,7 +785,7 @@ export default function App() {
   // ===== OS Flow Handlers =====
   const openOsDetail = async (osId: string) => {
     setSelectedOsId(osId);
-    setActiveTab('service-orders');
+    navigateTab('service-orders');
     try {
       const res = await fetch(`/api/service-orders/${osId}`);
       if (res.ok) {
@@ -768,6 +800,57 @@ export default function App() {
       setSelectedOsId(null);
       window.alert('Não foi possível abrir esta Ordem de Serviço. Verifique a conexão e tente novamente.');
     }
+  };
+
+  const globalSearchResults = React.useMemo<GlobalSearchResult[]>(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('pt-BR');
+    if (!query) return [];
+    const matches = (value: unknown) => String(value || '').toLocaleLowerCase('pt-BR').includes(query);
+    const results: GlobalSearchResult[] = [];
+    clients.forEach((client) => {
+      if (matches(`${client.nome} ${client.empresa} ${client.email} ${client.cnpjCpf}`)) results.push({ id: client.id, type: 'cliente', title: client.nome, detail: client.empresa || client.email });
+    });
+    vessels.forEach((vessel) => {
+      if (matches(`${vessel.nome} ${vessel.registro} ${vessel.clienteNome}`)) results.push({ id: vessel.id, type: 'embarcacao', title: vessel.nome, detail: `${vessel.registro} · ${vessel.clienteNome}` });
+    });
+    proposals.forEach((proposal) => {
+      if (matches(`${proposal.numero} ${proposal.embarcacaoNome} ${proposal.clienteNome} ${proposal.assunto}`)) results.push({ id: proposal.id, type: 'proposta', title: proposal.numero, detail: `${proposal.embarcacaoNome} · ${proposal.clienteNome}` });
+    });
+    serviceOrders.forEach((order) => {
+      if (matches(`${order.numero} ${order.propostaNumero} ${order.embarcacaoNome} ${order.clienteNome}`)) results.push({ id: order.id, type: 'ordem', title: `OS ${order.numero}`, detail: `${order.embarcacaoNome || 'Embarcação não informada'} · ${order.statusLabel || order.status}` });
+      (order.documentos || []).forEach((document) => {
+        if (matches(`${document.titulo} ${order.numero} ${order.embarcacaoNome} ${order.clienteNome}`)) results.push({ id: document.id, type: 'documento', title: document.titulo, detail: `OS ${order.numero} · ${order.embarcacaoNome || 'Embarcação não informada'}` });
+      });
+    });
+    tasks.forEach((task) => {
+      if (matches(`${task.titulo} ${task.embarcacaoNome} ${task.clienteNome}`)) results.push({ id: task.id, type: 'tarefa', title: task.titulo, detail: `${task.embarcacaoNome} · ${task.responsavelNome}` });
+    });
+    protocols.forEach((protocol) => {
+      if (matches(`${protocol.numeroProtocolo} ${protocol.osId || ''} ${protocol.embarcacaoNome} ${protocol.clienteNome} ${protocol.status}`)) results.push({ id: protocol.id, type: 'protocolo', title: protocol.numeroProtocolo || 'Protocolo', detail: `${protocol.embarcacaoNome} · ${protocol.status.replaceAll('_', ' ')}` });
+    });
+    return results.slice(0, 12);
+  }, [clients, vessels, proposals, serviceOrders, tasks, protocols, searchQuery]);
+
+  const handleGlobalSearchResult = (result: GlobalSearchResult) => {
+    setSearchQuery('');
+    if (result.type === 'ordem') return openOsDetail(result.id);
+    if (result.type === 'embarcacao') {
+      const vessel = vessels.find((item) => item.id === result.id);
+      if (vessel) setSelectedVessel(vessel);
+      navigateTab('vessels');
+      return;
+    }
+    if (result.type === 'proposta') {
+      navigateTab('proposals');
+      return;
+    }
+    if (result.type === 'protocolo') {
+      navigateTab('protocols');
+      return;
+    }
+    if (result.type === 'tarefa') navigateTab('tasks');
+    else if (result.type === 'documento') navigateTab('documents');
+    else navigateTab(result.type === 'cliente' ? 'registrations' : 'documents');
   };
 
   const refreshOsList = async () => {
@@ -889,8 +972,10 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
+      data-theme={currentUser.themePreference || 'classic'}
+      className="min-h-screen bg-[#F4F6F9] font-sans text-slate-900 flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 relative overflow-x-hidden"
     >
+      <img className="nautilus-watermark" src="/nautilus-vessel-watermark.png" alt="" aria-hidden="true" />
       {/* Top Header */}
       <Header
         currentUser={currentUser}
@@ -900,9 +985,11 @@ export default function App() {
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        searchResults={globalSearchResults}
+        onSelectSearchResult={handleGlobalSearchResult}
         pendingAlertsCount={criticalPendings.length}
         onGoHome={() => {
-          setActiveTab('dashboard');
+          navigateTab('dashboard');
           setSelectedVessel(null);
           setSelectedProposalForView(null);
           setIsMobileMenuOpen(false);
@@ -917,7 +1004,7 @@ export default function App() {
         {/* Navigation Sidebar */}
         <Sidebar
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={navigateTab}
           currentUser={currentUser}
           isMobileOpen={isMobileMenuOpen}
           onCloseMobile={() => setIsMobileMenuOpen(false)}
@@ -940,9 +1027,10 @@ export default function App() {
               financialEntries={financialEntries}
               criticalPendings={criticalPendings}
               serviceOrders={serviceOrders}
+              summary={dashboardSummary}
               onSelectVessel={(v) => setSelectedVessel(v)}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-              onCreateProposalClick={() => setActiveTab('proposals')}
+              onNavigateTab={(destination) => navigateFromDashboard({ ...destination, tab: destination.tab as TabType })}
+              onCreateProposalClick={() => navigateTab('proposals')}
               onOpenServiceOrder={openOsDetail}
               onStartService={handleStartAssignedService}
             />
@@ -954,12 +1042,16 @@ export default function App() {
               clients={clients}
               onSelectVessel={(v) => setSelectedVessel(v)}
               onCreateVessel={handleCreateVessel}
-              canCreate={currentUser.role !== 'tecnico'}
+              canCreate={currentUser.role === 'admin' || !!currentUser.permissions?.includes('cadastrar_clientes_embarcacoes_propostas')}
+              initialStatusFilter={dashboardDestination?.tab === 'vessels' ? dashboardDestination.vesselStatus : undefined}
             />
           )}
 
           {activeTab === 'registrations' && (
-            <LazyRegistrationsView onChanged={() => window.dispatchEvent(new Event('nautilus:data-changed'))} />
+            <LazyRegistrationsView
+              canManage={currentUser.role === 'admin' || !!currentUser.permissions?.includes('cadastrar_clientes_embarcacoes_propostas')}
+              onChanged={() => window.dispatchEvent(new Event('nautilus:data-changed'))}
+            />
           )}
 
           {activeTab === 'commitments' && (
@@ -974,7 +1066,7 @@ export default function App() {
             <LazyRenewalsView
               vessels={vessels}
               clients={clients}
-              onUpdateProposal={handleUpdateProposal}
+              canManage={currentUser.role === 'admin' || !!currentUser.permissions?.includes('cadastrar_clientes_embarcacoes_propostas')}
               onNavigate={(tab, item) => {
                 setActiveTab(tab as TabType);
                 if (item) setSelectedProposalForView(item);
@@ -1003,8 +1095,9 @@ export default function App() {
               onCreateProposal={handleCreateProposal}
               onUpdateProposal={handleUpdateProposal}
               onFormalAcceptance={handleFormalAcceptance}
-              onNavigateTab={setActiveTab}
+              onNavigateTab={navigateTab}
               onOpenOs={openOsDetail}
+              initialStatuses={dashboardDestination?.tab === 'proposals' ? dashboardDestination.proposalStatuses : undefined}
             />
           )}
 
@@ -1015,6 +1108,7 @@ export default function App() {
               onOpenOrder={openOsDetail}
               onRefresh={refreshOsList}
               filteredStatus={osFilterStatus}
+              filteredStatuses={dashboardDestination?.tab === 'service-orders' ? dashboardDestination.serviceOrderStatuses : undefined}
             />
           )}
 
@@ -1022,12 +1116,17 @@ export default function App() {
             <LazyFinancialView
               vessels={vessels}
               financialEntries={financialEntries}
+              receivables={receivables}
               clients={clients}
               currentUser={currentUser}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}
               onAddPayment={handleAddPayment}
+              onRecordReceivablePayment={handleRecordReceivablePayment}
               onUpdatePayment={handleUpdatePayment}
+              financialSummary={financialSummary}
+              onDataChanged={async () => { await fetchData(false); }}
+              initialFilter={dashboardDestination?.tab === 'financial' ? dashboardDestination.financialFilter : undefined}
             />
           )}
 
@@ -1035,11 +1134,13 @@ export default function App() {
             <LazyProtocolsView
               protocols={protocols}
               vessels={vessels}
+              serviceOrders={serviceOrders}
               currentUser={currentUser}
               signatureConfig={signatureConfig}
               logoConfig={logoConfig}
               onCreateProtocol={handleCreateProtocol}
-              onUpdateProtocol={handleUpdateProtocol}
+              onRefresh={async () => { await fetchData(false); await refreshOsList(); }}
+              onOpenOs={openOsDetail}
             />
           )}
 
@@ -1103,6 +1204,13 @@ export default function App() {
           onExternalResponse={handleOsExternalResponse}
           onDeliver={handleOsDeliver}
           onComplete={handleOsComplete}
+          onOpenProtocols={() => {
+            const osId = selectedOsDetail.id;
+            setSelectedOsDetail(null);
+            setSelectedOsId(null);
+            window.history.pushState({}, '', `/protocols?osId=${encodeURIComponent(osId)}`);
+            navigateTab('protocols');
+          }}
         />
       )}
 
@@ -1124,21 +1232,21 @@ export default function App() {
           onOpenServiceOrder={(osId) => {
             setSelectedVessel(null);
             setSelectedOsId(osId);
-            setActiveTab('service-orders');
+            navigateTab('service-orders');
           }}
           onCreateTask={handleCreateTask}
           onUploadTaskFile={handleUploadTaskFile}
           onAddPayment={handleAddPayment}
           onSelectProposal={(p) => {
             setSelectedVessel(null);
-            setActiveTab('proposals');
+            navigateTab('proposals');
             setTimeout(() => {
               window.dispatchEvent(new CustomEvent('open-proposal', { detail: p.id }));
             }, 300);
           }}
           onCreateProposalForVessel={(v) => {
             setSelectedVessel(null);
-            setActiveTab('proposals');
+            navigateTab('proposals');
           }}
         />
       )}
@@ -1149,6 +1257,7 @@ export default function App() {
           currentUser={currentUser}
           onClose={() => setIsProfileModalOpen(false)}
           onSaveProfile={handleUpdateProfile}
+          onPreviewTheme={applyThemePreference}
         />
       )}
 
@@ -1160,11 +1269,11 @@ export default function App() {
         criticalPendings={criticalPendings}
         onNavigateToOS={(osId) => {
           setSelectedOsId(osId);
-          setActiveTab('service-orders');
+          navigateTab('service-orders');
           setIsNotificationsModalOpen(false);
         }}
         onNavigateToCommitment={() => {
-          setActiveTab('commitments');
+          navigateTab('commitments');
           setIsNotificationsModalOpen(false);
         }}
         onMarkAsRead={async (id) => {

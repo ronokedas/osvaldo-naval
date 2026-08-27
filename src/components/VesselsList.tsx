@@ -8,6 +8,7 @@ interface VesselsListProps {
   onSelectVessel: (vessel: Vessel) => void;
   onCreateVessel: (vesselData: Partial<Vessel>, generateTasks?: boolean) => void;
   canCreate: boolean;
+  initialStatusFilter?: 'todos' | 'aberta' | 'concluida';
 }
 
 export const VesselsList: React.FC<VesselsListProps> = ({
@@ -16,9 +17,10 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   onSelectVessel,
   onCreateVessel,
   canCreate,
+  initialStatusFilter,
 }) => {
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'todos' | 'aberta' | 'concluida'>('aberta');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'aberta' | 'concluida'>(initialStatusFilter || 'aberta');
   const [certifierFilter, setCertifierFilter] = useState<string>('todas');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [availableClients, setAvailableClients] = useState<Client[]>(clients);
@@ -27,6 +29,10 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   React.useEffect(() => {
     setAvailableClients(clients);
   }, [clients]);
+
+  React.useEffect(() => {
+    if (initialStatusFilter) setStatusFilter(initialStatusFilter);
+  }, [initialStatusFilter]);
 
   // New Vessel Form State
   const [newNome, setNewNome] = useState('');

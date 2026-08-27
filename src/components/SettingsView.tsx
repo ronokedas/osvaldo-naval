@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { User, EmailConfig, SignatureConfig, LogoConfig, UserRole } from '../types';
 import { isValidEmail } from '../utils/input-formatters';
+import { defaultModulesForRole, MODULE_CATALOG, moduleIdsFromPermissions, modulePermission } from '../access-control';
 import { NautilusLogo } from './NautilusLogo';
 import {
   Settings,
@@ -37,8 +38,8 @@ interface SettingsViewProps {
   emailConfig: EmailConfig;
   signatureConfig: SignatureConfig;
   logoConfig?: LogoConfig;
-  onCreateUser: (userData: Partial<User>) => void;
-  onUpdateUser: (userId: string, updatedFields: Partial<User>) => void;
+  onCreateUser: (userData: Partial<User>) => Promise<void>;
+  onUpdateUser: (userId: string, updatedFields: Partial<User>) => Promise<void>;
   onUpdateEmailConfig: (config: EmailConfig) => void;
   onUpdateSignatureConfig: (config: SignatureConfig) => void;
   onUpdateLogoConfig?: (config: LogoConfig) => void;
@@ -75,6 +76,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     senha: '',
     role: 'tecnico' as UserRole,
     acessoAtivo: true,
+    permissions: defaultModulesForRole('tecnico').map(modulePermission),
   });
 
   const CARGOS_INTERNOS = [
@@ -83,6 +85,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     'Administrador / Responsável Técnico',
     'Comercial / Financeiro',
     'Editor / Entrega',
+    'Entregador',
     'Administrador'
   ];
 
@@ -249,6 +252,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           cargo: newUser.cargo,
           role: newUser.role,
           acessoAtivo: newUser.acessoAtivo,
+          permissions: newUser.permissions,
         };
         if (newUser.senha && newUser.senha.trim().length >= 6) {
           updateData.senha = newUser.senha;
@@ -264,10 +268,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           acessoAtivo: newUser.acessoAtivo,
           tarefasAtivas: 0,
           senha: newUser.senha,
+          permissions: newUser.permissions,
         });
       }
 
-      setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true });
+      setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true, permissions: defaultModulesForRole('tecnico').map(modulePermission) });
       setShowAddUserModal(false);
       setEditingUserId(null);
     } catch (error: any) {
@@ -284,13 +289,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       senha: '',
       role: user.role,
       acessoAtivo: user.acessoAtivo !== false,
+      permissions: user.permissions || [],
     });
     setShowAddUserModal(true);
   };
 
   const openAddUserModal = () => {
     setEditingUserId(null);
-    setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true });
+    setNewUser({ nome: '', email: '', cargo: '', senha: '', role: 'tecnico', acessoAtivo: true, permissions: defaultModulesForRole('tecnico').map(modulePermission) });
     setShowAddUserModal(true);
   };
 
@@ -603,7 +609,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 Editar
                               </button>
                               <button
-                                onClick={() => onUpdateUser(u.id, { acessoAtivo: !isUserActive })}
+                                onClick={async () => {
+                                  try { await onUpdateUser(u.id, { ativo: !isUserActive, acessoAtivo: !isUserActive }); }
+                                  catch (error: any) { alert(error?.message || 'Não foi possível alterar o acesso.'); }
+                                }}
                                 disabled={u.id === currentUser.id}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                                   u.id === currentUser.id
@@ -1413,6 +1422,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <option value="nao">Não (Bloqueado)</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-bold text-blue-950"><ShieldCheck className="h-4 w-4 text-blue-600" /> Acessos aos módulos</p>
+                    <p className="mt-1 text-[11px] text-blue-800">Define quais áreas este usuário pode abrir. As ações internas continuam seguindo as permissões operacionais.</p>
+                  </div>
+                  {newUser.role === 'admin' && <span className="shrink-0 rounded-full bg-purple-100 px-2 py-1 text-[10px] font-bold text-purple-800">Acesso total</span>}
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {MODULE_CATALOG.map((module) => {
+                    const isAdminModule = newUser.role === 'admin';
+                    const checked = isAdminModule || newUser.permissions.includes(module.permission);
+                    const disabled = isAdminModule || Boolean(module.adminOnly);
+                    return (
+                      <label key={module.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-semibold ${checked ? 'border-blue-200 bg-white text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-500'} ${disabled ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={(event) => setNewUser((current) => ({
+                            ...current,
+                            permissions: event.target.checked
+                              ? [...new Set([...current.permissions, module.permission])]
+                              : current.permissions.filter((permission) => permission !== module.permission),
+                          }))}
+                        />
+                        <span>{module.label}</span>
+                        {module.adminOnly && <span className="ml-auto text-[9px] font-bold uppercase text-slate-400">Admin</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+                {newUser.role !== 'admin' && <p className="mt-2 text-[10px] font-medium text-slate-500">{moduleIdsFromPermissions(newUser.permissions).length} módulo(s) liberado(s).</p>}
               </div>
 
               <div className="flex items-center justify-end gap-2 border-t pt-4">

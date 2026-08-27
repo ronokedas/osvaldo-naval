@@ -1,6 +1,6 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Proposal, Protocol, FinancialEntry, Vessel, LogoConfig, DocumentTask, SignatureConfig } from '../types';
+import { Proposal, Protocol, FinancialEntry, Vessel, LogoConfig, DocumentTask, SignatureConfig, ServiceOrder } from '../types';
 import { numberToWords } from './numberToWords';
 
 const PRIMARY_DARK: [number, number, number] = [6, 18, 36];
@@ -364,196 +364,205 @@ export const blobToBase64 = async (blob: Blob): Promise<string> => {
   return btoa(binary);
 };
 
-export const generateProtocolPdf = (protocol: Protocol, logoConfig?: LogoConfig) => {
-  const doc = new jsPDF();
-  drawHeader(doc, `PROTOCOLO NPN-ENT-${protocol.numeroProtocolo ? protocol.numeroProtocolo.split('-').pop() : 'XXX/XX'}`, `REVISÃO 00`, logoConfig);
-  
-  // Hero section
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(20, 40, 170, 25, 4, 4, "F");
-  
-  doc.setTextColor(200, 200, 200);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("T E R M O   D E   C O N T R O L E   E   R E C E B I M E N T O", 30, 48);
+const protocolTypeContent = (type: Protocol['tipoProtocolo']) => {
+  if (type === 'capitania_dpc') return { destination: 'CAPITANIA / DESTINATÁRIO', receiver: 'CAPITANIA - RESPONSÁVEL PELO RECEBIMENTO', title: 'Entrega de documentos técnicos à Capitania', description: 'Registro do dossiê encaminhado, sua forma de transmissão e o recebimento pela autoridade marítima.' };
+  if (type === 'entrega_cliente') return { destination: 'CLIENTE / DESTINATÁRIO', receiver: 'CLIENTE - RESPONSÁVEL PELO RECEBIMENTO', title: 'Entrega de documentos técnicos ao cliente', description: 'Registro do dossiê entregue, sua forma de transmissão e o recebimento pelo armador ou proprietário.' };
+  if (type === 'outros') return { destination: 'DESTINATÁRIO / ENTIDADE', receiver: 'DESTINATÁRIO - RESPONSÁVEL PELO RECEBIMENTO', title: 'Entrega de documentos técnicos', description: 'Registro do dossiê encaminhado, sua forma de transmissão e o recebimento pelo destinatário.' };
+  return { destination: 'CERTIFICADORA / DESTINATÁRIO', receiver: 'CERTIFICADORA - RESPONSÁVEL PELO RECEBIMENTO', title: 'Entrega de documentos técnicos à certificadora', description: 'Registro do dossiê encaminhado, sua forma de transmissão e o recebimento pela entidade certificadora.' };
+};
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("Entrega de documentos técnicos à certificadora", 30, 56);
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(200, 200, 200);
-  doc.text("Registro do dossiê encaminhado, sua forma de transmissão e o recebimento pela entidade certificadora.", 30, 61);
+const protocolNumber = (value?: string) => {
+  const suffix = String(value || '').replace(/^(?:NPN-ENT-|PROT-)/i, '').trim() || '____________';
+  return `NPN-ENT-${suffix}`;
+};
 
-  // Headers for details
-  let currentY = 72;
-  const drawDetailHeader = (x: number, w: number, title: string, val: string) => {
-    doc.setTextColor(150, 150, 150);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
-    doc.text(title, x, currentY);
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.5);
-    doc.line(x, currentY + 7, x + w, currentY + 7);
-  };
+const protocolTime = (value?: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
 
-  drawDetailHeader(20, 45, "CERTIFICADORA / DESTINATÁRIO", "");
-  drawDetailHeader(70, 45, "EMBARCAÇÃO / MATRÍCULA", "");
-  drawDetailHeader(120, 45, "ARMADOR / PROPRIETÁRIO", "");
-  drawDetailHeader(170, 20, "PROPOSTA / OS", "");
+const protocolChannel = (value?: string) => {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'portal') return 'Portal';
+  if (normalized === 'email' || normalized === 'e-mail') return 'E-mail';
+  if (normalized === 'presencial') return 'Presencial';
+  if (normalized === 'correio') return 'Correio';
+  return value || 'Não informado';
+};
 
-  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text(protocol.destinatario || protocol.orgaoOuEmpresa, 20, currentY + 5);
-  doc.text(protocol.embarcacaoNome, 70, currentY + 5);
-  doc.text(protocol.clienteNome, 120, currentY + 5);
-  doc.text("-", 170, currentY + 5);
+const protocolText = (value: unknown, fallback = 'Não informado') => String(value || '').trim() || fallback;
 
-  currentY += 15;
-  drawSectionTitle(doc, "01", "COMPOSIÇÃO DO DOSSIÊ TÉCNICO", currentY);
-  
-  currentY += 8;
-  
-  // Left side docs
-  protocol.documentosIncluidos.forEach((docName, idx) => {
-    doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-    doc.circle(23, currentY + 2.5, 3, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.text(String(idx + 1), 23, currentY + 4, { align: "center" });
+const addProtocolImage = (doc: jsPDF, image: string, centerX: number, topY: number, maxWidth: number, maxHeight: number) => {
+  try {
+    const properties = doc.getImageProperties(image);
+    const scale = Math.min(maxWidth / properties.width, maxHeight / properties.height);
+    const width = properties.width * scale;
+    const height = properties.height * scale;
+    const format = image.match(/^data:image\/(png|jpe?g|webp)/i)?.[1]?.replace(/jpg/i, 'JPEG').replace(/jpeg/i, 'JPEG').toUpperCase() || 'PNG';
+    doc.addImage(image, format, centerX - width / 2, topY, width, height, undefined, 'FAST');
+  } catch {
+    // A legacy logo or signature must never prevent issuance of the protocol.
+  }
+};
 
-    doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(docName, 30, currentY + 4);
-    
-    // Checkboxes
-    doc.setDrawColor(PRIMARY_BLUE[0], PRIMARY_BLUE[1], PRIMARY_BLUE[2]);
-    doc.rect(95, currentY, 4, 4);
-    doc.setTextColor(150, 150, 150);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
-    doc.text("DIGITAL", 101, currentY + 3.5);
-    
-    doc.rect(115, currentY, 4, 4);
-    doc.text("IMPRESSO", 121, currentY + 3.5);
+const drawProtocolFooter = (doc: jsPDF, pageNumber: number, totalPages: number) => {
+  const height = doc.internal.pageSize.getHeight();
+  doc.setDrawColor(226, 232, 240); doc.setLineWidth(.3); doc.line(14, height - 12, 196, height - 12);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); doc.setTextColor(148, 163, 184);
+  doc.text('Nautilus Projetos Navais LTDA · contato@nautilusengenharianaval.com.br', 14, height - 6);
+  doc.text(`Termo de protocolo documental · Página ${pageNumber} de ${totalPages}`, 196, height - 6, { align: 'right' });
+};
 
-    doc.setDrawColor(220, 220, 220);
-    doc.line(30, currentY + 11, 70, currentY + 11);
-    doc.text("NÚMERO / IDENTIFICAÇÃO", 30, currentY + 9);
-    
-    doc.line(75, currentY + 11, 105, currentY + 11);
-    doc.text("REVISÃO", 75, currentY + 9);
-    
-    doc.line(110, currentY + 11, 135, currentY + 11);
-    doc.text("QTD.", 110, currentY + 9);
+const drawProtocolHeader = (doc: jsPDF, number: string, logo: string | null, continuation = false) => {
+  if (logo) addProtocolImage(doc, logo, 30, 4.5, 53, 21);
+  else {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...PRIMARY_DARK); doc.text('NAUTILUS', 15, 14);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.text('ENGENHARIA NAVAL', 15, 18);
+  }
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(130, 8, 49, 11, 2.2, 2.2, 'F');
+  doc.setFillColor(255, 248, 235); doc.roundedRect(179, 8, 17, 11, 2.2, 2.2, 'F');
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(160, 181, 229); doc.text('PROTOCOLO DOCUMENTAL', 134, 12);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255); doc.text(continuation ? `${number} · CONT.` : number, 134, 16);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(159, 116, 39); doc.text('REVISÃO', 187.5, 12, { align: 'center' });
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...PRIMARY_DARK); doc.text('00', 187.5, 16, { align: 'center' });
+};
 
-    currentY += 15;
+type ProtocolPdfDocument = { title: string; version?: number };
+
+const resolveProtocolDocuments = (protocol: Protocol): ProtocolPdfDocument[] => {
+  const current = protocol.remessas?.find((item) => item.ciclo === Number(protocol.cicloAtual || 0)) || protocol.remessas?.at(-1);
+  const dispatched = current?.documentos || [];
+  if (dispatched.length) return dispatched.map((item) => ({ title: item.tituloDocumento || 'Documento técnico', version: item.versao }));
+  return (protocol.documentosIncluidos || []).map((title) => {
+    const version = String(title).match(/\(V(\d+)\)\s*$/i)?.[1];
+    return { title: String(title).replace(/\s*\(V\d+\)\s*$/i, ''), version: version ? Number(version) : undefined };
+  });
+};
+
+const drawProtocolCheckbox = (doc: jsPDF, x: number, y: number, label: string, checked = false, color: [number, number, number] = PRIMARY_BLUE) => {
+  doc.setDrawColor(...color); doc.setLineWidth(.35); doc.roundedRect(x, y, 3, 3, .4, .4, 'S');
+  if (checked) { doc.setDrawColor(...color); doc.setLineWidth(.6); doc.line(x + .6, y + 1.55, x + 1.25, y + 2.25); doc.line(x + 1.25, y + 2.25, x + 2.45, y + .65); }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...TEXT_GREY); doc.text(label, x + 4.3, y + 2.35);
+};
+
+const drawProtocolDocumentRow = (doc: jsPDF, item: ProtocolPdfDocument, index: number, y: number, digital: boolean, compact = false) => {
+  const height = compact ? 13 : 15;
+  doc.setFillColor(...LIGHT_GREY); doc.setDrawColor(226, 232, 240); doc.setLineWidth(.35); doc.roundedRect(14, y, 115, height, 2.2, 2.2, 'FD');
+  doc.setFillColor(201, 138, 37); doc.roundedRect(14, y + 3, .7, 6, .3, .3, 'F');
+  doc.setFillColor(...PRIMARY_DARK); doc.circle(19.5, y + 4.8, 2.55, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(255, 255, 255); doc.text(String(index + 1), 19.5, y + 6.45, { align: 'center' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(compact ? 6.2 : 6.6); doc.setTextColor(...PRIMARY_DARK);
+  const titleLines = doc.splitTextToSize(item.title, compact ? 62 : 62) as string[];
+  doc.text(titleLines.slice(0, compact ? 1 : 2), 25.5, y + 5.4, { lineHeightFactor: 1.1 });
+  drawProtocolCheckbox(doc, 95, y + 3.2, 'DIGITAL', digital);
+  drawProtocolCheckbox(doc, 111.5, y + 3.2, 'IMPRESSO', !digital);
+  const baseline = y + height - 2.5;
+  doc.setDrawColor(189, 199, 213); doc.setLineWidth(.25); doc.line(25.5, baseline, 76, baseline); doc.line(78, baseline, 102, baseline); doc.line(104, baseline, 126, baseline);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(4.7); doc.setTextColor(148, 163, 184); doc.text('NÚMERO / IDENTIFICAÇÃO', 25.5, baseline - 3.4); doc.text('REVISÃO', 78, baseline - 3.4); doc.text('QTD.', 104, baseline - 3.4);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.4); doc.setTextColor(...PRIMARY_DARK); if (item.version) doc.text(`V${item.version}`, 79, baseline - .7); doc.text('1', 105, baseline - .7);
+};
+
+export const generateProtocolPdf = async (protocol: Protocol, vessel?: Vessel, serviceOrder?: ServiceOrder, logoConfig?: LogoConfig, signatureConfig?: SignatureConfig): Promise<Blob> => {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const content = protocolTypeContent(protocol.tipoProtocolo);
+  const currentDispatch = protocol.remessas?.find((item) => item.ciclo === Number(protocol.cicloAtual || 0)) || protocol.remessas?.at(-1);
+  const documents = resolveProtocolDocuments(protocol);
+  const primaryDocuments = documents.slice(0, 6);
+  const supplementalDocuments = documents.slice(6);
+  const channel = currentDispatch?.canal || protocol.canal;
+  const digital = !['presencial', 'correio'].includes(String(channel || '').toLowerCase());
+  const configuredLogo = logoConfig?.ativo && logoConfig.imagemUrl ? await imageSourceToDataUrl(logoConfig.imagemUrl) : null;
+  const logoSource = configuredLogo || await getOfficialLogoDataUrl();
+  const useSignature = Boolean(signatureConfig?.ativo && signatureConfig.aplicarProtocolos && signatureConfig.imagemUrl);
+  const rawSignature = useSignature ? await imageSourceToDataUrl(signatureConfig?.imagemUrl) : null;
+  const signature = rawSignature ? await makeWhiteBackgroundTransparent(rawSignature) : null;
+  const number = protocolNumber(protocol.numeroProtocolo);
+  const dateValue = currentDispatch?.dataEnvio || protocol.dataEnvio;
+  const deliveredAt = currentDispatch?.enviadoEm;
+  const nature = currentDispatch?.tipo === 'correcao' ? 'pendencia' : 'inicial';
+  const latestResponse = currentDispatch?.respostas?.at(-1);
+  const receivedStatus = protocol.status === 'exigencia_recebida' || protocol.status === 'exigencia' ? 'pendencia' : latestResponse?.tipo === 'aprovado_com_observacoes' ? 'ressalva' : ['aprovado', 'concluido', 'protocolado'].includes(protocol.status) ? 'semRessalva' : '';
+  const observation = currentDispatch?.observacao || protocol.observacoes || '';
+  const responsible = currentDispatch?.enviadoPorNome || protocol.responsavelEnvioNome || 'Responsável Nautilus';
+  const signerName = signatureConfig?.ativo && signatureConfig.aplicarProtocolos && signatureConfig.nomeSignatario ? signatureConfig.nomeSignatario : responsible;
+  const signerRole = signatureConfig?.ativo && signatureConfig.aplicarProtocolos && signatureConfig.cargoSignatario ? signatureConfig.cargoSignatario : 'Responsável pela entrega';
+  const signerRegistry = signatureConfig?.ativo && signatureConfig.aplicarProtocolos ? signatureConfig.creaOrRegistro : '';
+
+  drawProtocolHeader(doc, number, logoSource);
+  doc.setFillColor(10, 43, 84); doc.roundedRect(14, 25, 182, 24, 3.2, 3.2, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.7); doc.setTextColor(224, 204, 159); doc.text('T E R M O   D E   C O N T R O L E   E   R E C E B I M E N T O', 20, 32);
+  doc.setFontSize(11.5); doc.setTextColor(255, 255, 255); doc.text(content.title, 20, 39);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.9); doc.setTextColor(213, 225, 244); doc.text(content.description, 20, 43.8, { maxWidth: 150 });
+
+  const fields = [
+    [14, 44, content.destination, protocol.destinatario || protocol.orgaoOuEmpresa],
+    [64, 44, 'EMBARCAÇÃO / MATRÍCULA', `${protocolText(protocol.embarcacaoNome, 'Embarcação não informada')}${vessel?.registro ? ` · ${vessel.registro}` : ''}`],
+    [114, 44, 'ARMADOR / PROPRIETÁRIO', protocolText(protocol.clienteNome, 'Não informado')],
+    [164, 32, 'PROPOSTA / OS', [serviceOrder?.propostaNumero, serviceOrder?.numero].filter(Boolean).join(' · ') || serviceOrder?.numero || 'Não informado'],
+  ] as const;
+  fields.forEach(([x, width, label, value]) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.1); doc.setTextColor(148, 163, 184); doc.text(label, x + 1, 55);
+    doc.setDrawColor(189, 199, 213); doc.setLineWidth(.25); doc.line(x + 1, 60.4, x + width - 1, 60.4);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(...PRIMARY_DARK); doc.text(doc.splitTextToSize(value, width - 3).slice(0, 1), x + 1, 58.4);
   });
 
-  // Right side boxes
-  let rightY = 95;
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(140, rightY, 50, 35, 2, 2, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.text("DADOS DA TRANSMISSÃO", 143, rightY + 5);
-  doc.setFontSize(6);
-  doc.setTextColor(180, 180, 180);
-  doc.text("DATA", 143, rightY + 12);
-  doc.setDrawColor(100, 100, 100);
-  doc.line(143, rightY + 16, 160, rightY + 16);
-  doc.text("HORA", 170, rightY + 12);
-  doc.line(170, rightY + 16, 187, rightY + 16);
-  doc.text("ENVIADO POR", 143, rightY + 22);
-  doc.line(143, rightY + 26, 160, rightY + 26);
-  doc.text("MEIO DE ENVIO", 170, rightY + 22);
-  doc.line(170, rightY + 26, 187, rightY + 26);
+  doc.setDrawColor(201, 138, 37); doc.setLineWidth(.45); doc.line(14, 64, 63, 64);
+  doc.setDrawColor(226, 232, 240); doc.line(64, 64, 196, 64);
 
-  rightY += 40;
-  doc.setDrawColor(220, 220, 220);
-  doc.roundedRect(140, rightY, 50, 25, 2, 2, "S");
-  doc.setTextColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.text("NATUREZA DO PROTOCOLO", 143, rightY + 5);
-  
-  const drawCheck = (y: number, text: string) => {
-    doc.setDrawColor(PRIMARY_BLUE[0], PRIMARY_BLUE[1], PRIMARY_BLUE[2]);
-    doc.rect(143, y, 4, 4);
-    doc.setTextColor(TEXT_GREY[0], TEXT_GREY[1], TEXT_GREY[2]);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
-    doc.text(text, 149, y + 3.5);
-  };
-  
-  drawCheck(rightY + 8, "Entrega inicial");
-  drawCheck(rightY + 13, "Complementação");
-  drawCheck(rightY + 18, "Revisão / substituição");
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(201, 138, 37); doc.text('01', 14, 70); doc.setFontSize(7.1); doc.setTextColor(...PRIMARY_DARK); doc.text('COMPOSIÇÃO DO DOSSIÊ TÉCNICO', 19.5, 70); doc.setDrawColor(226, 232, 240); doc.setLineWidth(.3); doc.line(19.5 + doc.getTextWidth('COMPOSIÇÃO DO DOSSIÊ TÉCNICO') + 4, 69, 196, 69);
+  const primaryStartY = 73;
+  primaryDocuments.forEach((item, index) => drawProtocolDocumentRow(doc, item, index, primaryStartY + index * 16.5, digital));
+  for (let index = primaryDocuments.length; index < 6; index += 1) drawProtocolDocumentRow(doc, { title: 'Documento técnico complementar' }, index, primaryStartY + index * 16.5, digital);
 
-  rightY += 30;
-  doc.setFillColor(255, 247, 237); // orange-50
-  doc.setDrawColor(253, 186, 116); // orange-300
-  doc.roundedRect(140, rightY, 50, 30, 2, 2, "FD");
-  doc.setTextColor(194, 65, 12); // orange-700
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.text("SITUAÇÃO DO RECEBIMENTO", 143, rightY + 5);
-  drawCheck(rightY + 8, "Recebido sem ressalva");
-  drawCheck(rightY + 13, "Recebido com ressalva");
-  drawCheck(rightY + 18, "Pendência comunicada");
-  doc.text("PRAZO / RETORNO: ___ / ___ / ______", 143, rightY + 25);
+  const panelX = 133; const panelWidth = 63;
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(panelX, 73, panelWidth, 30, 2.5, 2.5, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.7); doc.setTextColor(255, 255, 255); doc.text('DADOS DA TRANSMISSÃO', panelX + 3, 78);
+  [[panelX + 3, 'DATA', formatShortDate(dateValue)], [panelX + 32, 'HORA', protocolTime(deliveredAt)], [panelX + 3, 'ENVIADO POR', responsible], [panelX + 32, 'MEIO DE ENVIO', protocolChannel(channel)]].forEach(([x, label, value], index) => {
+    const y = index < 2 ? 84 : 95;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(4.7); doc.setTextColor(180, 198, 226); doc.text(String(label), Number(x), y);
+    doc.setDrawColor(167, 189, 222); doc.setLineWidth(.25); doc.line(Number(x), y + 4.2, Number(x) + 26, y + 4.2);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(5.4); doc.setTextColor(255, 255, 255); doc.text(doc.splitTextToSize(String(value || ''), 25).slice(0, 1), Number(x), y + 2.8);
+  });
 
-  currentY = Math.max(currentY + 10, rightY + 40);
+  doc.setFillColor(255, 255, 255); doc.setDrawColor(226, 232, 240); doc.roundedRect(panelX, 106, panelWidth, 29, 2.5, 2.5, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(...PRIMARY_DARK); doc.text('NATUREZA DO PROTOCOLO', panelX + 3, 111);
+  [['Entrega inicial', 'inicial'], ['Complementação', 'complementacao'], ['Revisão / substituição', 'revisao'], ['Resposta a pendência', 'pendencia']].forEach(([label, id], index) => drawProtocolCheckbox(doc, panelX + 3, 114 + index * 5.1, label, nature === id));
 
-  drawSectionTitle(doc, "02", "CONFIRMAÇÃO FORMAL", currentY);
-  currentY += 8;
+  doc.setFillColor(255, 248, 235); doc.setDrawColor(224, 204, 159); doc.roundedRect(panelX, 137, panelWidth, 30, 2.5, 2.5, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(159, 116, 39); doc.text('SITUAÇÃO DO RECEBIMENTO', panelX + 3, 142);
+  [['Recebido sem ressalva', 'semRessalva'], ['Recebido com ressalva', 'ressalva'], ['Pendência comunicada', 'pendencia']].forEach(([label, id], index) => drawProtocolCheckbox(doc, panelX + 3, 145 + index * 5.1, label, receivedStatus === id, [38, 82, 177]));
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(4.8); doc.setTextColor(159, 116, 39); doc.text('PRAZO / RETORNO:', panelX + 3, 164); doc.setDrawColor(194, 151, 82); doc.line(panelX + 28, 165.3, panelX + 58, 165.3);
 
-  doc.setFillColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.roundedRect(20, currentY, 170, 45, 3, 3, "F");
-  doc.setFillColor(255, 255, 255);
-  doc.rect(20, currentY + 7, 170, 38, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.text("ENTREGA E RECEBIMENTO DO DOSSIÊ", 25, currentY + 5);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6);
-  doc.setTextColor(150, 150, 150);
-  doc.text("Controle de rastreabilidade", 185, currentY + 5, { align: "right" });
+  doc.setFillColor(255, 255, 255); doc.setDrawColor(226, 232, 240); doc.roundedRect(panelX, 170, panelWidth, 28, 2.5, 2.5, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(...PRIMARY_DARK); doc.text('OBSERVAÇÕES / EXIGÊNCIAS', panelX + 3, 175);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.4); doc.setTextColor(...TEXT_GREY); const observationLines = observation.trim() ? doc.splitTextToSize(observation, panelWidth - 7) as string[] : []; doc.text(observationLines.slice(0, 3), panelX + 3, 180, { lineHeightFactor: 1.3 });
+  if (!observation.trim()) [183, 188, 193].forEach((y) => { doc.setDrawColor(203, 213, 225); doc.setLineWidth(.25); doc.line(panelX + 3, y, panelX + panelWidth - 3, y); });
 
-  doc.setTextColor(TEXT_GREY[0], TEXT_GREY[1], TEXT_GREY[2]);
-  doc.text("As partes confirmam a entrega e o recebimento dos documentos relacionados, de acordo com os meios, revisões e quantidades indicados neste protocolo.", 25, currentY + 13);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.8); doc.setTextColor(201, 138, 37); doc.text('02', 14, 205); doc.setFontSize(7.7); doc.setTextColor(...PRIMARY_DARK); doc.text('CONFIRMAÇÃO FORMAL', 19.5, 205); doc.setDrawColor(226, 232, 240); doc.line(19.5 + doc.getTextWidth('CONFIRMAÇÃO FORMAL') + 5, 204, 196, 204);
+  const signY = 208;
+  doc.setFillColor(...PRIMARY_DARK); doc.roundedRect(14, signY, 182, 49, 2.8, 2.8, 'F'); doc.setFillColor(255, 255, 255); doc.rect(14.4, signY + 8, 181.2, 48.2 - 7.8, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.3); doc.setTextColor(255, 255, 255); doc.text('ENTREGA E RECEBIMENTO DO DOSSIÊ', 18, signY + 5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5); doc.setTextColor(224, 204, 159); doc.text('Controle de rastreabilidade', 192, signY + 5, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(...TEXT_GREY); doc.text(doc.splitTextToSize('As partes confirmam a entrega e o recebimento dos documentos relacionados, de acordo com os meios, revisões e quantidades indicados neste protocolo.', 166), 18, signY + 14, { lineHeightFactor: 1.2 });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.7); doc.setTextColor(38, 82, 177); doc.text('NAUTILUS - RESPONSÁVEL PELA ENTREGA', 18, signY + 23); doc.text(content.receiver, 105, signY + 23);
+  if (signature) addProtocolImage(doc, signature, 58, signY + 26, 36, 10);
+  doc.setDrawColor(...PRIMARY_DARK); doc.setLineWidth(.4); doc.line(18, signY + 39, 98, signY + 39); doc.line(105, signY + 39, 192, signY + 39);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(5.6); doc.setTextColor(...PRIMARY_DARK); doc.text(signerName, 58, signY + 42, { align: 'center', maxWidth: 75 });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(4.8); doc.setTextColor(148, 163, 184); doc.text(signerRole, 58, signY + 45, { align: 'center', maxWidth: 75 }); if (signerRegistry) doc.text(signerRegistry, 58, signY + 47.5, { align: 'center', maxWidth: 75 });
+  doc.text('NOME / CARGO / ASSINATURA', 105, signY + 43); doc.text('DATA', 178, signY + 43);
+  doc.setFillColor(201, 138, 37); doc.circle(15.2, 261, 1.3, 'F'); doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); doc.setTextColor(148, 163, 184); doc.text('O recebimento registra a transmissão documental e não representa aprovação, homologação ou aceite técnico do conteúdo.', 18, 262.5);
 
-  doc.setTextColor(PRIMARY_BLUE[0], PRIMARY_BLUE[1], PRIMARY_BLUE[2]);
-  doc.setFont("helvetica", "bold");
-  doc.text("NAUTILUS - RESPONSÁVEL PELA ENTREGA", 25, currentY + 20);
-  doc.text("CERTIFICADORA - RESPONSÁVEL PELO RECEBIMENTO", 100, currentY + 20);
-
-  doc.setDrawColor(PRIMARY_DARK[0], PRIMARY_DARK[1], PRIMARY_DARK[2]);
-  doc.setLineWidth(0.5);
-  
-  doc.line(25, currentY + 38, 70, currentY + 38);
-  doc.setTextColor(150, 150, 150);
-  doc.setFont("helvetica", "normal");
-  doc.text("NOME / CARGO / ASSINATURA", 25, currentY + 42);
-  
-  doc.line(75, currentY + 38, 95, currentY + 38);
-  doc.text("DATA", 75, currentY + 42);
-
-  doc.line(100, currentY + 38, 150, currentY + 38);
-  doc.text("NOME / CARGO / ASSINATURA", 100, currentY + 42);
-  
-  doc.line(155, currentY + 38, 185, currentY + 38);
-  doc.text("DATA", 155, currentY + 42);
-
-  drawFooter(doc, 1, 1);
-  doc.save(`Protocolo_${protocol.numeroProtocolo}.pdf`);
+  const continuationStart = 35;
+  supplementalDocuments.forEach((item, index) => {
+    if (index % 10 === 0) {
+      doc.addPage(); drawProtocolHeader(doc, number, logoSource, true);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(201, 138, 37); doc.text('01', 14, 29); doc.setFontSize(7.1); doc.setTextColor(...PRIMARY_DARK); doc.text('DOCUMENTOS COMPLEMENTARES', 20, 29); doc.setDrawColor(226, 232, 240); doc.setLineWidth(.3); doc.line(20 + doc.getTextWidth('DOCUMENTOS COMPLEMENTARES') + 4, 28, 196, 28);
+    }
+    drawProtocolDocumentRow(doc, item, index + 6, continuationStart + (index % 10) * 15, digital, true);
+  });
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) { doc.setPage(page); drawProtocolFooter(doc, page, totalPages); }
+  return doc.output('blob');
 };
 
 const receiptMoney = (value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;

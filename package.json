@@ -14,12 +14,15 @@
     "db:seed-permissions": "tsx src/db/seed-permissions.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test src/server/protocol-workflow.test.ts src/server/financial-balance.test.ts src/server/delivery-workflow.test.ts src/access-control.test.ts src/theme.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/archiver": "^8.0.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "archiver": "^8.0.0",
     "argon2": "^0.45.1",
     "bcrypt": "^6.0.0",
     "compression": "^1.8.1",

@@ -5,27 +5,27 @@ import {
   financial_entries, vessels,
 } from "../../db/schema.js";
 import { eq, desc, and, sql } from "drizzle-orm";
-import { requirePermission } from "../auth.js";
+import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import {
   serializeAccountReceivable, serializePayment, serializeReceipt,
 } from "../serializers.js";
+import { paidAmount, receivableStatus } from "../financial-balance.js";
+import { reconcileOsReadiness } from "../delivery-workflow.js";
 
 const router = Router();
 const requireFinance = requirePermission([PERMISSIONS.FINANCEIRO_ADMINISTRACAO]);
 
 // Helper: recalculate receivable status based on payments
-async function recalcReceivable(arId: string) {
-  const arList = await db.select().from(accounts_receivable).where(eq(accounts_receivable.id, arId));
+async function recalcReceivable(arId: string, tx: any = db) {
+  const arList = await tx.select().from(accounts_receivable).where(eq(accounts_receivable.id, arId));
   if (arList.length === 0) return;
   const ar = arList[0];
-  const arPayments = await db.select().from(payments).where(eq(payments.contaReceberId, arId));
-  const totalPaid = arPayments.reduce((acc, p) => acc + (Number(p.valor) || 0), 0);
+  const arPayments = await tx.select().from(payments).where(eq(payments.contaReceberId, arId));
+  const totalPaid = paidAmount(arPayments);
   const original = Number(ar.valorOriginal) || 0;
-  let status = "pendente";
-  if (totalPaid >= original && original > 0) status = "pago";
-  else if (totalPaid > 0) status = "parcial";
-  await db.update(accounts_receivable).set({ status, updatedAt: new Date() }).where(eq(accounts_receivable.id, arId));
+  const status = receivableStatus(original, arPayments);
+  await tx.update(accounts_receivable).set({ status, updatedAt: new Date() }).where(eq(accounts_receivable.id, arId));
   return { totalPaid, original, status };
 }
 
@@ -39,14 +39,23 @@ async function generateReceiptNumber(): Promise<string> {
 }
 
 // ---------- GET /api/receivables ----------
-router.get("/", requireFinance, async (req: any, res: any) => {
+router.get("/", requireAuth, async (req: any, res: any) => {
   try {
     const all = await db.select().from(accounts_receivable).orderBy(desc(accounts_receivable.createdAt));
+    const [allProposals, allOrders] = await Promise.all([
+      db.select().from(proposals), db.select().from(service_orders),
+    ]);
+    const proposalsById = new Map(allProposals.map((proposal) => [proposal.id, proposal]));
+    const ordersById = new Map(allOrders.map((order) => [order.id, order]));
     const result = [];
     for (const ar of all) {
       const arPayments = await db.select().from(payments).where(eq(payments.contaReceberId, ar.id));
-      const totalPaid = arPayments.reduce((acc, p) => acc + (Number(p.valor) || 0), 0);
-      result.push(serializeAccountReceivable({ ...ar, valorPago: totalPaid }));
+      result.push(serializeAccountReceivable({
+        ...ar,
+        valorPago: paidAmount(arPayments),
+        propostaNumero: proposalsById.get(ar.propostaId)?.numero,
+        osNumero: ar.osId ? ordersById.get(ar.osId)?.numero : undefined,
+      }));
     }
     res.json(result);
   } catch (error) {
@@ -56,14 +65,14 @@ router.get("/", requireFinance, async (req: any, res: any) => {
 });
 
 // ---------- GET /api/receivables/:id ----------
-router.get("/:id", requireFinance, async (req: any, res: any) => {
+router.get("/:id", requireAuth, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const arList = await db.select().from(accounts_receivable).where(eq(accounts_receivable.id, id));
     if (arList.length === 0) return res.status(404).json({ error: "Conta a receber não encontrada" });
     const ar = arList[0];
     const arPayments = await db.select().from(payments).where(eq(payments.contaReceberId, id)).orderBy(desc(payments.createdAt));
-    const totalPaid = arPayments.reduce((acc, p) => acc + (Number(p.valor) || 0), 0);
+    const totalPaid = paidAmount(arPayments);
     res.json({
       ...serializeAccountReceivable({ ...ar, valorPago: totalPaid }),
       pagamentos: arPayments.map(serializePayment),
@@ -78,70 +87,46 @@ router.post("/:id/payments", requireFinance, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const data = req.body || {};
-    const arList = await db.select().from(accounts_receivable).where(eq(accounts_receivable.id, id));
-    if (arList.length === 0) return res.status(404).json({ error: "Conta a receber não encontrada" });
-    const ar = arList[0];
-
     const valor = Number(data.valor) || 0;
-    const original = Number(ar.valorOriginal) || 0;
     if (valor <= 0) return res.status(400).json({ error: "Valor do pagamento deve ser maior que zero" });
-
-    const arPayments = await db.select().from(payments).where(eq(payments.contaReceberId, id));
-    const totalPaid = arPayments.reduce((acc, p) => acc + (Number(p.valor) || 0), 0);
-    if (totalPaid + valor > original) {
-      return res.status(400).json({ error: "Soma dos pagamentos não pode superar o valor negociado" });
-    }
-
-    const inserted = await db.insert(payments).values({
-      contaReceberId: id,
-      propostaId: ar.propostaId,
-      osId: ar.osId,
-      embarcacaoId: ar.embarcacaoId,
-      valor: valor.toString(),
-      data: data.data || new Date().toISOString().split("T")[0],
-      formaPagamento: data.formaPagamento || "PIX",
-      observacao: data.observacao || "",
-      lancadoPorNome: req.user?.nome || "Sistema",
-    }).returning();
-
-    // Also create a financial_entry for compatibility
-    const prop = ar.propostaId
-      ? (await db.select().from(proposals).where(eq(proposals.id, ar.propostaId!)))[0]
-      : undefined;
-    const vessel = ar.embarcacaoId
-      ? (await db.select().from(vessels).where(eq(vessels.id, ar.embarcacaoId!)))[0]
-      : undefined;
-    await db.insert(financial_entries).values({
-      embarcacaoId: ar.embarcacaoId,
-      embarcacaoNome: vessel?.nome || prop?.embarcacaoNome || "Embarcação",
-      clienteNome: vessel?.clienteNome || prop?.clienteNome || "",
-      data: data.data || new Date().toISOString().split("T")[0],
-      valor: valor.toString(),
-      tipo: "parcela",
-      natureza: "entrada",
-      formaPagamento: data.formaPagamento || "PIX",
-      observacao: data.observacao || `Pagamento vinculado à proposta ${prop?.numero || ""}`,
-      lancadoPorNome: req.user?.nome || "Sistema",
-      propostaId: ar.propostaId,
-      osId: ar.osId,
-      contaReceberId: id,
+    const result = await db.transaction(async (tx) => {
+      // Serializes simultaneous payments for the same receivable.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
+      const ar = (await tx.select().from(accounts_receivable).where(eq(accounts_receivable.id, id)))[0];
+      if (!ar) return { error: "Conta a receber não encontrada", status: 404 };
+      const arPayments = await tx.select().from(payments).where(eq(payments.contaReceberId, id));
+      if (paidAmount(arPayments) + valor > (Number(ar.valorOriginal) || 0) + 0.009) {
+        return { error: "Soma dos pagamentos não pode superar o valor negociado", status: 400 };
+      }
+      const [prop, vessel] = await Promise.all([
+        ar.propostaId ? tx.select().from(proposals).where(eq(proposals.id, ar.propostaId)).then((rows: any[]) => rows[0]) : undefined,
+        ar.embarcacaoId ? tx.select().from(vessels).where(eq(vessels.id, ar.embarcacaoId)).then((rows: any[]) => rows[0]) : undefined,
+      ]);
+      const insertedEntries: any[] = await tx.insert(financial_entries).values({
+        embarcacaoId: ar.embarcacaoId, embarcacaoNome: vessel?.nome || prop?.embarcacaoNome || "Embarcação",
+        clienteNome: vessel?.clienteNome || prop?.clienteNome || "", data: data.data || new Date().toISOString().split("T")[0],
+        valor: valor.toString(), tipo: data.tipo || "parcela", natureza: "entrada", formaPagamento: data.formaPagamento || "PIX",
+        observacao: data.observacao || `Pagamento vinculado à proposta ${prop?.numero || ""}`,
+        lancadoPorNome: req.user?.nome || "Sistema", propostaId: ar.propostaId, osId: ar.osId, contaReceberId: id,
+        notaFiscalNumero: data.notaFiscalNumero, notaFiscalNome: data.notaFiscalNome, notaFiscalUrl: data.notaFiscalUrl,
+        situacaoConciliacao: "conciliado",
+      }).returning() as any;
+      const entry = insertedEntries[0];
+      const insertedPayments: any[] = await tx.insert(payments).values({
+        contaReceberId: id, propostaId: ar.propostaId, osId: ar.osId, embarcacaoId: ar.embarcacaoId,
+        financialEntryId: entry.id, valor: valor.toString(), data: data.data || new Date().toISOString().split("T")[0],
+        formaPagamento: data.formaPagamento || "PIX", observacao: data.observacao || "", lancadoPorNome: req.user?.nome || "Sistema",
+      }).returning() as any;
+      const payment = insertedPayments[0];
+      await recalcReceivable(id, tx);
+      if (ar.embarcacaoId) await tx.execute(sql`
+        UPDATE vessels SET valor_recebido = COALESCE((SELECT SUM(valor) FROM payments WHERE embarcacao_id = ${ar.embarcacaoId} AND ativo = TRUE), 0)
+        WHERE id = ${ar.embarcacaoId}`);
+      if (ar.osId) await reconcileOsReadiness(ar.osId, tx, req.user);
+      return { payment, entry };
     });
-
-    // Update vessel valor_recebido
-    if (ar.embarcacaoId) {
-      await db.execute(sql`
-        UPDATE vessels
-        SET valor_recebido = (
-          SELECT COALESCE(SUM(valor), 0) FROM financial_entries
-          WHERE embarcacao_id = ${ar.embarcacaoId} AND tipo != 'despesa'
-        )
-        WHERE id = ${ar.embarcacaoId}
-      `);
-    }
-
-    await recalcReceivable(id);
-
-    res.json(serializePayment(inserted[0]));
+    if ("error" in result) return res.status(result.status).json({ error: result.error });
+    res.status(201).json({ payment: serializePayment(result.payment), financialEntry: result.entry });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });

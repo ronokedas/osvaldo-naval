@@ -2,30 +2,28 @@ import { db, pool } from "./index.js";
 import { users } from "./schema.js";
 import { eq, ilike } from "drizzle-orm";
 import * as argon2 from "argon2";
-import { PERMISSIONS } from "../server/permissions.js";
+import { initializeModuleAccess, PERMISSIONS } from "../server/permissions.js";
 
 async function run() {
   console.log("Aplicando permissões iniciais de usuários...");
   try {
     const allUsers = await db.select().from(users);
 
+    // Legacy accounts receive their former menu access exactly once. The marker
+    // added by initializeModuleAccess prevents Docker restarts from undoing an
+    // administrator's later choices.
+    for (const user of allUsers) {
+      const permissions = initializeModuleAccess(user.permissions, user.role);
+      if (JSON.stringify(permissions) !== JSON.stringify(user.permissions || [])) {
+        await db.update(users).set({ permissions, updatedAt: new Date() }).where(eq(users.id, user.id));
+      }
+    }
+
     // Osvaldo: admin + all technical permissions
     const osvaldo = allUsers.find((u) => u.email.toLowerCase() === "osvaldo@nautilus.eng.br");
     if (osvaldo) {
       await db.update(users).set({
-        permissions: [
-          PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS,
-          PERMISSIONS.REGISTRAR_ACEITE_AGENDAR,
-          PERMISSIONS.EXECUTAR_VISTORIA,
-          PERMISSIONS.ANEXAR_EDITAR_VERSOES,
-          PERMISSIONS.REVISAR_DOCUMENTOS,
-          PERMISSIONS.APROVAR_TECNICAMENTE,
-          PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA,
-          PERMISSIONS.ENTREGAR_CONCLUIR,
-          PERMISSIONS.FINANCEIRO_ADMINISTRACAO,
-        ],
-        role: "admin",
-        cargo: "Administrador / Responsável Técnico",
+        permissions: initializeModuleAccess(osvaldo.permissions, osvaldo.role),
         updatedAt: new Date(),
       }).where(eq(users.id, osvaldo.id));
       console.log(`Permissões aplicadas a Osvaldo (${osvaldo.email})`);
@@ -38,7 +36,7 @@ async function run() {
         role: "admin",
         cargo: "Administrador / Responsável Técnico",
         senha: hashed,
-        permissions: [
+        permissions: initializeModuleAccess([
           PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS,
           PERMISSIONS.REGISTRAR_ACEITE_AGENDAR,
           PERMISSIONS.EXECUTAR_VISTORIA,
@@ -48,7 +46,7 @@ async function run() {
           PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA,
           PERMISSIONS.ENTREGAR_CONCLUIR,
           PERMISSIONS.FINANCEIRO_ADMINISTRACAO,
-        ],
+        ], "admin"),
       });
       console.log("Osvaldo criado.");
     }
@@ -63,9 +61,7 @@ async function run() {
     ];
     if (deisy) {
       await db.update(users).set({
-        permissions: deisyPerms,
-        role: "financeiro",
-        cargo: "Comercial / Financeiro",
+        permissions: initializeModuleAccess(deisy.permissions, deisy.role),
         updatedAt: new Date(),
       }).where(eq(users.id, deisy.id));
       console.log(`Permissões aplicadas a Deisy (${deisy.email})`);
@@ -78,7 +74,7 @@ async function run() {
         role: "financeiro",
         cargo: "Comercial / Financeiro",
         senha: hashed,
-        permissions: deisyPerms,
+        permissions: initializeModuleAccess(deisyPerms, "financeiro"),
       });
       console.log("Deisy criada.");
     }
@@ -87,13 +83,13 @@ async function run() {
     const lucas = allUsers.find((u) => u.email.toLowerCase() === "lucas@nautilus.eng.br");
     const lucasPerms = [
       PERMISSIONS.ANEXAR_EDITAR_VERSOES,
+      PERMISSIONS.EXECUTAR_ENTREGAS,
       PERMISSIONS.ENTREGAR_CONCLUIR,
     ];
     if (lucas) {
+      const existingLucasPermissions = Array.isArray(lucas.permissions) ? lucas.permissions.map(String) : [];
       await db.update(users).set({
-        permissions: lucasPerms,
-        role: "tecnico",
-        cargo: "Editor / Entrega",
+        permissions: initializeModuleAccess([...new Set([...existingLucasPermissions, ...lucasPerms])], lucas.role),
         updatedAt: new Date(),
       }).where(eq(users.id, lucas.id));
       console.log(`Permissões aplicadas a Lucas (${lucas.email})`);
@@ -104,9 +100,9 @@ async function run() {
         nome: "Lucas",
         email: "lucas@nautilus.eng.br",
         role: "tecnico",
-        cargo: "Editor / Entrega",
+        cargo: "Entregador",
         senha: hashed,
-        permissions: lucasPerms,
+        permissions: initializeModuleAccess(lucasPerms, "tecnico"),
       });
       console.log(`Lucas criado com senha inicial 123456.`);
     }

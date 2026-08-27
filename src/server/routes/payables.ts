@@ -2,11 +2,18 @@ import { Router } from "express";
 import { db } from "../../db/index.js";
 import { accounts_payable, financial_categories, financial_entries, financial_suppliers, vessels } from "../../db/schema.js";
 import { desc, eq, sql } from "drizzle-orm";
-import { requirePermission } from "../auth.js";
+import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 
 const router = Router();
 const requireFinance = requirePermission([PERMISSIONS.FINANCEIRO_ADMINISTRACAO]);
+const safe = (handler: (req: any, res: any) => Promise<unknown>) => async (req: any, res: any) => {
+  try { await handler(req, res); }
+  catch (error) {
+    console.error("Erro na operação de contas a pagar:", error);
+    if (!res.headersSent) res.status(500).json({ error: "Não foi possível concluir a operação financeira." });
+  }
+};
 
 async function summary(id: string) {
   const account = (await db.select().from(accounts_payable).where(eq(accounts_payable.id, id)))[0];
@@ -20,29 +27,29 @@ async function summary(id: string) {
   return { ...account, valorOriginal: original, valorPago: paid, saldo: Math.max(0, original - paid), status };
 }
 
-router.get("/categories", requireFinance, async (_req, res) => {
+router.get("/categories", requireAuth, safe(async (_req, res) => {
   res.json(await db.select().from(financial_categories).where(eq(financial_categories.ativo, true)).orderBy(financial_categories.nome));
-});
+}));
 
-router.get("/suppliers", requireFinance, async (_req, res) => {
+router.get("/suppliers", requireAuth, safe(async (_req, res) => {
   res.json(await db.select().from(financial_suppliers).where(eq(financial_suppliers.ativo, true)).orderBy(financial_suppliers.nome));
-});
+}));
 
-router.post("/suppliers", requireFinance, async (req: any, res) => {
+router.post("/suppliers", requireFinance, safe(async (req: any, res) => {
   const data = req.body || {};
   if (!String(data.nome || "").trim()) return res.status(400).json({ error: "Nome do fornecedor é obrigatório" });
   const row = (await db.insert(financial_suppliers).values({ nome: data.nome.trim(), documento: data.documento, email: data.email, telefone: data.telefone }).returning())[0];
   res.status(201).json(row);
-});
+}));
 
-router.get("/", requireFinance, async (_req, res) => {
+router.get("/", requireAuth, safe(async (_req, res) => {
   const rows = await db.select().from(accounts_payable).orderBy(desc(accounts_payable.createdAt));
   const result = [];
   for (const row of rows) result.push(await summary(row.id));
   res.json(result.filter(Boolean));
-});
+}));
 
-router.post("/", requireFinance, async (req: any, res) => {
+router.post("/", requireFinance, safe(async (req: any, res) => {
   const data = req.body || {};
   const valor = Number(data.valorOriginal);
   if (!String(data.descricao || "").trim() || !Number.isFinite(valor) || valor <= 0) return res.status(400).json({ error: "Descrição e valor positivo são obrigatórios" });
@@ -53,9 +60,9 @@ router.post("/", requireFinance, async (req: any, res) => {
     descricao: data.descricao.trim(), valorOriginal: valor.toFixed(2), vencimento: data.vencimento, competencia: data.competencia,
   }).returning())[0];
   res.status(201).json(await summary(row.id));
-});
+}));
 
-router.post("/:id/payments", requireFinance, async (req: any, res) => {
+router.post("/:id/payments", requireFinance, safe(async (req: any, res) => {
   const account = await summary(req.params.id);
   if (!account) return res.status(404).json({ error: "Conta a pagar não encontrada" });
   const valor = Number(req.body?.valor);
@@ -69,13 +76,13 @@ router.post("/:id/payments", requireFinance, async (req: any, res) => {
     competencia: account.competencia, vencimento: account.vencimento,
   }).returning())[0];
   res.status(201).json({ entry: inserted, account: await summary(account.id) });
-});
+}));
 
-router.post("/:id/cancel", requireFinance, async (req: any, res) => {
+router.post("/:id/cancel", requireFinance, safe(async (req: any, res) => {
   if (!String(req.body?.motivo || "").trim()) return res.status(400).json({ error: "Motivo obrigatório" });
   const updated = (await db.update(accounts_payable).set({ status: "cancelado", updatedAt: new Date() }).where(eq(accounts_payable.id, req.params.id)).returning())[0];
   if (!updated) return res.status(404).json({ error: "Conta a pagar não encontrada" });
   res.json(await summary(updated.id));
-});
+}));
 
 export default router;

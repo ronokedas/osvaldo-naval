@@ -3,6 +3,13 @@ import { User, LogoConfig } from '../types';
 import { NautilusLogo } from './NautilusLogo';
 import { Bell, Search, UserCheck, Menu } from 'lucide-react';
 
+export interface GlobalSearchResult {
+  id: string;
+  type: 'cliente' | 'embarcacao' | 'proposta' | 'ordem' | 'documento' | 'tarefa' | 'protocolo';
+  title: string;
+  detail?: string;
+}
+
 interface HeaderProps {
   currentUser: User;
   users: User[];
@@ -11,6 +18,8 @@ interface HeaderProps {
   onToggleMobileMenu: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  searchResults?: GlobalSearchResult[];
+  onSelectSearchResult?: (result: GlobalSearchResult) => void;
   pendingAlertsCount: number;
   onGoHome: () => void;
   onToggleProfile?: () => void;
@@ -26,6 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileMenu,
   searchQuery,
   onSearchChange,
+  searchResults = [],
+  onSelectSearchResult,
   pendingAlertsCount,
   onGoHome,
   onToggleProfile,
@@ -65,8 +76,32 @@ export const Header: React.FC<HeaderProps> = ({
               placeholder="Buscar embarcação, cliente ou documento..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchResults[0]) {
+                  e.preventDefault();
+                  onSelectSearchResult?.(searchResults[0]);
+                }
+              }}
               className="w-full pl-9 pr-4 py-1.5 bg-slate-900/80 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition"
             />
+            {searchQuery.trim() && (
+              <div className="absolute left-0 right-0 top-full z-[60] mt-2 max-h-96 overflow-y-auto rounded-xl border border-slate-700 bg-[#0B192C] p-1.5 shadow-2xl">
+                {searchResults.length > 0 ? searchResults.map((result) => (
+                  <button
+                    key={`${result.type}-${result.id}`}
+                    type="button"
+                    onClick={() => onSelectSearchResult?.(result)}
+                    className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                  >
+                    <span className="mt-0.5 rounded-md bg-blue-500/15 px-1.5 py-1 text-[9px] font-bold uppercase tracking-wide text-cyan-300">{result.type}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-bold text-slate-100">{result.title}</span>
+                      {result.detail && <span className="mt-0.5 block truncate text-[11px] text-slate-400">{result.detail}</span>}
+                    </span>
+                  </button>
+                )) : <p className="px-3 py-4 text-center text-xs text-slate-400">Nenhum registro encontrado no banco de dados.</p>}
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, uuid, decimal, varchar, real, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, uuid, decimal, varchar, real, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   senha: text("senha").notNull(),
   avatarUrl: text("avatar_url"),
   permissions: jsonb("permissions").default([]), // array of permission strings
+  themePreference: text("theme_preference").notNull().default("classic"),
   passwordResetExpiresAt: timestamp("password_reset_expires_at"),
   legacy: boolean("legacy").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -183,6 +184,9 @@ export const payments = pgTable("payments", {
   formaPagamento: text("forma_pagamento"),
   observacao: text("observacao"),
   lancadoPorNome: text("lancado_por_nome"),
+  // Foreign key is declared in SQL migration; financial_entries is declared below.
+  financialEntryId: uuid("financial_entry_id"),
+  ativo: boolean("ativo").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -230,6 +234,7 @@ export const financial_entries = pgTable("financial_entries", {
   stornoReason: text("storno_reason"),
   originalPaymentId: uuid("original_payment_id").references(() => financial_entries.id),
   notificationSent: boolean("notification_sent").default(false),
+  situacaoConciliacao: text("situacao_conciliacao").notNull().default("conciliado"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -302,6 +307,10 @@ export const protocols = pgTable("protocols", {
   comprovanteNome: text("comprovante_nome"),
   documentosIncluidos: jsonb("documentos_incluidos").default([]),
   observacoes: text("observacoes"),
+  osId: uuid("os_id"),
+  canal: text("canal"),
+  cicloAtual: integer("ciclo_atual").notNull().default(0),
+  requerConciliacao: boolean("requer_conciliacao").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -386,6 +395,7 @@ export const documents = pgTable("documents", {
   status: text("status").notNull().default("em_elaboracao"),
   // em_elaboracao, em_revisao, aguardando_envio, em_analise_externa, exigencia, aprovado
   versaoAtual: integer("versao_atual").default(0),
+  aplicavelAnaliseExterna: boolean("aplicavel_analise_externa").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -455,6 +465,98 @@ export const document_versions = pgTable("document_versions", {
   uniqueIndex("document_versions_doc_versao_unique").on(table.documentoId, table.versao),
 ]);
 
+export const protocol_dispatches = pgTable("protocol_dispatches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  protocoloId: uuid("protocolo_id").references(() => protocols.id, { onDelete: "cascade" }).notNull(),
+  ciclo: integer("ciclo").notNull().default(0),
+  tipo: text("tipo").notNull().default("inicial"), // inicial, correcao
+  dataEnvio: text("data_envio").notNull(),
+  referenciaExterna: text("referencia_externa"),
+  canal: text("canal"),
+  destinatario: text("destinatario"),
+  observacao: text("observacao"),
+  enviadoPorId: uuid("enviado_por_id").references(() => users.id),
+  enviadoPorNome: text("enviado_por_nome"),
+  situacao: text("situacao").notNull().default("rascunho"), comprovanteUrl: text("comprovante_url"), comprovanteNome: text("comprovante_nome"), emailDestinatario: text("email_destinatario"), emailMessageId: text("email_message_id"), enviadoEm: timestamp("enviado_em"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const protocol_dispatch_documents = pgTable("protocol_dispatch_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  remessaId: uuid("remessa_id").references(() => protocol_dispatches.id, { onDelete: "cascade" }).notNull(),
+  documentoId: uuid("documento_id").references(() => documents.id).notNull(),
+  versaoId: uuid("versao_id").references(() => document_versions.id).notNull(),
+  versao: integer("versao").notNull(),
+  tituloDocumento: text("titulo_documento").notNull(),
+  resultado: text("resultado").notNull().default("aguardando_analise"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("protocol_dispatch_doc_unique").on(table.remessaId, table.documentoId),
+]);
+
+export const protocol_responses = pgTable("protocol_responses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  protocoloId: uuid("protocolo_id").references(() => protocols.id, { onDelete: "cascade" }).notNull(),
+  remessaId: uuid("remessa_id").references(() => protocol_dispatches.id, { onDelete: "cascade" }).notNull(),
+  tipo: text("tipo").notNull(), // aprovado, aprovado_com_observacoes, exigencia
+  data: text("data").notNull(),
+  motivo: text("motivo"),
+  registradoPorId: uuid("registrado_por_id").references(() => users.id),
+  registradoPorNome: text("registrado_por_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const protocol_response_documents = pgTable("protocol_response_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  respostaId: uuid("resposta_id").references(() => protocol_responses.id, { onDelete: "cascade" }).notNull(),
+  documentoId: uuid("documento_id").references(() => documents.id).notNull(),
+  resultado: text("resultado").notNull(),
+  observacao: text("observacao"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const protocol_attachments = pgTable("protocol_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  protocoloId: uuid("protocolo_id").references(() => protocols.id, { onDelete: "cascade" }).notNull(),
+  respostaId: uuid("resposta_id").references(() => protocol_responses.id, { onDelete: "cascade" }),
+  tipo: text("tipo").notNull().default("comprovante"),
+  arquivoUrl: text("arquivo_url").notNull(),
+  arquivoNome: text("arquivo_nome").notNull(),
+  tipoMime: text("tipo_mime"),
+  tamanho: integer("tamanho").default(0),
+  enviadoPorId: uuid("enviado_por_id").references(() => users.id),
+  enviadoPorNome: text("enviado_por_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Arquivo final aprovado/carimbado, separado da evidência de resposta externa. */
+export const approved_document_files = pgTable("approved_document_files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  protocoloId: uuid("protocolo_id").references(() => protocols.id, { onDelete: "cascade" }).notNull(),
+  respostaId: uuid("resposta_id").references(() => protocol_responses.id, { onDelete: "set null" }),
+  documentoId: uuid("documento_id").references(() => documents.id).notNull(),
+  versaoId: uuid("versao_id").references(() => document_versions.id),
+  arquivoUrl: text("arquivo_url").notNull(),
+  arquivoNome: text("arquivo_nome").notNull(),
+  tipoMime: text("tipo_mime"),
+  tamanho: integer("tamanho").default(0),
+  enviadoPorId: uuid("enviado_por_id").references(() => users.id),
+  enviadoPorNome: text("enviado_por_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [index("approved_document_files_protocol_document_idx").on(table.protocoloId, table.documentoId)]);
+
+export const protocol_events = pgTable("protocol_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  protocoloId: uuid("protocolo_id").references(() => protocols.id, { onDelete: "cascade" }).notNull(),
+  tipo: text("tipo").notNull(),
+  descricao: text("descricao").notNull(),
+  dados: jsonb("dados").default({}),
+  autorId: uuid("autor_id").references(() => users.id),
+  autorNome: text("autor_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const external_submissions = pgTable("external_submissions", {
   id: uuid("id").primaryKey().defaultRandom(),
   osId: uuid("os_id").references(() => service_orders.id).notNull(),
@@ -485,7 +587,11 @@ export const external_responses = pgTable("external_responses", {
 export const deliveries = pgTable("deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
   osId: uuid("os_id").references(() => service_orders.id).notNull(),
-  status: text("status").notNull().default("pendente"), // pendente, impresso, entregue
+  status: text("status").notNull().default("pendente"), // pendente, em_entrega, aguardando_complemento, pronta_validacao, concluida, cancelada
+  responsavelId: uuid("responsavel_id").references(() => users.id),
+  iniciadaEm: timestamp("iniciada_em"),
+  concluidaEm: timestamp("concluida_em"),
+  motivoReabertura: text("motivo_reabertura"),
   dataEntrega: text("data_entrega"),
   meioEntrega: text("meio_entrega"),
   nomeRecebedor: text("nome_recebedor"),
@@ -496,6 +602,40 @@ export const deliveries = pgTable("deliveries", {
   impressoPorId: uuid("impresso_por_id").references(() => users.id), // quem confirmou impressão
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const delivery_dispatches = pgTable("delivery_dispatches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deliveryId: uuid("delivery_id").references(() => deliveries.id, { onDelete: "cascade" }).notNull(),
+  tipo: text("tipo").notNull().default("parcial"), // parcial, final, historica_indefinida
+  status: text("status").notNull().default("entregue"),
+  dataEntrega: text("data_entrega").notNull(),
+  meioEntrega: text("meio_entrega").notNull(),
+  nomeRecebedor: text("nome_recebedor").notNull(),
+  destino: text("destino").notNull(),
+  referencia: text("referencia"),
+  comprovanteUrl: text("comprovante_url").notNull(),
+  comprovanteNome: text("comprovante_nome").notNull(),
+  entreguePorId: uuid("entregue_por_id").references(() => users.id),
+  entreguePorNome: text("entregue_por_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const delivery_dispatch_documents = pgTable("delivery_dispatch_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  remessaEntregaId: uuid("remessa_entrega_id").references(() => delivery_dispatches.id, { onDelete: "cascade" }).notNull(),
+  arquivoAprovadoId: uuid("arquivo_aprovado_id").references(() => approved_document_files.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [uniqueIndex("delivery_dispatch_document_unique").on(table.remessaEntregaId, table.arquivoAprovadoId)]);
+
+export const os_finalization_reviews = pgTable("os_finalization_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  osId: uuid("os_id").references(() => service_orders.id, { onDelete: "cascade" }).notNull(),
+  decisao: text("decisao").notNull(), // aprovada, devolvida
+  observacao: text("observacao"),
+  administradorId: uuid("administrador_id").references(() => users.id),
+  administradorNome: text("administrador_nome"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const os_events = pgTable("os_events", {

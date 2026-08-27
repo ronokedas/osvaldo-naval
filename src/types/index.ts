@@ -1,4 +1,5 @@
 export type UserRole = 'admin' | 'financeiro' | 'tecnico';
+export type ThemePreference = 'classic' | 'nautilus_dark';
 
 export interface User {
   id: string;
@@ -12,6 +13,7 @@ export interface User {
   senha?: string;
   tarefasAtivas?: number;
   permissions?: string[];
+  themePreference?: ThemePreference;
 }
 
 export interface EmailConfig {
@@ -189,6 +191,7 @@ export interface FinancialEntry {
   categoriaNome?: string;
   isStorno?: boolean;
   stornoReason?: string;
+  situacaoConciliacao?: 'conciliado' | 'requer_conciliacao';
 }
 
 export interface AccountPayable {
@@ -219,11 +222,52 @@ export interface Protocol {
   orgaoOuEmpresa: string;
   documentosIncluidos: string[];
   responsavelEnvioNome: string;
-  status: 'em_trânsito' | 'protocolado' | 'exigencia' | 'concluido';
+  status: 'rascunho' | 'aguardando_analise' | 'exigencia_recebida' | 'correcao_em_elaboracao' | 'correcao_enviada' | 'aprovado' | 'cancelado' | 'em_trânsito' | 'protocolado' | 'exigencia' | 'concluido';
+  osId?: string;
+  canal?: string;
+  cicloAtual?: number;
+  requerConciliacao?: boolean;
+  remessas?: ProtocolDispatch[];
+  anexos?: ProtocolAttachment[];
+  arquivosFinais?: ApprovedDocumentFile[];
+  eventos?: Array<{ id: string; tipo: string; descricao: string; createdAt?: string; autorNome?: string }>;
   codigoRastreio?: string;
   comprovanteNome?: string;
   comprovanteUrl?: string;
   observacoes?: string;
+}
+
+export interface ProtocolDispatchDocument {
+  id: string;
+  documentoId: string;
+  versaoId: string;
+  versao: number;
+  tituloDocumento: string;
+  resultado: string;
+}
+
+export interface ProtocolDispatch {
+  id: string;
+  ciclo: number;
+  tipo: 'inicial' | 'correcao';
+  dataEnvio: string;
+  referenciaExterna?: string;
+  canal?: string;
+  destinatario?: string;
+  observacao?: string;
+  enviadoPorNome?: string;
+  enviadoEm?: string;
+  situacao?: string;
+  documentos: ProtocolDispatchDocument[];
+  respostas?: any[];
+}
+
+export interface ProtocolAttachment {
+  id?: string;
+  arquivoUrl: string;
+  arquivoNome: string;
+  tipoMime?: string;
+  tamanho?: number;
 }
 
 export interface CriticalPending {
@@ -236,6 +280,46 @@ export interface CriticalPending {
   data: string;
 }
 
+export interface DashboardSummary {
+  metrics: {
+    openVessels: number;
+    documentsInExecution: number;
+    awaitingCertifier: number;
+    totalToReceive: number;
+  };
+  pipeline: {
+    propostas: number;
+    vistorias: number;
+    laudos: number;
+    certificadoras: number;
+    entrega: number;
+    faturamento: number;
+  };
+  financialPendencies?: Array<{
+    receivableId: string;
+    vesselId?: string;
+    vesselName: string;
+    osId?: string;
+    osNumber?: string;
+    balance: number;
+  }>;
+  deadlines: Array<{
+    id: string;
+    osId: string;
+    titulo: string;
+    prazo: string;
+    horario?: string;
+    responsavelId?: string;
+  }>;
+  teamWorkload: Array<{
+    userId: string;
+    nome: string;
+    cargo: string;
+    avatarUrl?: string;
+    activeItems: number;
+  }>;
+}
+
 // ===== Permissões acumuláveis =====
 export type Permission =
   | 'cadastrar_clientes_embarcacoes_propostas'
@@ -245,6 +329,7 @@ export type Permission =
   | 'revisar_documentos'
   | 'aprovar_tecnicamente'
   | 'registrar_envio_resposta_externa'
+  | 'executar_entregas'
   | 'entregar_concluir'
   | 'financeiro_administracao';
 
@@ -256,9 +341,14 @@ export const ALL_PERMISSIONS: Permission[] = [
   'revisar_documentos',
   'aprovar_tecnicamente',
   'registrar_envio_resposta_externa',
+  'executar_entregas',
   'entregar_concluir',
   'financeiro_administracao',
 ];
+
+export type ModuleAccess =
+  | 'vessels' | 'registrations' | 'commitments' | 'tasks' | 'proposals'
+  | 'renewals' | 'service-orders' | 'financial' | 'protocols' | 'documents' | 'settings';
 
 // ===== Ordem de Serviço =====
 export type OsStatus =
@@ -272,6 +362,7 @@ export type OsStatus =
   | 'exigencia_externa'
   | 'aprovado_externamente'
   | 'aguardando_entrega'
+  | 'validacao_final'
   | 'concluida'
   | 'cancelada';
 
@@ -299,6 +390,7 @@ export interface ServiceOrder {
   documentos?: Document[];
   submissoesExternas?: ExternalSubmission[];
   entregas?: Delivery[];
+  entregaResumo?: DeliverySummary;
 }
 
 export interface ServiceOrderItem {
@@ -372,6 +464,7 @@ export interface Document {
   status: string;
   versaoAtual: number;
   versoes?: DocumentVersion[];
+  aplicavelAnaliseExterna?: boolean;
 }
 
 export interface ExternalSubmission {
@@ -400,13 +493,26 @@ export interface ExternalResponse {
 export interface Delivery {
   id: string;
   osId: string;
-  status: 'pendente' | 'entregue';
+  status: 'pendente' | 'em_entrega' | 'aguardando_complemento' | 'pronta_validacao' | 'concluida' | 'cancelada' | string;
+  responsavelId?: string;
+  iniciadaEm?: string;
+  motivoReabertura?: string;
   dataEntrega?: string;
   meioEntrega?: string;
   nomeRecebedor?: string;
   comprovanteUrl?: string;
   comprovanteNome?: string;
+  remessas?: DeliveryDispatch[];
+  documentosAprovados?: ApprovedDocumentFile[];
 }
+
+export interface DeliverySummary extends Delivery {
+  acaoEntregaPendente: boolean;
+  ultimaRemessa?: DeliveryDispatch;
+}
+
+export interface ApprovedDocumentFile { id: string; documentoId: string; versaoId?: string; arquivoUrl: string; arquivoNome: string; createdAt?: string; }
+export interface DeliveryDispatch { id: string; tipo: 'parcial' | 'final' | 'historica_indefinida'; dataEntrega: string; meioEntrega: string; nomeRecebedor: string; destino: string; referencia?: string; comprovanteUrl: string; comprovanteNome: string; arquivosAprovados?: ApprovedDocumentFile[]; }
 
 export interface OsEvent {
   id: string;
@@ -442,6 +548,8 @@ export interface ServiceOrderDetail extends ServiceOrder {
   proposta?: any;
   embarcacao?: any;
   tecnicoResponsavel?: { id: string; nome: string; email: string } | null;
+  protocolos?: Protocol[];
+  bloqueiosConclusao?: Array<{ tipo: string; titulo: string; detalhe: string; saldo?: number }>;
 }
 
 // ===== Fluxo de proposta =====
@@ -487,7 +595,24 @@ export interface AccountReceivable {
   status: ReceivableStatus;
   valorPago?: number;
   saldo?: number;
+  propostaNumero?: string;
+  osNumero?: string;
   createdAt?: string;
+}
+
+export interface FinancialSummary {
+  totalBilled: number;
+  totalReceived: number;
+  totalToReceive: number;
+  totalExpenses: number;
+  netProfit: number;
+  receivablesCount: number;
+  pendingReceivablesCount: number;
+  overdueReceivablesCount: number;
+  payablesOpen: number;
+  payablesPaid: number;
+  payablesOverdueCount: number;
+  payablesCount: number;
 }
 
 export interface Payment {
@@ -501,6 +626,8 @@ export interface Payment {
   formaPagamento?: string;
   observacao?: string;
   lancadoPorNome?: string;
+  financialEntryId?: string;
+  ativo?: boolean;
   createdAt?: string;
 }
 

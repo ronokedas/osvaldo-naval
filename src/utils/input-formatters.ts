@@ -5,10 +5,18 @@ export const formatCurrency = (value: number) =>
     minimumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
 
-// Currency fields are entered in centavos: typing 1250 renders R$ 12,50.
+// Accept the way people normally type money: `40` means R$ 40,00 and
+// `40,50` means R$ 40,50. This also parses the formatted value rendered by
+// CurrencyInput (for example, `R$ 1.300,00`) without treating the digits as
+// centavos.
 export const parseCurrencyInput = (value: string) => {
-  const digits = value.replace(/\D/g, '');
-  return digits ? Number(digits) / 100 : 0;
+  const normalized = value
+    .replace(/R\$\s?/gi, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 };
 
 export const formatPhone = (value: string) => {

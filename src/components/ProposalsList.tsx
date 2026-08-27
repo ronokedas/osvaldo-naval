@@ -37,6 +37,7 @@ interface ProposalsListProps {
   onRenewalCreated?: (proposal: Proposal) => void;
   onNavigateTab?: (tab: any) => void;
   onOpenOs?: (osId: string) => void;
+  initialStatuses?: string[];
 }
 
 export const ProposalsList: React.FC<ProposalsListProps> = ({
@@ -52,8 +53,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   onRenewalCreated,
   onNavigateTab,
   onOpenOs,
+  initialStatuses,
 }) => {
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string[]>(initialStatuses || []);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isFormalAcceptanceModalOpen, setIsFormalAcceptanceModalOpen] = useState(false);
@@ -135,11 +138,16 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   const [whatsMensagem, setWhatsMensagem] = useState('');
   const [whatsSharing, setWhatsSharing] = useState(false);
 
+  useEffect(() => {
+    setStatusFilter(initialStatuses || []);
+  }, [initialStatuses]);
+
   const filteredProposals = proposals.filter(
     (p) =>
-      p.numero.toLowerCase().includes(search.toLowerCase()) ||
-      p.embarcacaoNome.toLowerCase().includes(search.toLowerCase()) ||
-      p.clienteNome.toLowerCase().includes(search.toLowerCase())
+      (statusFilter.length === 0 || statusFilter.includes(p.status)) &&
+      (p.numero.toLowerCase().includes(search.toLowerCase()) ||
+        p.embarcacaoNome.toLowerCase().includes(search.toLowerCase()) ||
+        p.clienteNome.toLowerCase().includes(search.toLowerCase()))
   );
 
   const calculateTotal = (itemsList: ScopeItem[]) => {
@@ -203,6 +211,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
 
   const handleSaveProposal = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingProposalId && !embarcacaoId) {
+      window.alert('Selecione ao menos uma embarcação para vincular à proposta.');
+      return;
+    }
     const selectedVessel = vessels.find((v) => v.id === embarcacaoId);
     const subtotal = calculateTotal(itens);
     const discount = Math.min(subtotal, Math.max(0, valorDesconto || 0));
@@ -512,7 +524,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     }
   };
 
-  const canAccept = currentUser.role !== 'tecnico';
+  const canManageProposal = currentUser.role === 'admin' || !!currentUser.permissions?.includes('cadastrar_clientes_embarcacoes_propostas');
+  const canAccept = currentUser.role === 'admin' || !!currentUser.permissions?.includes('registrar_aceite_agendar');
 
   return (
     <div className="space-y-6 pb-12">
@@ -525,7 +538,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
           </p>
         </div>
 
-        {currentUser.role !== 'tecnico' && (
+        {canManageProposal && (
           <button
             onClick={handleOpenNewProposal}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition cursor-pointer"
@@ -537,7 +550,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
       </div>
 
       {/* Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <input
@@ -548,6 +561,11 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition"
           />
         </div>
+        {statusFilter.length > 0 && (
+          <button type="button" onClick={() => setStatusFilter([])} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 whitespace-nowrap">
+            Status: {statusFilter.join(' + ')} ×
+          </button>
+        )}
       </div>
 
       {/* Proposals Table */}
@@ -620,7 +638,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
             />
 
             {/* Action Buttons */}
-            {selectedProposal.status !== 'aprovado' && canAccept && (
+            {selectedProposal.status !== 'aprovado' && (canManageProposal || canAccept) && (
               <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 mt-4 shadow-xl">
                 <div>
                   <p className="font-bold text-sm text-blue-400">Proposta {selectedProposal.numero}</p>
@@ -635,24 +653,24 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   >
                     <Download className="w-3.5 h-3.5" /> Baixar PDF
                   </button>
-                  <button
+                  {canManageProposal && <button
                     onClick={() => openEmailModal(selectedProposal)}
                     className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <Mail className="w-3.5 h-3.5" /> E-mail
-                  </button>
-                  <button
+                  </button>}
+                  {canManageProposal && <button
                     onClick={() => openWhatsAppModal(selectedProposal)}
                     className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                  </button>
-                  <button
+                  </button>}
+                  {canAccept && <button
                     onClick={() => openAcceptanceModal(selectedProposal)}
                     className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-black inline-flex items-center gap-1.5 transition cursor-pointer"
                   >
                     <FileCheck className="w-3.5 h-3.5" /> Registrar Aceite
-                  </button>
+                  </button>}
                 </div>
               </div>
             )}
@@ -1166,6 +1184,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                       const val = e.target.value as any;
                       setSituacaoFinanceira(val);
                       if (val === 'integral') setValorRecebido(selectedProposal.valorTotal);
+                      if (val === 'parcial') setValorRecebido(Math.round((selectedProposal.valorTotal / 2) * 100) / 100);
+                      if (val === 'pendente') setValorRecebido(0);
                     }}
                     className="w-full px-3 py-2 border rounded-lg text-xs"
                   >

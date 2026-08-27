@@ -24,7 +24,9 @@ import commitmentsRoutes from "./src/server/routes/commitments.js";
 import certifiersRoutes from "./src/server/routes/certifiers.js";
 import servicesRoutes from "./src/server/routes/services.js";
 import documentLibraryRoutes from "./src/server/routes/document-library.js";
+import dashboardRoutes from "./src/server/routes/dashboard.js";
 import { pool } from "./src/db/index.js";
+import { requireAnyModuleAccess, requireModuleAccess } from "./src/server/auth.js";
 
 
 async function startServer() {
@@ -74,24 +76,34 @@ async function startServer() {
   app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
 
   // API Routes
+  const requireProposalsModule = requireModuleAccess("proposals");
+  const requireRenewalsModule = requireModuleAccess("renewals");
+  const requireProposalArea = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const renewalRoute = req.path === "/renewals/due"
+      || /^\/[^/]+\/renewal$/.test(req.path)
+      || /^\/renewals\/[^/]+\/base-date$/.test(req.path);
+    return (renewalRoute ? requireRenewalsModule : requireProposalsModule)(req, res, next);
+  };
+
   app.use("/api/auth", authRoutes);
-  app.use("/api/users", usersRoutes);
-  app.use("/api/clients", clientsRoutes);
-  app.use("/api/vessels", vesselsRoutes);
-  app.use("/api/proposals", proposalsRoutes);
-  app.use("/api/tasks", tasksRoutes);
-  app.use("/api/finance", financeRoutes);
-  app.use("/api/protocols", protocolsRoutes);
-  app.use("/api/critical-pendings", pendingsRoutes);
-  app.use("/api/settings", settingsRoutes);
+  app.use("/api/users", requireModuleAccess("settings"), usersRoutes);
+  app.use("/api/clients", requireAnyModuleAccess(["registrations", "vessels", "proposals", "renewals"]), clientsRoutes);
+  app.use("/api/vessels", requireAnyModuleAccess(["vessels", "registrations", "proposals", "renewals"]), vesselsRoutes);
+  app.use("/api/proposals", requireProposalArea, proposalsRoutes);
+  app.use("/api/tasks", requireModuleAccess("tasks"), tasksRoutes);
+  app.use("/api/finance", requireModuleAccess("financial"), financeRoutes);
+  app.use("/api/protocols", requireModuleAccess("protocols"), protocolsRoutes);
+  app.use("/api/critical-pendings", requireModuleAccess("commitments"), pendingsRoutes);
+  app.use("/api/settings", requireModuleAccess("settings"), settingsRoutes);
   app.use("/api/upload", uploadsRoutes);
-  app.use("/api/service-orders", serviceOrdersRoutes);
-  app.use("/api/receivables", receivablesRoutes);
-  app.use("/api/payables", payablesRoutes);
-  app.use("/api/commitments", commitmentsRoutes);
-  app.use("/api/certifiers", certifiersRoutes);
-  app.use("/api/services", servicesRoutes);
-  app.use("/api/document-library", documentLibraryRoutes);
+  app.use("/api/service-orders", requireModuleAccess("service-orders"), serviceOrdersRoutes);
+  app.use("/api/receivables", requireModuleAccess("financial"), receivablesRoutes);
+  app.use("/api/payables", requireModuleAccess("financial"), payablesRoutes);
+  app.use("/api/commitments", requireModuleAccess("commitments"), commitmentsRoutes);
+  app.use("/api/certifiers", requireModuleAccess("registrations"), certifiersRoutes);
+  app.use("/api/services", requireAnyModuleAccess(["registrations", "proposals"]), servicesRoutes);
+  app.use("/api/document-library", requireModuleAccess("documents"), documentLibraryRoutes);
+  app.use("/api/dashboard", dashboardRoutes);
   // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("API Error:", err);

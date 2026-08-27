@@ -10,12 +10,12 @@ interface RenewalProposal extends Proposal {
 export function RenewalsView({ 
   vessels, 
   clients, 
-  onUpdateProposal, 
+  canManage,
   onNavigate 
 }: { 
   vessels: Vessel[], 
   clients: Client[], 
-  onUpdateProposal: (id: string, data: Partial<Proposal>) => void, 
+  canManage: boolean,
   onNavigate: (tab: string, item?: any) => void 
 }) {
   const [dueProposals, setDueProposals] = useState<RenewalProposal[]>([]);
@@ -76,7 +76,15 @@ export function RenewalsView({
   const handleSaveDate = async (propId: string) => {
     if (!tempDate) return;
     try {
-      await onUpdateProposal(propId, { aceiteData: tempDate });
+      const response = await fetch(`/api/proposals/renewals/${propId}/base-date`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aceiteData: tempDate }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Não foi possível atualizar a data.');
+      }
       setDueProposals(prev => prev.map(p => p.id === propId ? { ...p, aceiteData: tempDate } : p));
       setEditingDateId(null);
       setSuccessMsg('Data de aceite atualizada com sucesso!');
@@ -176,7 +184,7 @@ export function RenewalsView({
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {editingDateId === prop.id ? (
+                      {canManage && editingDateId === prop.id ? (
                         <div className="flex items-center gap-2">
                           <input
                             type="date"
@@ -198,7 +206,7 @@ export function RenewalsView({
                               ? new Date(prop.aceiteData + 'T00:00:00').toLocaleDateString('pt-BR') 
                               : 'Não registrada'}
                           </span>
-                          <button
+                          {canManage && <button
                             onClick={() => {
                               setEditingDateId(prop.id);
                               setTempDate(prop.aceiteData || '');
@@ -207,7 +215,7 @@ export function RenewalsView({
                             title="Editar data base de vencimento"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                          </button>}
                         </div>
                       )}
                     </td>
@@ -234,7 +242,7 @@ export function RenewalsView({
                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(prop.valorTotal) || 0)}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button
+                      {canManage ? <button
                         onClick={() => handleGenerateRenewal(prop)}
                         disabled={generatingId === prop.id}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -245,7 +253,7 @@ export function RenewalsView({
                           <RotateCw className="w-3.5 h-3.5" />
                         )}
                         {generatingId === prop.id ? 'Gerando...' : 'Gerar Renovação'}
-                      </button>
+                      </button> : <span className="text-xs text-slate-400">Somente consulta</span>}
                     </td>
                   </tr>
                   );

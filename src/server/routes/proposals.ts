@@ -9,7 +9,7 @@ import {
   financial_entries, clients,
 } from "../../db/schema.js";
 import { eq, desc, and, sql } from "drizzle-orm";
-import { requireRole, requirePermission } from "../auth.js";
+import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import {
   serializeProposal, serializeServiceOrder, serializeProposalAcceptance,
@@ -18,7 +18,7 @@ import {
 import { sendEmail } from "../mailer.js";
 
 const router = Router();
-const requireProposalAccess = requireRole(["admin", "financeiro"]);
+const requireProposalAccess = requireAuth;
 const requireCommercialAccess = requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]);
 const serviceOrderNumberFromProposal = (proposalNumber: string) => {
   const reference = String(proposalNumber || "").trim().replace(/^DS\s*/i, "");
@@ -70,6 +70,13 @@ router.get("/", requireProposalAccess, async (req, res) => {
 router.post("/", requireCommercialAccess, async (req, res) => {
   try {
     const data = req.body;
+    const embarcacaoId = typeof data.embarcacaoId === 'string' && data.embarcacaoId.trim() ? data.embarcacaoId : null;
+    const embarcacoesIds = Array.isArray(data.embarcacoesIds)
+      ? data.embarcacoesIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+      : (embarcacaoId ? [embarcacaoId] : []);
+    if (!embarcacaoId && embarcacoesIds.length === 0) {
+      return res.status(400).json({ error: 'A proposta precisa estar vinculada a uma embarcação.' });
+    }
     
     const currentYear = new Date().getFullYear();
     const yearSuffix = String(currentYear).slice(-2);
@@ -87,8 +94,8 @@ router.post("/", requireCommercialAccess, async (req, res) => {
       dataEmissao: data.dataEmissao || new Date().toISOString().split("T")[0],
       validadeDias: data.validadeDias,
       clienteId: data.clienteId || null,
-      embarcacaoId: data.embarcacaoId,
-      embarcacoesIds: Array.isArray(data.embarcacoesIds) ? data.embarcacoesIds : (data.embarcacaoId ? [data.embarcacaoId] : []),
+      embarcacaoId: embarcacaoId || embarcacoesIds[0],
+      embarcacoesIds,
       embarcacaoNome: data.embarcacaoNome,
       clienteNome: data.clienteNome,
       destinatario: data.destinatario,
@@ -138,6 +145,24 @@ router.post("/:id/renewal", requireCommercialAccess, async (req: any, res) => {
     }).returning())[0];
     res.status(201).json(serializeProposal(created));
   } catch (error) { console.error(error); res.status(500).json({ error: "Não foi possível gerar a proposta de renovação" }); }
+});
+
+router.put("/renewals/:id/base-date", requireCommercialAccess, async (req: any, res) => {
+  try {
+    const aceiteData = String(req.body?.aceiteData || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(aceiteData)) {
+      return res.status(400).json({ error: "Informe uma data de aceite válida." });
+    }
+    const updated = await db.update(proposals)
+      .set({ aceiteData, updatedAt: new Date() })
+      .where(eq(proposals.id, req.params.id))
+      .returning();
+    if (!updated.length) return res.status(404).json({ error: "Proposta não encontrada." });
+    res.json(serializeProposal(updated[0]));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Não foi possível atualizar a data de renovação." });
+  }
 });
 
 router.put("/:id", requireCommercialAccess, async (req, res) => {
@@ -393,19 +418,7 @@ router.post("/:id/accept",
         let createdPayment = null;
         // 4. Register payment if received
         if (situacaoFinanceira !== "pendente" && ar) {
-          createdPayment = (await tx.insert(payments).values({
-            contaReceberId: ar.id,
-            propostaId: id,
-            embarcacaoId: prop.embarcacaoId,
-            valor: valorRecebido.toString(),
-            data: data.dataPagamento || aceiteData,
-            formaPagamento: data.formaPagamento || "PIX",
-            observacao: `Pagamento registrado no aceite da proposta ${prop.numero}`,
-            lancadoPorNome: req.user?.nome || "Sistema",
-          }).returning())[0];
-
-          // Create financial_entry for compatibility
-          await tx.insert(financial_entries).values({
+          const entry = (await tx.insert(financial_entries).values({
             embarcacaoId: prop.embarcacaoId,
             embarcacaoNome: prop.embarcacaoNome,
             clienteNome: prop.clienteNome,
@@ -417,7 +430,19 @@ router.post("/:id/accept",
             lancadoPorNome: req.user?.nome || "Sistema",
             propostaId: id,
             contaReceberId: ar?.id,
-          });
+            situacaoConciliacao: "conciliado",
+          }).returning())[0];
+          createdPayment = (await tx.insert(payments).values({
+            contaReceberId: ar.id,
+            propostaId: id,
+            embarcacaoId: prop.embarcacaoId,
+            financialEntryId: entry.id,
+            valor: valorRecebido.toString(),
+            data: data.dataPagamento || aceiteData,
+            formaPagamento: data.formaPagamento || "PIX",
+            observacao: `Pagamento registrado no aceite da proposta ${prop.numero}`,
+            lancadoPorNome: req.user?.nome || "Sistema",
+          }).returning())[0];
         }
 
         // 5. Recalculate aggregate vessel values from all accepted proposals/payments.
@@ -429,8 +454,8 @@ router.post("/:id/accept",
                   WHERE embarcacao_id = ${prop.embarcacaoId}
                 ),
                 valor_recebido = (
-                  SELECT COALESCE(SUM(valor), 0) FROM financial_entries
-                  WHERE embarcacao_id = ${prop.embarcacaoId} AND tipo != 'despesa'
+                  SELECT COALESCE(SUM(valor), 0) FROM payments
+                  WHERE embarcacao_id = ${prop.embarcacaoId} AND ativo = TRUE
                 )
             WHERE id = ${prop.embarcacaoId}
           `);
@@ -495,6 +520,8 @@ router.post("/:id/accept",
         // Link account receivable to OS
         if (ar) {
           await tx.update(accounts_receivable).set({ osId: os.id, updatedAt: new Date() }).where(eq(accounts_receivable.id, ar.id));
+          await tx.update(payments).set({ osId: os.id }).where(eq(payments.contaReceberId, ar.id));
+          await tx.update(financial_entries).set({ osId: os.id }).where(eq(financial_entries.contaReceberId, ar.id));
         }
 
         return { os, ordens: createdOrders, ar, createdPayment };

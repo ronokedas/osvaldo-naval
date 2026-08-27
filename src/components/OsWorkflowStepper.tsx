@@ -44,15 +44,22 @@ const STEPS: Step[] = [
   },
   {
     id: 5,
-    label: '5. Entrega & Conclusão',
-    sublabel: 'Protocolo e encerramento',
+    label: '5. Entrega & Pendências',
+    sublabel: 'Remessas e financeiro',
     icon: CheckCircle2,
-    statuses: ['aguardando_entrega', 'concluida'],
+    statuses: ['aguardando_entrega'],
+  },
+  {
+    id: 6,
+    label: '6. Validação Final',
+    sublabel: 'Conferência administrativa',
+    icon: CheckCircle2,
+    statuses: ['validacao_final', 'concluida'],
   },
 ];
 
 export const OsWorkflowStepper: React.FC<Props> = ({ status }) => {
-  // Determine current step index (0 to 4)
+  // Determine current step index
   let currentStepIdx = 0;
   for (let i = 0; i < STEPS.length; i++) {
     if (STEPS[i].statuses.includes(status)) {
@@ -83,7 +90,7 @@ export const OsWorkflowStepper: React.FC<Props> = ({ status }) => {
       </div>
 
       {/* Stepper Grid / Flex */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-3">
         {STEPS.map((step, idx) => {
           const Icon = step.icon;
           const isPassed = idx < currentStepIdx;

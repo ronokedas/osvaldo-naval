@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { service_orders, documents, deliveries, service_order_items, service_order_item_comments, schedules, os_events, external_submissions, external_responses, document_versions, proposals, vessels, clients, users, notifications } from "../../db/schema.js";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { service_orders, documents, deliveries, delivery_dispatches, delivery_dispatch_documents, approved_document_files, os_finalization_reviews, service_order_items, service_order_item_comments, schedules, os_events, external_submissions, external_responses, document_versions, proposals, vessels, clients, users, notifications, protocols } from "../../db/schema.js";
+import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
 import { requireAuth, requirePermission, requireRole } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
-import { serializeServiceOrder, serializeSchedule, serializeDocument, serializeDocumentVersion, serializeExternalSubmission, serializeExternalResponse, serializeDelivery, serializeOsEvent, serializeNotification } from "../serializers.js";
+import { serializeServiceOrder, serializeSchedule, serializeDocument, serializeDocumentVersion, serializeExternalSubmission, serializeExternalResponse, serializeDelivery, serializeOsEvent, serializeNotification, serializeProtocol } from "../serializers.js";
+import { allServicesCompleted, assertServicesCompleted, getOsReadinessBlockers, isDeliveryActionPending, reconcileOsReadiness, reconcileVesselCompletion } from "../delivery-workflow.js";
 
 const router = Router();
 
@@ -68,24 +69,29 @@ function inferTipo(descricao: string): string {
 // ---------- GET /api/service-orders ----------
 router.get("/", requireAuth, async (req: any, res: any) => {
   try {
-    const [all, allProposals, allVessels, allClients, allItems, allUsers] = await Promise.all([
+    const [all, allProposals, allVessels, allClients, allItems, allUsers, allDeliveries, allDeliveryDispatches] = await Promise.all([
       db.select().from(service_orders).orderBy(desc(service_orders.createdAt)),
       db.select().from(proposals),
       db.select().from(vessels),
       db.select().from(clients),
       db.select().from(service_order_items),
       db.select().from(users),
+      db.select().from(deliveries),
+      db.select().from(delivery_dispatches).orderBy(desc(delivery_dispatches.createdAt)),
     ]);
     const currentUser = allUsers.find((user) => user.id === req.session.userId);
     const isManagement = currentUser?.role === "admin" || currentUser?.role === "financeiro";
     const visible = isManagement
       ? all
-      : all.filter((order) => allItems.some((item) => item.osId === order.id && item.tecnicoResponsavelId === currentUser?.id));
+      : all.filter((order) => allItems.some((item) => item.osId === order.id && item.tecnicoResponsavelId === currentUser?.id) || allDeliveries.some((delivery) => delivery.osId === order.id && delivery.responsavelId === currentUser?.id));
     res.json(visible.map((order) => {
       const proposal = allProposals.find((item) => item.id === order.propostaId);
       const vessel = allVessels.find((item) => item.id === order.embarcacaoId);
       const client = allClients.find((item) => item.id === order.clienteId);
       const items = allItems.filter((item) => item.osId === order.id);
+      const delivery = allDeliveries.find((item) => item.osId === order.id);
+      const lastDispatch = delivery ? allDeliveryDispatches.find((item) => item.deliveryId === delivery.id) : undefined;
+      const deliveryActionPending = Boolean(delivery && isDeliveryActionPending(delivery.status));
       const visibleItems = isManagement ? items : items.filter((item) => item.tecnicoResponsavelId === currentUser?.id);
       return {
         ...serializeServiceOrder(order),
@@ -101,6 +107,11 @@ router.get("/", requireAuth, async (req: any, res: any) => {
           responsavelNome: allUsers.find((user) => user.id === item.tecnicoResponsavelId)?.nome || undefined,
         })),
         tecnicosIds: items.map((item) => item.tecnicoResponsavelId).filter(Boolean),
+        entregaResumo: delivery ? {
+          ...serializeDelivery(delivery),
+          acaoEntregaPendente: deliveryActionPending,
+          ultimaRemessa: lastDispatch ? { ...lastDispatch } : undefined,
+        } : undefined,
       };
     }));
   } catch (error) {
@@ -174,6 +185,7 @@ router.put("/items/:itemId", requireAuth, async (req: any, res: any) => {
     if (data.relatorioUrl !== undefined) { update.relatorioUrl = data.relatorioUrl || null; update.relatorioNome = data.relatorioNome || null; }
     if (data.status !== undefined) {
       if (!["pendente", "em_execucao", "concluido"].includes(data.status)) return res.status(400).json({ error: "Status inválido" });
+      if (data.status === "concluido" && current.status !== "em_execucao") return res.status(409).json({ error: "Inicie o serviço antes de concluí-lo." });
       update.status = data.status;
     }
     const resultingTechnicianId = update.tecnicoResponsavelId !== undefined ? update.tecnicoResponsavelId : current.tecnicoResponsavelId;
@@ -204,7 +216,7 @@ router.put("/items/:itemId", requireAuth, async (req: any, res: any) => {
     );
     const admins = await db.select().from(users).where(and(eq(users.role, "admin"), eq(users.ativo, true)));
     const allItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, current.osId));
-    if (allItems.length && allItems.every((item) => item.status === "concluido")) {
+    if (allServicesCompleted(allItems)) {
       // Avançar automaticamente a OS para "documentação em elaboração" (Laudos & Revisão)
       const currentOs = (await db.select().from(service_orders).where(eq(service_orders.id, current.osId)))[0];
       if (currentOs && ["visita_agendada", "vistoria_em_execucao"].includes(currentOs.status)) {
@@ -212,6 +224,16 @@ router.put("/items/:itemId", requireAuth, async (req: any, res: any) => {
           status: "documentacao_em_elaboracao",
           updatedAt: new Date(),
         }).where(eq(service_orders.id, current.osId));
+        const orderDocuments = await db.select().from(documents).where(eq(documents.osId, current.osId));
+        const orderDocumentIds = orderDocuments.map((document) => document.id);
+        const existingVersions = orderDocumentIds.length
+          ? await db.select().from(document_versions).where(inArray(document_versions.documentoId, orderDocumentIds))
+          : [];
+        for (const document of orderDocuments) {
+          if (existingVersions.some((version) => version.documentoId === document.id)) {
+            await db.update(documents).set({ status: "em_revisao", updatedAt: new Date() }).where(eq(documents.id, document.id));
+          }
+        }
         await logEvent(current.osId, "transicao_automatica", actor, "Todos os serviços concluídos. OS avançou automaticamente para Documentação em Elaboração.");
       }
       for (const admin of admins)
@@ -308,7 +330,8 @@ router.get("/:id", requireAuth, async (req: any, res: any) => {
     const allItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, id));
     const currentUser = (await db.select().from(users).where(eq(users.id, req.session.userId)))[0];
     const canViewEntireOrder = currentUser?.role === "admin" || currentUser?.role === "financeiro";
-    const isAssignedToOrder = allItems.some((item) => item.tecnicoResponsavelId === currentUser?.id) || os.responsavelTecnicoId === currentUser?.id;
+    const assignedDelivery = (await db.select().from(deliveries).where(eq(deliveries.osId, id))).some((delivery) => delivery.responsavelId === currentUser?.id);
+    const isAssignedToOrder = allItems.some((item) => item.tecnicoResponsavelId === currentUser?.id) || os.responsavelTecnicoId === currentUser?.id || assignedDelivery;
     if (!canViewEntireOrder && !isAssignedToOrder) {
       return res.status(403).json({ error: "Você não está atribuído a esta Ordem de Serviço." });
     }
@@ -322,7 +345,15 @@ router.get("/:id", requireAuth, async (req: any, res: any) => {
     const sched = await db.select().from(schedules).where(eq(schedules.osId, id));
     const docs = await db.select().from(documents).where(eq(documents.osId, id));
     const subs = await db.select().from(external_submissions).where(eq(external_submissions.osId, id));
+    const canonicalProtocols = await db.select().from(protocols).where(eq(protocols.osId, id)).orderBy(desc(protocols.createdAt));
     const deliv = await db.select().from(deliveries).where(eq(deliveries.osId, id));
+    const deliveryIds = deliv.map((delivery) => delivery.id);
+    const [deliveryDispatchRows, finalFiles] = await Promise.all([
+      deliveryIds.length ? db.select().from(delivery_dispatches).where(inArray(delivery_dispatches.deliveryId, deliveryIds)) : [],
+      canonicalProtocols.length ? db.select().from(approved_document_files).where(inArray(approved_document_files.protocoloId, canonicalProtocols.map((protocol) => protocol.id))) : [],
+    ]);
+    const dispatchIds = deliveryDispatchRows.map((dispatch) => dispatch.id);
+    const dispatchDocuments = dispatchIds.length ? await db.select().from(delivery_dispatch_documents).where(inArray(delivery_dispatch_documents.remessaEntregaId, dispatchIds)) : [];
     const events = await db.select().from(os_events).where(eq(os_events.osId, id)).orderBy(desc(os_events.createdAt));
 
     const docIds = docs.map((d) => d.id);
@@ -366,7 +397,9 @@ router.get("/:id", requireAuth, async (req: any, res: any) => {
         ...serializeExternalSubmission(s),
         respostas: responses.filter((r) => r.submissaoId === s.id).map(serializeExternalResponse),
       })),
-      entregas: deliv.map(serializeDelivery),
+      protocolos: canonicalProtocols.map(serializeProtocol),
+      entregas: deliv.map((delivery) => ({ ...serializeDelivery(delivery), documentosAprovados: finalFiles, remessas: deliveryDispatchRows.filter((dispatch) => dispatch.deliveryId === delivery.id).map((dispatch) => ({ ...dispatch, arquivosAprovados: finalFiles.filter((file) => dispatchDocuments.some((link) => link.remessaEntregaId === dispatch.id && link.arquivoAprovadoId === file.id)) })) })),
+      bloqueiosConclusao: await getOsReadinessBlockers(os, db),
       eventos: events.map(serializeOsEvent),
       proposta: proposal ? { ...proposal, valorTotal: Number(proposal.valorTotal) || 0 } : null,
       embarcacao: vessel,
@@ -454,6 +487,12 @@ router.post("/:id/vistoria", requirePermission([PERMISSIONS.EXECUTAR_VISTORIA]),
     const os = osList[0];
 
     const prevStatus = os.status;
+    if (data.concluirVistoria) {
+      try { await assertServicesCompleted(db, id); } catch (error: any) {
+        if (error.message === "SERVICES_NOT_COMPLETED") return res.status(409).json({ error: "Conclua todos os serviços da OS antes de avançar para a documentação." });
+        throw error;
+      }
+    }
     const nextStatus = data.concluirVistoria ? "documentacao_em_elaboracao" : "vistoria_em_execucao";
     
     // Buscar informações da OS para notificações
@@ -519,6 +558,8 @@ router.post("/documents/:id/versions", requirePermission([PERMISSIONS.ANEXAR_EDI
     const docList = await db.select().from(documents).where(eq(documents.id, id));
     if (docList.length === 0) return res.status(404).json({ error: "Documento não encontrado" });
     const doc = docList[0];
+    const serviceItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, doc.osId));
+    const servicesAreComplete = allServicesCompleted(serviceItems);
 
     // Atomic increment: lock document, compute next version
     const updatedDoc = (await db.update(documents).set({
@@ -545,8 +586,18 @@ router.post("/documents/:id/versions", requirePermission([PERMISSIONS.ANEXAR_EDI
       pdfUrl: data.pdfUrl || null,
     }).returning())[0];
 
-    await db.update(documents).set({ status: "em_revisao", updatedAt: new Date() }).where(eq(documents.id, id));
-    await db.update(service_orders).set({ status: "revisao_interna", updatedAt: new Date() }).where(eq(service_orders.id, doc.osId));
+    await db.update(documents).set({ status: servicesAreComplete ? "em_revisao" : "em_elaboracao", updatedAt: new Date() }).where(eq(documents.id, id));
+    if (servicesAreComplete) {
+      const activeProtocol = doc.aplicavelAnaliseExterna
+        ? (await db.select().from(protocols).where(eq(protocols.osId, doc.osId)).orderBy(desc(protocols.createdAt)))[0]
+        : null;
+      if (activeProtocol && ["exigencia_recebida", "correcao_em_elaboracao"].includes(activeProtocol.status)) {
+        await db.update(protocols).set({ status: "correcao_em_elaboracao", updatedAt: new Date() }).where(eq(protocols.id, activeProtocol.id));
+        await db.update(service_orders).set({ status: "exigencia_externa", updatedAt: new Date() }).where(eq(service_orders.id, doc.osId));
+      } else {
+        await db.update(service_orders).set({ status: "revisao_interna", updatedAt: new Date() }).where(eq(service_orders.id, doc.osId));
+      }
+    }
 
     await logEvent(doc.osId, "upload", req.user, `Nova versão V${nextVersion} anexada ao documento "${doc.titulo}".`,
       { documentoId: id, versao: nextVersion, origem: data.origem || "correcao_interna" });
@@ -560,7 +611,7 @@ router.post("/documents/:id/versions", requirePermission([PERMISSIONS.ANEXAR_EDI
       [req.user?.id],
     );
 
-    res.json(serializeDocumentVersion(version));
+    res.json({ ...serializeDocumentVersion(version), aguardandoConclusaoServicos: !servicesAreComplete });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
@@ -575,6 +626,10 @@ router.post("/documents/:id/review", requirePermission([PERMISSIONS.REVISAR_DOCU
     const docList = await db.select().from(documents).where(eq(documents.id, id));
     if (docList.length === 0) return res.status(404).json({ error: "Documento não encontrado" });
     const doc = docList[0];
+    try { await assertServicesCompleted(db, doc.osId); } catch (error: any) {
+      if (error.message === "SERVICES_NOT_COMPLETED") return res.status(409).json({ error: "Conclua todos os serviços da OS antes de aprovar documentos." });
+      throw error;
+    }
 
     const versions = await db.select().from(document_versions).where(eq(document_versions.documentoId, id)).orderBy(desc(document_versions.versao));
     const latest = versions[0];
@@ -593,7 +648,12 @@ router.post("/documents/:id/review", requirePermission([PERMISSIONS.REVISAR_DOCU
     const allDocuments = await db.select().from(documents).where(eq(documents.osId, doc.osId));
     const allReadyForExternal = allDocuments.length > 0 && allDocuments.every((item) => ["aguardando_envio", "em_analise_externa", "aprovado"].includes(item.status));
     const hasDocumentInReview = allDocuments.some((item) => item.status === "em_revisao");
-    const nextOsStatus = allReadyForExternal
+    const activeCorrectionProtocol = doc.aplicavelAnaliseExterna
+      ? (await db.select().from(protocols).where(eq(protocols.osId, doc.osId)).orderBy(desc(protocols.createdAt)))[0]
+      : null;
+    const nextOsStatus = activeCorrectionProtocol && ["exigencia_recebida", "correcao_em_elaboracao"].includes(activeCorrectionProtocol.status)
+      ? "exigencia_externa"
+      : allReadyForExternal
       ? "aguardando_envio_externo"
       : hasDocumentInReview
         ? "revisao_interna"
@@ -644,7 +704,10 @@ router.post("/documents/:id/approve", requirePermission([PERMISSIONS.APROVAR_TEC
     }).where(eq(document_versions.id, latest.id));
 
     await db.update(documents).set({ status: "aguardando_envio", updatedAt: new Date() }).where(eq(documents.id, id));
-    await db.update(service_orders).set({ status: "aguardando_envio_externo", updatedAt: new Date() }).where(eq(service_orders.id, doc.osId));
+    const activeCorrectionProtocol = doc.aplicavelAnaliseExterna
+      ? (await db.select().from(protocols).where(eq(protocols.osId, doc.osId)).orderBy(desc(protocols.createdAt)))[0]
+      : null;
+    await db.update(service_orders).set({ status: activeCorrectionProtocol && ["exigencia_recebida", "correcao_em_elaboracao"].includes(activeCorrectionProtocol.status) ? "exigencia_externa" : "aguardando_envio_externo", updatedAt: new Date() }).where(eq(service_orders.id, doc.osId));
 
     await logEvent(doc.osId, "aprovacao", req.user, `Aprovação técnica do documento "${doc.titulo}" (V${latest.versao}).`, { documentoId: id, versao: latest.versao });
 
@@ -665,6 +728,8 @@ router.post("/documents/:id/approve", requirePermission([PERMISSIONS.APROVAR_TEC
 
 // ---------- POST /api/service-orders/:id/submit-external ----------
 router.post("/:id/submit-external", requirePermission([PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA]), async (req: any, res: any) => {
+  return res.status(410).json({ error: "Envios externos agora são registrados exclusivamente no módulo Protocolos & Entregas." });
+  /* legacy compatibility code retained below for rollback */
   try {
     const { id } = req.params;
     const data = req.body || {};
@@ -713,6 +778,8 @@ router.post("/:id/submit-external", requirePermission([PERMISSIONS.REGISTRAR_ENV
 
 // ---------- POST /api/service-orders/:id/external-response ----------
 router.post("/:id/external-response", requirePermission([PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA]), async (req: any, res: any) => {
+  return res.status(410).json({ error: "Respostas externas agora são registradas exclusivamente no módulo Protocolos & Entregas, com comprovante obrigatório." });
+  /* legacy compatibility code retained below for rollback */
   try {
     const { id } = req.params;
     const data = req.body || {};
@@ -835,16 +902,117 @@ router.post("/:id/print-confirm", requirePermission([PERMISSIONS.ENTREGAR_CONCLU
   }
 });
 
+// ---------- GET /api/service-orders/deliveries/mine ----------
+router.get("/deliveries/mine", requirePermission([PERMISSIONS.EXECUTAR_ENTREGAS]), async (req: any, res: any) => {
+  try {
+    const rows = await db.select().from(deliveries).where(eq(deliveries.responsavelId, req.user.id));
+    const active = rows.filter((row) => isDeliveryActionPending(row.status));
+    res.json(active.map(serializeDelivery));
+  } catch { res.status(500).json({ error: "Não foi possível carregar as entregas atribuídas." }); }
+});
+
+async function getAssignedDelivery(osId: string, user: any, tx: any = db) {
+  const delivery = (await tx.select().from(deliveries).where(eq(deliveries.osId, osId)))[0];
+  if (!delivery) throw new Error("DELIVERY_NOT_FOUND");
+  if (user.role !== "admin" && delivery.responsavelId !== user.id) throw new Error("DELIVERY_NOT_ASSIGNED");
+  return delivery;
+}
+
+// ---------- POST /api/service-orders/:id/delivery/start ----------
+router.post("/:id/delivery/start", requirePermission([PERMISSIONS.EXECUTAR_ENTREGAS]), async (req: any, res: any) => {
+  try {
+    const result = await db.transaction(async (tx) => {
+      const delivery = await getAssignedDelivery(req.params.id, req.user, tx);
+      if (!isDeliveryActionPending(delivery.status)) throw new Error("INVALID_DELIVERY_STATE");
+      const updated = (await tx.update(deliveries).set({ status: "em_entrega", iniciadaEm: delivery.iniciadaEm || new Date(), updatedAt: new Date() }).where(eq(deliveries.id, delivery.id)).returning())[0];
+      await tx.insert(os_events).values({ osId: req.params.id, tipo: "entrega_iniciada", autorId: req.user.id, autorNome: req.user.nome, descricao: `${req.user.nome} iniciou a tarefa de entrega.` });
+      return updated;
+    });
+    res.json(serializeDelivery(result));
+  } catch (error: any) { res.status(error.message === "DELIVERY_NOT_ASSIGNED" ? 403 : 409).json({ error: error.message === "DELIVERY_NOT_ASSIGNED" ? "Esta entrega não está atribuída a você." : "A entrega não pode ser iniciada neste estado." }); }
+});
+
+// ---------- POST /api/service-orders/:id/delivery/dispatches ----------
+router.post("/:id/delivery/dispatches", requirePermission([PERMISSIONS.EXECUTAR_ENTREGAS]), async (req: any, res: any) => {
+  try {
+    const data = req.body || {};
+    const fileIds = Array.isArray(data.arquivosAprovadosIds) ? data.arquivosAprovadosIds : [];
+    if (!["parcial", "final"].includes(data.tipo) || !data.dataEntrega || !data.meioEntrega || !data.nomeRecebedor || !data.destino || !data.comprovanteUrl || !data.comprovanteNome || !fileIds.length) return res.status(400).json({ error: "Tipo, documentos, data, meio, recebedor, destino e comprovante são obrigatórios." });
+    if (data.meioEntrega === "correio" && !data.referencia) return res.status(400).json({ error: "Informe o código de rastreio para entrega por correio." });
+    if (data.meioEntrega === "portal" && !data.referencia) return res.status(400).json({ error: "Informe a referência do portal." });
+    const result = await db.transaction(async (tx) => {
+      const delivery = await getAssignedDelivery(req.params.id, req.user, tx);
+      if (!isDeliveryActionPending(delivery.status)) throw new Error("INVALID_DELIVERY_STATE");
+      const allowedFiles = await tx.select().from(approved_document_files).where(inArray(approved_document_files.id, fileIds));
+      const allowedDocs = allowedFiles.length ? await tx.select().from(documents).where(inArray(documents.id, allowedFiles.map((file) => file.documentoId))) : [];
+      if (allowedFiles.length !== fileIds.length || allowedDocs.some((doc) => doc.osId !== req.params.id)) throw new Error("INVALID_FINAL_FILE");
+      const dispatch = (await tx.insert(delivery_dispatches).values({ deliveryId: delivery.id, tipo: data.tipo, status: "entregue", dataEntrega: data.dataEntrega, meioEntrega: data.meioEntrega, nomeRecebedor: data.nomeRecebedor, destino: data.destino, referencia: data.referencia || null, comprovanteUrl: data.comprovanteUrl, comprovanteNome: data.comprovanteNome, entreguePorId: req.user.id, entreguePorNome: req.user.nome }).returning())[0];
+      await tx.insert(delivery_dispatch_documents).values(fileIds.map((arquivoAprovadoId: string) => ({ remessaEntregaId: dispatch.id, arquivoAprovadoId })));
+      const nextStatus = data.tipo === "final" ? "pronta_validacao" : "aguardando_reativacao";
+      await tx.update(deliveries).set({ status: nextStatus, dataEntrega: data.dataEntrega, meioEntrega: data.meioEntrega, nomeRecebedor: data.nomeRecebedor, comprovanteUrl: data.comprovanteUrl, comprovanteNome: data.comprovanteNome, entreguePorId: req.user.id, concluidaEm: new Date(), updatedAt: new Date() }).where(eq(deliveries.id, delivery.id));
+      await tx.update(notifications).set({ lida: true }).where(and(
+        eq(notifications.usuarioId, delivery.responsavelId || req.user.id),
+        eq(notifications.osId, req.params.id),
+        eq(notifications.tipo, "entrega_atribuida"),
+        eq(notifications.lida, false),
+      ));
+      await tx.insert(os_events).values({ osId: req.params.id, tipo: "remessa_entrega", autorId: req.user.id, autorNome: req.user.nome, descricao: `Entrega ${data.tipo} registrada por ${data.meioEntrega} para ${data.nomeRecebedor}.`, dados: { remessaId: dispatch.id, tipo: data.tipo } });
+      await reconcileOsReadiness(req.params.id, tx, req.user);
+      return dispatch;
+    });
+    res.status(201).json(result);
+  } catch (error: any) {
+    const code = ["DELIVERY_NOT_ASSIGNED"].includes(error.message) ? 403 : ["INVALID_FINAL_FILE"].includes(error.message) ? 400 : 409;
+    res.status(code).json({ error: error.message === "DELIVERY_NOT_ASSIGNED" ? "Esta entrega não está atribuída a você." : error.message === "INVALID_FINAL_FILE" ? "Selecione somente documentos finais aprovados desta OS." : "A remessa não pode ser registrada neste estado." });
+  }
+});
+
+// ---------- POST /api/service-orders/:id/final-review ----------
+router.post("/:id/final-review", requireRole(["admin"]), async (req: any, res: any) => {
+  try {
+    const decision = req.body?.decisao;
+    if (!["aprovar", "devolver"].includes(decision)) return res.status(400).json({ error: "Decisão de validação inválida." });
+    if (decision === "devolver") return res.status(409).json({ error: "Para reabrir uma entrega, anexe um documento final suplementar na aba Protocolos." });
+    if (decision === "devolver" && !String(req.body?.observacao || "").trim()) return res.status(400).json({ error: "Informe o motivo da devolução para o entregador." });
+    const result = await db.transaction(async (tx) => {
+      const order = (await tx.select().from(service_orders).where(eq(service_orders.id, req.params.id)))[0];
+      if (!order) throw new Error("OS_NOT_FOUND");
+      if (decision === "aprovar") {
+        try { await assertServicesCompleted(tx, order.id); } catch (error: any) {
+          if (error.message === "SERVICES_NOT_COMPLETED") throw new Error("NOT_READY_SERVICES");
+          throw error;
+        }
+        const blockers = await getOsReadinessBlockers(order, tx);
+        if (order.status !== "validacao_final" || blockers.length) throw new Error("NOT_READY");
+        await tx.update(service_orders).set({ status: "concluida", dataConclusao: new Date().toISOString().slice(0, 10), updatedAt: new Date() }).where(eq(service_orders.id, order.id));
+        await tx.update(deliveries).set({ status: "concluida", updatedAt: new Date() }).where(eq(deliveries.osId, order.id));
+        await tx.insert(os_finalization_reviews).values({ osId: order.id, decisao: "aprovada", observacao: req.body?.observacao || null, administradorId: req.user.id, administradorNome: req.user.nome });
+        await tx.insert(os_events).values({ osId: order.id, tipo: "conclusao", autorId: req.user.id, autorNome: req.user.nome, descricao: "Validação Final aprovada. Ordem de Serviço concluída." });
+        await reconcileVesselCompletion(order.embarcacaoId, tx);
+        return "concluida";
+      }
+      const delivery = (await tx.select().from(deliveries).where(eq(deliveries.osId, order.id)))[0];
+      if (delivery) await tx.update(deliveries).set({ status: "aguardando_complemento", motivoReabertura: req.body.observacao, concluidaEm: null, updatedAt: new Date() }).where(eq(deliveries.id, delivery.id));
+      await tx.update(service_orders).set({ status: "aguardando_entrega", updatedAt: new Date() }).where(eq(service_orders.id, order.id));
+      await tx.insert(os_finalization_reviews).values({ osId: order.id, decisao: "devolvida", observacao: req.body.observacao, administradorId: req.user.id, administradorNome: req.user.nome });
+      await tx.insert(os_events).values({ osId: order.id, tipo: "validacao_devolvida", autorId: req.user.id, autorNome: req.user.nome, descricao: `Validação Final devolvida para entrega: ${req.body.observacao}` });
+      return "aguardando_entrega";
+    });
+    res.json({ status: result });
+  } catch (error: any) { res.status(["NOT_READY", "NOT_READY_SERVICES"].includes(error.message) ? 409 : 404).json({ error: error.message === "NOT_READY_SERVICES" ? "Conclua todos os serviços da OS antes da Validação Final." : error.message === "NOT_READY" ? "A OS ainda possui pendências para a Validação Final." : "OS não encontrada." }); }
+});
+
 // ---------- POST /api/service-orders/:id/deliver ----------
 router.post("/:id/deliver", requirePermission([PERMISSIONS.ENTREGAR_CONCLUIR]), async (req: any, res: any) => {
   try {
+    return res.status(410).json({ error: "Este registro antigo foi desativado. Use as remessas de entrega da etapa 5." });
     const { id } = req.params;
     const data = req.body || {};
     const osList = await db.select().from(service_orders).where(eq(service_orders.id, id));
     if (osList.length === 0) return res.status(404).json({ error: "OS não encontrada" });
 
-    if (!data.dataEntrega || !data.meioEntrega || !data.nomeRecebedor) {
-      return res.status(400).json({ error: "Data, meio de entrega e nome do recebedor são obrigatórios" });
+    if (!data.dataEntrega || !data.meioEntrega || !data.nomeRecebedor || !data.comprovanteUrl || !data.comprovanteNome) {
+      return res.status(400).json({ error: "Data, meio de entrega, recebedor e comprovante são obrigatórios" });
     }
 
     const existing = await db.select().from(deliveries).where(eq(deliveries.osId, id));
@@ -892,29 +1060,15 @@ router.post("/:id/deliver", requirePermission([PERMISSIONS.ENTREGAR_CONCLUIR]), 
 });
 
 // ---------- POST /api/service-orders/:id/complete ----------
-router.post("/:id/complete", requirePermission([PERMISSIONS.ENTREGAR_CONCLUIR]), async (req: any, res: any) => {
+router.post("/:id/complete", requireRole(["admin"]), async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const osList = await db.select().from(service_orders).where(eq(service_orders.id, id));
     if (osList.length === 0) return res.status(404).json({ error: "OS não encontrada" });
 
-    const docs = await db.select().from(documents).where(eq(documents.osId, id));
-    const items = await db.select().from(service_order_items).where(eq(service_order_items.osId, id));
-    if (!items.length || items.some((item) => item.status !== "concluido")) {
-      return res.status(400).json({ error: "Todos os serviços da OS precisam estar concluídos antes do encerramento." });
-    }
-    const pendingExternal = docs.some(
-      (d) => ["em_analise_externa", "exigencia", "aguardando_envio", "em_revisao"].includes(d.status)
-    );
-    if (pendingExternal) {
-      return res.status(400).json({ error: "Há documentos exigidos sem aprovação externa. Conclusão bloqueada." });
-    }
-
-    const deliv = await db.select().from(deliveries).where(eq(deliveries.osId, id));
-    const delivered = deliv.some((d) => d.status === "entregue" && d.dataEntrega && d.meioEntrega && d.nomeRecebedor);
-    if (!delivered) {
-      return res.status(400).json({ error: "Entrega pendente. Registre data, meio e recebedor antes de concluir." });
-    }
+    if (osList[0].status !== "validacao_final") return res.status(409).json({ error: "A OS precisa passar pela etapa Validação Final antes da conclusão." });
+    const blockers = await getOsReadinessBlockers(osList[0], db);
+    if (blockers.length) return res.status(409).json({ error: "A OS possui pendências e não pode ser concluída.", bloqueios: blockers });
 
     await db.update(service_orders).set({
       status: "concluida",

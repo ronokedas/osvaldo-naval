@@ -6,6 +6,7 @@ import { users, documentLibraryAudit } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth.js";
 import { serializeUser } from "../serializers.js";
+import { initializeModuleAccess, mergeModuleAccess, moduleIdsFromPermissions, PERMISSIONS } from "../permissions.js";
 
 const router = Router();
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim());
@@ -26,20 +27,24 @@ router.get("/", requireAuth, async (req: any, res) => {
 
 router.post("/", requireRole(["admin"]), async (req, res) => {
   try {
-    const { nome, email, role, senha, avatarUrl, cargo, ativo, permissions } = req.body;
+    const { nome, email, role, senha, avatarUrl, cargo, ativo, acessoAtivo, permissions } = req.body;
     if (!nome?.trim() || !email?.trim() || !senha) return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios" });
     if (!isValidEmail(email)) return res.status(400).json({ error: "Informe um e-mail válido" });
     const hashedPassword = await argon2.hash(senha || "123456");
+    const normalizedCargo = String(cargo || "").trim();
+    const userPermissions = initializeModuleAccess(Array.isArray(permissions) ? permissions : [], role || "tecnico");
+    if (normalizedCargo.toLowerCase() === "entregador" && !userPermissions.includes(PERMISSIONS.EXECUTAR_ENTREGAS)) userPermissions.push(PERMISSIONS.EXECUTAR_ENTREGAS);
     const newUser = await db.insert(users).values({
       nome,
       email: email.trim().toLowerCase(),
       role: role || "tecnico",
       senha: hashedPassword,
       avatarUrl,
-      cargo,
-      ativo: ativo !== false,
-      permissions: Array.isArray(permissions) ? permissions : [],
+      cargo: normalizedCargo,
+      ativo: (ativo ?? acessoAtivo) !== false,
+      permissions: userPermissions,
     }).returning();
+    await db.insert(documentLibraryAudit).values({ actorId: (req as any).user.id, action: "module_access_created", details: { targetUserId: newUser[0].id, modules: moduleIdsFromPermissions(userPermissions) } });
     
     res.status(201).json(serializeUser(newUser[0]));
   } catch (error) {
@@ -51,7 +56,13 @@ router.post("/", requireRole(["admin"]), async (req, res) => {
 router.put("/:id", requireRole(["admin"]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email, role, senha, avatarUrl, cargo, ativo, permissions } = req.body;
+    const { nome, email, role, senha, avatarUrl, cargo, ativo, acessoAtivo, permissions } = req.body;
+    const target = (await db.select().from(users).where(eq(users.id, id)))[0];
+    if (!target) return res.status(404).json({ error: "Not found" });
+    const requestedActive = ativo ?? acessoAtivo;
+    if (id === (req as any).user.id && (requestedActive === false || (role && role !== "admin"))) {
+      return res.status(409).json({ error: "O administrador não pode bloquear ou remover o próprio acesso administrativo." });
+    }
     
     const updateData: any = {};
     if (nome) updateData.nome = nome;
@@ -62,8 +73,21 @@ router.put("/:id", requireRole(["admin"]), async (req, res) => {
     if (role) updateData.role = role;
     if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
     if (cargo !== undefined) updateData.cargo = cargo;
-    if (ativo !== undefined) updateData.ativo = ativo;
-    if (permissions !== undefined) updateData.permissions = Array.isArray(permissions) ? permissions : [];
+    if (requestedActive !== undefined) updateData.ativo = requestedActive !== false;
+    if (permissions !== undefined) {
+      const current = (await db.select({ permissions: users.permissions, role: users.role }).from(users).where(eq(users.id, id)))[0];
+      const requestedModules = moduleIdsFromPermissions(permissions);
+      updateData.permissions = mergeModuleAccess(permissions, requestedModules);
+      if (String(role || current?.role) === "admin") updateData.permissions = initializeModuleAccess(updateData.permissions, "admin");
+    }
+    if (String(cargo || "").trim().toLowerCase() === "entregador") {
+      const current = (await db.select({ permissions: users.permissions }).from(users).where(eq(users.id, id)))[0];
+      const nextPermissions = permissions !== undefined
+        ? [...(updateData.permissions || [])]
+        : (Array.isArray(current?.permissions) ? [...current.permissions as string[]] : []);
+      if (!nextPermissions.includes(PERMISSIONS.EXECUTAR_ENTREGAS)) nextPermissions.push(PERMISSIONS.EXECUTAR_ENTREGAS);
+      updateData.permissions = nextPermissions;
+    }
     if (senha) {
       updateData.senha = await argon2.hash(senha);
       updateData.passwordResetExpiresAt = null;
@@ -72,12 +96,12 @@ router.put("/:id", requireRole(["admin"]), async (req, res) => {
 
     const updatedUser = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
     
-    if (updatedUser.length === 0) return res.status(404).json({ error: "Not found" });
     if (permissions !== undefined) {
-      await db.insert(documentLibraryAudit).values({ actorId: (req as any).user.id, action: "permissions_updated", details: { targetUserId: id, permissions: updateData.permissions } });
+      await db.insert(documentLibraryAudit).values({ actorId: (req as any).user.id, action: "module_access_updated", details: { targetUserId: id, modules: moduleIdsFromPermissions(updateData.permissions), permissions: updateData.permissions } });
     }
     res.json(serializeUser(updatedUser[0]));
   } catch (error) {
+    if ((error as any)?.code === "23505") return res.status(409).json({ error: "Este e-mail já está cadastrado" });
     res.status(500).json({ error: "Server error" });
   }
 });

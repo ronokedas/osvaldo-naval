@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
-import { financial_entries, vessels, financial_attachments, notifications, users, clients, financial_categories, financial_suppliers } from "../../db/schema.js";
+import { financial_entries, vessels, financial_attachments, notifications, users, clients, financial_categories, financial_suppliers, accounts_receivable, accounts_payable, payments } from "../../db/schema.js";
 import { eq, desc, sql, and, or } from "drizzle-orm";
-import { requireFinanceAccess, requireAdminAccess } from "../middleware/requireFinanceRole.js";
-import { requireAuth } from "../auth.js";
+import { requireAdminAccess } from "../middleware/requireFinanceRole.js";
+import { requireAuth, requirePermission } from "../auth.js";
+import { PERMISSIONS } from "../permissions.js";
 import { serializeFinancialEntry } from "../serializers.js";
 import { 
   calculateFinancialStatus, 
@@ -12,12 +13,69 @@ import {
   generateFinancialCSV,
   notifyFinancialUpdate 
 } from "../../utils/financial-utils.js";
+import { paidAmount, receivableBalance } from "../financial-balance.js";
 
 const router = Router();
 router.use(requireAuth);
+const requireFinanceWrite = requirePermission([PERMISSIONS.FINANCEIRO_ADMINISTRACAO]);
+
+// GET - Resumo financeiro consolidado. Os saldos de recebíveis e pagamentos
+// vêm das mesmas tabelas usadas pelas rotas de propostas e de baixa.
+router.get("/summary", async (_req, res) => {
+  try {
+    const [entries, receivableRows, payableRows] = await Promise.all([
+      db.select().from(financial_entries),
+      db.select().from(accounts_receivable),
+      db.select().from(accounts_payable),
+    ]);
+    const activeReceivables = receivableRows.filter((account) => account.status !== "cancelado");
+    const receivablePayments = await db.select().from(payments).where(eq(payments.ativo, true));
+    const paymentsByAccount = new Map<string, typeof receivablePayments>();
+    for (const payment of receivablePayments) {
+      if (!payment.contaReceberId) continue;
+      const current = paymentsByAccount.get(payment.contaReceberId) || [];
+      current.push(payment);
+      paymentsByAccount.set(payment.contaReceberId, current);
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const balances = activeReceivables.map((account) => ({
+      account,
+      paid: paidAmount(paymentsByAccount.get(account.id) || []),
+      balance: receivableBalance(account.valorOriginal, paymentsByAccount.get(account.id) || []),
+    }));
+    const openPayables = payableRows.filter((account) => account.status !== "cancelado");
+    const payablePayments = entries.filter((entry) => entry.contaPagarId && entry.tipo === "despesa");
+    const payablePaid = new Map<string, number>();
+    for (const entry of payablePayments) payablePaid.set(entry.contaPagarId!, (payablePaid.get(entry.contaPagarId!) || 0) + Number(entry.valor || 0));
+    const payableBalance = (account: typeof payableRows[number]) => Math.max(0, Number(account.valorOriginal || 0) - (payablePaid.get(account.id) || 0));
+    const totalReceived = balances.reduce((sum, item) => sum + item.paid, 0);
+    const totalToReceive = balances.reduce((sum, item) => sum + item.balance, 0);
+    const totalExpenses = entries.filter((entry) => entry.tipo === "despesa" && entry.isStorno !== true).reduce((sum, entry) => sum + Number(entry.valor || 0), 0);
+    res.json({
+      totalBilled: activeReceivables.reduce((sum, account) => sum + Number(account.valorOriginal || 0), 0),
+      totalReceived,
+      totalToReceive,
+      totalExpenses,
+      netProfit: totalReceived - totalExpenses,
+      receivablesCount: activeReceivables.length,
+      pendingReceivablesCount: balances.filter((item) => item.balance > 0.009).length,
+      overdueReceivablesCount: balances.filter((item) => {
+        const dueDate = (item.account as typeof item.account & { vencimento?: string }).vencimento;
+        return item.balance > 0.009 && dueDate && dueDate < today;
+      }).length,
+      payablesOpen: openPayables.reduce((sum, account) => sum + payableBalance(account), 0),
+      payablesPaid: payableRows.reduce((sum, account) => sum + (payablePaid.get(account.id) || 0), 0),
+      payablesOverdueCount: openPayables.filter((account) => payableBalance(account) > 0.009 && account.vencimento && account.vencimento < today).length,
+      payablesCount: payableRows.length,
+    });
+  } catch (error) {
+    console.error("Erro ao carregar resumo financeiro:", error);
+    res.status(500).json({ error: "Não foi possível carregar o resumo financeiro." });
+  }
+});
 
 // GET - Listar todos os lançamentos financeiros
-router.get("/", requireFinanceAccess, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { embarcacaoId, osId, tipo, dataInicio, dataFim, search } = req.query;
     
@@ -53,7 +111,7 @@ router.get("/", requireFinanceAccess, async (req, res) => {
 });
 
 // GET - Exportar CSV
-router.get("/export/csv", requireFinanceAccess, async (req, res) => {
+router.get("/export/csv", requireFinanceWrite, async (req, res) => {
   try {
     const entries = await db.select().from(financial_entries).orderBy(desc(financial_entries.createdAt));
     
@@ -72,10 +130,17 @@ router.get("/export/csv", requireFinanceAccess, async (req, res) => {
 });
 
 // POST - Criar novo lançamento financeiro
-router.post("/", requireFinanceAccess, async (req, res) => {
+router.post("/", requireFinanceWrite, async (req, res) => {
   try {
     const data = req.body;
     const user = (req as any).user;
+
+    if ((data.natureza === "entrada" || data.tipo !== "despesa") && data.contaReceberId) {
+      return res.status(409).json({
+        error: "Baixa vinculada deve usar a conta a receber",
+        message: "Registre pagamentos de proposta pela rota de contas a receber para manter a OS sincronizada.",
+      });
+    }
     
     // Validar valor monetário
     const monetaryValidation = validateMonetaryValue(data.valor);
@@ -157,6 +222,7 @@ router.post("/", requireFinanceAccess, async (req, res) => {
         isStorno: data.isStorno || false,
         stornoReason: data.stornoReason,
         originalPaymentId: data.originalPaymentId,
+        situacaoConciliacao: data.situacaoConciliacao || ((data.natureza || (data.tipo === "despesa" ? "saida" : "entrada")) === "entrada" && data.embarcacaoId ? "requer_conciliacao" : "conciliado"),
         notificationSent: false
       }).returning();
       
@@ -195,15 +261,6 @@ router.post("/", requireFinanceAccess, async (req, res) => {
           .where(eq(financial_entries.id, newEntry.id));
       }
 
-      if (newEntry.embarcacaoId) {
-        await tx.execute(sql`
-          UPDATE vessels SET valor_recebido = (
-            SELECT COALESCE(SUM(valor), 0) FROM financial_entries
-            WHERE embarcacao_id = ${newEntry.embarcacaoId} AND natureza = 'entrada' AND is_storno = FALSE
-          ) WHERE id = ${newEntry.embarcacaoId}
-        `);
-      }
-      
       return newEntry;
     });
     
@@ -226,7 +283,7 @@ router.post("/", requireFinanceAccess, async (req, res) => {
 });
 
 // PUT - Atualizar lançamento financeiro
-router.put("/:id", requireFinanceAccess, async (req, res) => {
+router.put("/:id", requireFinanceWrite, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -241,6 +298,13 @@ router.put("/:id", requireFinanceAccess, async (req, res) => {
       return res.status(404).json({ 
         error: "Não encontrado", 
         message: "Lançamento financeiro não encontrado." 
+      });
+    }
+
+    if (existing.contaReceberId && (data.valor !== undefined || data.tipo !== undefined || data.natureza !== undefined || data.isStorno !== undefined)) {
+      return res.status(409).json({
+        error: "Pagamento vinculado protegido",
+        message: "Altere ou estorne o pagamento pela conta a receber para manter o saldo da OS consistente.",
       });
     }
     
@@ -352,6 +416,13 @@ router.delete("/:id", requireAdminAccess, async (req, res) => {
         message: "Lançamento financeiro não encontrado." 
       });
     }
+
+    if (existing.contaReceberId) {
+      return res.status(409).json({
+        error: "Pagamento vinculado protegido",
+        message: "Pagamentos vinculados não podem ser excluídos pelo histórico financeiro; use estorno auditável.",
+      });
+    }
     
     await db.transaction(async (tx) => {
       // Primeiro excluir anexos (cascade já faria, mas explicitamos)
@@ -376,7 +447,7 @@ router.delete("/:id", requireAdminAccess, async (req, res) => {
 });
 
 // GET - Buscar status financeiro de uma embarcação/OS
-router.get("/status/:id", requireFinanceAccess, async (req, res) => {
+router.get("/status/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { type } = req.query;

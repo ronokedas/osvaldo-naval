@@ -45,7 +45,7 @@ export const NautilusLogo: React.FC<NautilusLogoProps> = ({
       // On dark background header, wrap custom uploaded images in a clean white badge so dark text logos are 100% visible
       return (
         <div className={`flex items-center select-none ${className}`}>
-          <div className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-md border border-white/20 flex items-center justify-center">
+          <div className="logo-badge bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-md border border-white/20 flex items-center justify-center">
             <img
               src={customImg}
               alt={companyName}

@@ -6,11 +6,12 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { documentLibraryAudit, documentLibraryFiles, documentLibraryFolders, users } from "../../db/schema.js";
 import { requireAuth } from "../auth.js";
+import { hasModuleAccess } from "../permissions.js";
 
 const router = Router();
 const libraryDir = path.resolve(process.cwd(), "uploads", "document-library");
 const has = (user: any, permission: string) => user?.role === "admin" || (Array.isArray(user?.permissions) && user.permissions.includes(permission));
-const canAccess = (user: any) => has(user, "documents_access");
+const canAccess = (user: any) => hasModuleAccess(user, "documents");
 const canWriteFolder = (user: any, folder: any) => user?.role === "admin" || folder?.ownerUserId === user?.id;
 const safeFileName = (name: string) => name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").slice(0, 180) || "arquivo";
 

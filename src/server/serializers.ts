@@ -10,6 +10,7 @@ export const serializeUser = (user: any) => ({
   acessoAtivo: user.ativo !== false,
   avatarUrl: user.avatarUrl || undefined,
   permissions: Array.isArray(user.permissions) ? user.permissions : [],
+  themePreference: user.themePreference === "nautilus_dark" ? "nautilus_dark" : "classic",
   createdAt: user.createdAt,
 });
 
@@ -85,6 +86,7 @@ export const OS_STATUS_LABELS: Record<string, string> = {
   exigencia_externa: "Exigência Externa",
   aprovado_externamente: "Aprovado Externamente",
   aguardando_entrega: "Aguardando Entrega",
+  validacao_final: "Validação Final",
   concluida: "Concluída",
   cancelada: "Cancelada",
 };

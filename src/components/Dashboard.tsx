@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry, ServiceOrder } from '../types';
+import { User, Vessel, DocumentTask, Proposal, CriticalPending, FinancialEntry, ServiceOrder, DashboardSummary } from '../types';
 import {
   Ship,
   Clock,
@@ -24,6 +24,9 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { formatDateBR } from '../utils/date-formatters';
+import { hasModuleAccess } from '../access-control';
+
+const hasPerm = (user: User | null | undefined, permission: string) => !!user && (user.role === 'admin' || (user.permissions || []).includes(permission));
 
 interface DashboardProps {
   currentUser: User;
@@ -34,8 +37,9 @@ interface DashboardProps {
   criticalPendings: CriticalPending[];
   financialEntries: FinancialEntry[];
   serviceOrders: ServiceOrder[];
+  summary?: DashboardSummary | null;
   onSelectVessel: (vessel: Vessel) => void;
-  onNavigateTab: (tab: any) => void;
+  onNavigateTab: (destination: { tab: string; serviceOrderStatuses?: string[]; proposalStatuses?: string[]; vesselStatus?: 'aberta' | 'concluida' | 'todos'; financialFilter?: 'pending' }) => void;
   onCreateProposalClick: () => void;
   onCreateCommitmentClick?: () => void;
   onOpenServiceOrder: (orderId: string) => void;
@@ -51,6 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   criticalPendings,
   financialEntries,
   serviceOrders,
+  summary,
   onSelectVessel,
   onNavigateTab,
   onCreateProposalClick,
@@ -66,6 +71,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const openVessels = vessels.filter((v) => v.status === 'aberta');
   const tasksInExecution = tasks.filter((t) => t.status === 'execucao' || t.status === 'em_revisao');
   const tasksWaitingCertifier = tasks.filter((t) => t.status === 'enviado' || t.status === 'exigencia');
+  const metricOpenVessels = summary?.metrics.openVessels ?? openVessels.length;
+  const metricDocumentsInExecution = summary?.metrics.documentsInExecution ?? tasksInExecution.length;
+  const metricAwaitingCertifier = summary?.metrics.awaitingCertifier ?? tasksWaitingCertifier.length;
   const operationalServices = serviceOrders
     .flatMap((order) => (order.servicos || []).map((item) => ({ order, item })))
     .filter(({ item }) => item.status !== 'concluido')
@@ -76,9 +84,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (a.item.status === 'em_execucao' && b.item.status !== 'em_execucao') return -1;
       return 0;
     });
+  const myDeliveryOrders = serviceOrders.filter((order) => {
+    const delivery = order.entregaResumo;
+    return Boolean(delivery?.acaoEntregaPendente && (currentUser.role === 'admin' || delivery.responsavelId === currentUser.id));
+  });
 
   // Financial total to receive
-  const totalToReceive = vessels.reduce((acc, v) => acc + (v.valorTotal - v.valorRecebido), 0);
+  const totalToReceive = summary?.metrics.totalToReceive ?? vessels.reduce((acc, v) => acc + (v.valorTotal - v.valorRecebido), 0);
 
   // Pipeline Stage Calculations
   const pipelineStages = [
@@ -86,63 +98,74 @@ export const Dashboard: React.FC<DashboardProps> = ({
       id: 'propostas',
       title: 'Propostas em Aberto',
       roleOwner: 'Deisy (Comercial)',
-      count: proposals.filter((p) => p.status === 'enviado' || p.status === 'rascunho').length,
+      count: summary?.pipeline.propostas ?? proposals.filter((p) => p.status === 'enviado' || p.status === 'rascunho').length,
       icon: FileText,
       color: 'from-amber-500 to-orange-600',
       description: 'Aguardando aceite do cliente',
       targetTab: 'proposals',
+      targetStatuses: ['enviado', 'rascunho'],
     },
     {
       id: 'vistorias',
       title: 'Vistorias & Ultrassom',
       roleOwner: 'Equipe de Campo',
-      count: serviceOrders.filter((os) => os.status === 'visita_agendada' || os.status === 'vistoria_em_execucao').length,
+      count: summary?.pipeline.vistorias ?? serviceOrders.filter((os) => os.status === 'visita_agendada' || os.status === 'vistoria_em_execucao').length,
       icon: Activity,
       color: 'from-blue-500 to-cyan-600',
       description: 'Medição de espessura e vistorias físicas',
       targetTab: 'service-orders',
+      targetStatuses: ['visita_agendada', 'vistoria_em_execucao'],
     },
     {
       id: 'laudos',
       title: 'Laudos & Desenhos',
       roleOwner: 'Desenhistas / Técnicos',
-      count: serviceOrders.filter((os) => os.status === 'documentacao_em_elaboracao' || os.status === 'revisao_interna').length,
+      count: summary?.pipeline.laudos ?? serviceOrders.filter((os) => os.status === 'documentacao_em_elaboracao' || os.status === 'revisao_interna').length,
       icon: Layers,
       color: 'from-purple-500 to-indigo-600',
       description: 'Elaboração e revisão técnica',
       targetTab: 'service-orders',
+      targetStatuses: ['documentacao_em_elaboracao', 'revisao_interna'],
     },
     {
       id: 'certificadoras',
       title: 'Em Certificadora',
       roleOwner: 'DPC / Capitania / RBNA',
-      count: serviceOrders.filter((os) => ['aguardando_envio_externo', 'em_analise_externa', 'exigencia_externa', 'aprovado_externamente'].includes(os.status)).length,
+      count: summary?.pipeline.certificadoras ?? serviceOrders.filter((os) => ['aguardando_envio_externo', 'em_analise_externa', 'exigencia_externa'].includes(os.status)).length,
       icon: Award,
       color: 'from-indigo-500 to-violet-600',
       description: 'Aguardando chancela ou sanar exigência',
       targetTab: 'service-orders',
+      targetStatuses: ['aguardando_envio_externo', 'em_analise_externa', 'exigencia_externa'],
     },
     {
       id: 'entrega',
       title: 'Aguardando Entrega',
       roleOwner: 'Lucas (Entrega)',
-      count: serviceOrders.filter((os) => os.status === 'aguardando_entrega').length,
+      count: summary?.pipeline.entrega ?? serviceOrders.filter((os) => os.status === 'aguardando_entrega').length,
       icon: Send,
       color: 'from-teal-500 to-emerald-600',
       description: 'Documentos prontos para envio ao cliente',
       targetTab: 'service-orders',
+      targetStatuses: ['aguardando_entrega'],
     },
     {
       id: 'faturamento',
       title: 'Faturamento Pendente',
       roleOwner: 'Financeiro',
-      count: vessels.filter((v) => v.valorTotal > v.valorRecebido).length,
+      count: summary?.pipeline.faturamento ?? vessels.filter((v) => v.valorTotal > v.valorRecebido).length,
       icon: DollarSign,
       color: 'from-emerald-500 to-green-600',
       description: 'Parcelas em aberto por embarcação',
       targetTab: 'financial',
+      targetFilter: 'pending' as const,
     },
   ];
+  const visiblePipelineStages = pipelineStages.filter((stage) => {
+    if (stage.targetTab === 'proposals') return hasModuleAccess(currentUser, 'proposals');
+    if (stage.targetTab === 'financial') return hasModuleAccess(currentUser, 'financial');
+    return hasModuleAccess(currentUser, 'service-orders');
+  });
 
   // Smart Actions Recommendation Generation
   const smartActions = [
@@ -157,7 +180,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         priority: 'alta' as const,
         icon: FileText,
         actionLabel: 'Ver Proposta',
-        onClick: () => onNavigateTab('proposals'),
+        onClick: () => onNavigateTab({ tab: 'proposals', proposalStatuses: ['enviado'] }),
       })),
     ...proposals
       .filter((p) => p.status === 'aprovado' && !serviceOrders.some(os => os.propostaNumero === p.numero))
@@ -170,7 +193,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         priority: 'alta' as const,
         icon: Plus,
         actionLabel: 'Ver Proposta',
-        onClick: () => onNavigateTab('proposals'),
+        onClick: () => onNavigateTab({ tab: 'proposals', proposalStatuses: ['aprovado'] }),
       })),
     ...serviceOrders
       .filter((os) => os.status === 'exigencia_externa')
@@ -184,12 +207,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         icon: AlertTriangle,
         actionLabel: 'Ver OS',
         onClick: () => {
-          onNavigateTab('service-orders');
+          onNavigateTab({ tab: 'service-orders', serviceOrderStatuses: ['exigencia_externa'] });
           onOpenServiceOrder(os.id);
         },
       })),
     ...serviceOrders
-      .filter((os) => os.status === 'aguardando_entrega')
+      .filter((os) => os.entregaResumo?.acaoEntregaPendente)
       .map((os) => ({
         id: `act-os-pronto-${os.id}`,
         title: `Entregar documento final da OS ${os.numero}`,
@@ -200,36 +223,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
         icon: Send,
         actionLabel: 'Fazer Entrega',
         onClick: () => {
-          onNavigateTab('service-orders');
+          onNavigateTab({ tab: 'service-orders', serviceOrderStatuses: ['aguardando_entrega'] });
           onOpenServiceOrder(os.id);
         },
       })),
-    ...vessels
+    ...(summary?.financialPendencies || vessels
       .filter((v) => v.status === 'aberta' && v.valorTotal - v.valorRecebido > 0)
+      .map((v) => ({ vesselId: v.id, vesselName: v.nome, balance: v.valorTotal - v.valorRecebido })))
       .slice(0, 3)
-      .map((v) => ({
-        id: `act-vessel-fin-${v.id}`,
-        title: `Cobrar/Faturar parcela de ${v.nome}`,
-        subtitle: `Saldo pendente: R$ ${(v.valorTotal - v.valorRecebido).toLocaleString('pt-BR')}`,
+      .map((item) => ({
+        id: `act-vessel-fin-${item.vesselId || item.vesselName}`,
+        title: `Cobrar/Faturar parcela de ${item.vesselName}`,
+        subtitle: `Saldo pendente: R$ ${item.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
         role: 'financeiro',
         tag: 'Financeiro',
         priority: 'media' as const,
         icon: DollarSign,
         actionLabel: 'Ver Financeiro',
-        onClick: () => onNavigateTab('financial'),
+        onClick: () => onNavigateTab({ tab: 'financial', financialFilter: 'pending' }),
       })),
   ];
 
-  const filteredSmartActions = smartActions.filter((act) => {
-    if (roleFilter === 'all') return true;
-    return act.role === roleFilter;
-  });
+  const visibleSmartActions = currentUser.role === 'tecnico'
+    ? smartActions.filter((act) => act.role === 'tecnico' || (act.role === 'entrega' && hasPerm(currentUser, 'executar_entregas')))
+    : smartActions;
+  const filteredSmartActions = visibleSmartActions.filter((act) => roleFilter === 'all' || act.role === roleFilter);
 
   // Chart Data Preparation
   const chartData = vessels.slice(0, 6).map(v => ({
     name: v.nome.split(' ')[0], // Short name
     Recebido: v.valorRecebido,
     Pendente: v.valorTotal - v.valorRecebido,
+  }));
+
+  const teamWorkload = summary?.teamWorkload || users.map((user) => ({
+    userId: user.id,
+    nome: user.nome,
+    cargo: user.cargo,
+    avatarUrl: user.avatarUrl,
+    activeItems: tasks.filter((task) => task.responsavelId === user.id && task.status !== 'baixado').length,
   }));
 
   // Status Badge color styling helper
@@ -274,29 +306,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {currentUser.role !== 'tecnico' && (
+        {(hasModuleAccess(currentUser, 'proposals') || hasModuleAccess(currentUser, 'commitments')) && (
           <div className="flex flex-wrap gap-3">
-          <button
+          {hasModuleAccess(currentUser, 'proposals') && hasPerm(currentUser, 'cadastrar_clientes_embarcacoes_propostas') && <button
             onClick={onCreateProposalClick}
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 transition cursor-pointer"
           >
             <Plus className="w-5 h-5" />
             Nova Proposta
-          </button>
-          {onCreateCommitmentClick && <button onClick={onCreateCommitmentClick} className="inline-flex items-center gap-2 rounded-xl bg-white border border-blue-200 px-4 py-3 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50">
+          </button>}
+          {hasModuleAccess(currentUser, 'commitments') && onCreateCommitmentClick && currentUser.role === 'admin' && <button onClick={onCreateCommitmentClick} className="inline-flex items-center gap-2 rounded-xl bg-white border border-blue-200 px-4 py-3 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50">
             <BellRing className="w-5 h-5" /> Novo compromisso
           </button>}
           </div>
         )}
       </div>
 
-      <section className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
+      {hasModuleAccess(currentUser, 'service-orders') && <section className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#0B192C]"><Clock className="h-5 w-5 text-blue-600" /> {currentUser.role === 'admin' ? 'Controle dos serviços das OS' : 'Minhas Ordens de Serviço'}</h2>
             <p className="mt-1 text-xs text-slate-500">{currentUser.role === 'admin' ? 'Acompanhe atribuições e serviços em execução pela equipe.' : 'Serviços atribuídos a você aparecem aqui até serem concluídos.'}</p>
           </div>
-          <button onClick={() => onNavigateTab('service-orders')} className="self-start rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">Ver todas as OS</button>
+          <button onClick={() => onNavigateTab({ tab: 'service-orders' })} className="self-start rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">Ver todas as OS</button>
         </div>
         {operationalServices.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-5 text-center text-sm text-slate-500">Nenhum serviço ativo atribuído no momento.</div>
@@ -329,65 +361,72 @@ export const Dashboard: React.FC<DashboardProps> = ({
             })}
           </div>
         )}
-      </section>
+      </section>}
+
+      {hasPerm(currentUser, 'executar_entregas') && (
+        <section className="rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 text-lg font-extrabold text-orange-950"><Send className="h-5 w-5 text-orange-600" /> Minhas entregas</h2><p className="mt-1 text-xs text-orange-800">Documentos finais aprovados que aguardam sua remessa ao cliente.</p></div><span className="rounded-full bg-orange-600 px-3 py-1 text-xs font-bold text-white">{myDeliveryOrders.length} pendente(s)</span></div>
+          {myDeliveryOrders.length === 0 ? <p className="rounded-xl border border-dashed border-orange-200 bg-white/70 p-4 text-center text-sm text-slate-500">Nenhuma entrega atribuída no momento.</p> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{myDeliveryOrders.map((order) => <button key={order.id} onClick={() => onOpenServiceOrder(order.id)} className="rounded-xl border border-orange-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-400 hover:shadow"><p className="font-mono text-xs font-black text-orange-700">{order.numero}</p><p className="mt-1 font-bold text-slate-900">{order.embarcacaoNome || 'Embarcação'}</p><p className="mt-1 text-xs text-slate-500">{order.clienteNome || 'Cliente não informado'}</p><span className="mt-3 inline-block rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white">Abrir e registrar remessa</span></button>)}</div>}
+        </section>
+      )}
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1 */}
-        <div 
-          onClick={() => onNavigateTab('vessels')}
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        {hasModuleAccess(currentUser, 'vessels') && <button type="button"
+        onClick={() => onNavigateTab({ tab: 'vessels', vesselStatus: 'aberta' })}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 text-left cursor-pointer hover:border-blue-300 hover:shadow-md hover:bg-slate-50 transition-all group"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
               <Ship className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-2xl font-black text-slate-900 font-mono">{openVessels.length}</p>
+              <p className="text-2xl font-black text-slate-900 font-mono">{metricOpenVessels}</p>
               <p className="text-xs text-slate-500 font-medium group-hover:text-blue-600 transition-colors">embarcações abertas</p>
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
-        </div>
+        </button>}
 
         {/* Metric 2 */}
-        <div 
-          onClick={() => onNavigateTab('tasks')}
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-emerald-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        {hasModuleAccess(currentUser, 'service-orders') && <button type="button"
+        onClick={() => onNavigateTab({ tab: 'service-orders', serviceOrderStatuses: ['documentacao_em_elaboracao', 'revisao_interna'] })}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 text-left cursor-pointer hover:border-emerald-300 hover:shadow-md hover:bg-slate-50 transition-all group"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
               <Clock className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-2xl font-black text-slate-900 font-mono">{tasksInExecution.length}</p>
+              <p className="text-2xl font-black text-slate-900 font-mono">{metricDocumentsInExecution}</p>
               <p className="text-xs text-slate-500 font-medium group-hover:text-emerald-600 transition-colors">documentos em execução</p>
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 transition-colors shrink-0" />
-        </div>
+        </button>}
 
         {/* Metric 3 */}
-        <div 
-          onClick={() => onNavigateTab('tasks')}
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-indigo-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        {hasModuleAccess(currentUser, 'service-orders') && <button type="button"
+        onClick={() => onNavigateTab({ tab: 'service-orders', serviceOrderStatuses: ['aguardando_envio_externo', 'em_analise_externa', 'exigencia_externa'] })}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 text-left cursor-pointer hover:border-indigo-300 hover:shadow-md hover:bg-slate-50 transition-all group"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
               <Award className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-2xl font-black text-slate-900 font-mono">{tasksWaitingCertifier.length}</p>
+              <p className="text-2xl font-black text-slate-900 font-mono">{metricAwaitingCertifier}</p>
               <p className="text-xs text-slate-500 font-medium group-hover:text-indigo-600 transition-colors">aguardando certificadora</p>
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
-        </div>
+        </button>}
 
         {/* Metric 4 */}
-        <div 
-          onClick={() => onNavigateTab('financial')}
-          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 cursor-pointer hover:border-teal-300 hover:shadow-md hover:bg-slate-50 transition-all group"
+        {hasModuleAccess(currentUser, 'financial') && <button type="button"
+        onClick={() => onNavigateTab({ tab: 'financial', financialFilter: 'pending' })}
+          className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4 text-left cursor-pointer hover:border-teal-300 hover:shadow-md hover:bg-slate-50 transition-all group"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
@@ -401,7 +440,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-teal-500 transition-colors shrink-0" />
-        </div>
+        </button>}
       </div>
 
       {/* Main Content Layout: Table + Right Side Widgets */}
@@ -464,17 +503,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {activeTabMode === 'pipeline' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {pipelineStages.map((stage) => {
+                  {visiblePipelineStages.map((stage) => {
                     const Icon = stage.icon;
                     const isSelected = selectedPipelineStage === stage.id;
 
                     return (
-                      <div
+                      <button type="button"
                         key={stage.id}
-                        onClick={() => {
-                          setSelectedPipelineStage(isSelected ? null : stage.id);
-                        }}
-                        className={`p-4 rounded-xl border transition cursor-pointer relative overflow-hidden group ${
+                        onClick={() => onNavigateTab({
+                          tab: stage.targetTab,
+                          serviceOrderStatuses: stage.targetTab === 'service-orders' ? stage.targetStatuses : undefined,
+                          proposalStatuses: stage.targetTab === 'proposals' ? stage.targetStatuses : undefined,
+                          financialFilter: stage.targetTab === 'financial' ? 'pending' : undefined,
+                        })}
+                        className={`p-4 rounded-xl border text-left transition cursor-pointer relative overflow-hidden group ${
                           isSelected
                             ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
                             : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50/80'
@@ -500,14 +542,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <span>{stage.description}</span>
                           <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
 
                 {/* Sub-Panel when clicking a stage */}
                 {selectedPipelineStage && (() => {
-                  const stage = pipelineStages.find((s) => s.id === selectedPipelineStage);
+                  const stage = visiblePipelineStages.find((s) => s.id === selectedPipelineStage);
                   const isOpenProposals = selectedPipelineStage === 'propostas';
                   const openProposalsList = isOpenProposals 
                     ? proposals.filter((p) => p.status === 'enviado' || p.status === 'rascunho')
@@ -526,7 +568,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {!isOpenProposals && (
                           <button
                             onClick={() =>
-                              onNavigateTab(stage?.targetTab)
+                              onNavigateTab({
+                                tab: (stage?.targetTab || 'service-orders') as string,
+                                serviceOrderStatuses: stage?.targetStatuses,
+                                proposalStatuses: stage?.targetTab === 'proposals' ? stage?.targetStatuses : undefined,
+                                financialFilter: stage?.targetTab === 'financial' ? 'pending' : undefined,
+                              })
                             }
                             className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
                           >
@@ -542,7 +589,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               key={proposal.id}
                               onClick={() => {
                                 // Navigate to proposals tab and select this proposal
-                                onNavigateTab('proposals');
+                                onNavigateTab({ tab: 'proposals', proposalStatuses: ['enviado', 'rascunho'] });
                                 // Dispatch custom event to open the specific proposal
                                 window.dispatchEvent(new CustomEvent('open-proposal', { detail: proposal.id }));
                               }}
@@ -712,7 +759,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <p className="text-xs text-slate-500">Acompanhe responsáveis, prazos e certificadoras.</p>
             </div>
             <button
-              onClick={() => onNavigateTab('vessels')}
+              onClick={() => onNavigateTab({ tab: 'vessels', vesselStatus: 'todos' })}
               className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
             >
               Ver todas <ArrowRight className="w-3.5 h-3.5" />
@@ -813,13 +860,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 const fiveDaysFromNow = new Date(today);
                 fiveDaysFromNow.setDate(today.getDate() + 5);
 
-                const upcomingTasks = tasks
-                  .filter(t => t.status !== 'baixado' && t.prazo)
-                  .filter(t => {
-                    const prazoDate = new Date(t.prazo + 'T00:00:00'); // Assuming YYYY-MM-DD
-                    return prazoDate >= today && prazoDate <= fiveDaysFromNow;
-                  })
-                  .sort((a, b) => new Date(a.prazo + 'T00:00:00').getTime() - new Date(b.prazo + 'T00:00:00').getTime());
+                const upcomingTasks = summary
+                  ? summary.deadlines.map((deadline) => ({
+                      ...deadline,
+                      embarcacaoNome: serviceOrders.find((order) => order.id === deadline.osId)?.embarcacaoNome || 'Embarcação não informada',
+                      responsavelNome: users.find((user) => user.id === deadline.responsavelId)?.nome || 'A definir',
+                    }))
+                  : tasks
+                      .filter(t => t.status !== 'baixado' && t.prazo)
+                      .filter(t => {
+                        const prazoDate = new Date(t.prazo + 'T00:00:00');
+                        return prazoDate >= today && prazoDate <= fiveDaysFromNow;
+                      })
+                      .sort((a, b) => new Date(a.prazo + 'T00:00:00').getTime() - new Date(b.prazo + 'T00:00:00').getTime());
 
                 if (upcomingTasks.length === 0) {
                   return (
@@ -849,7 +902,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   }
 
                   return (
-                    <div key={t.id} className={`p-3 rounded-xl border ${colorClass} space-y-1 text-xs`}>
+                      <div key={t.id} className={`p-3 rounded-xl border ${colorClass} space-y-1 text-xs`}>
                       <div className="flex items-center justify-between">
                         <span className="font-bold truncate pr-2" title={t.titulo}>{t.titulo}</span>
                         <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap ${tagClass}`}>
@@ -877,7 +930,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </h3>
               {currentUser.role === 'admin' && (
                 <button
-                  onClick={() => onNavigateTab('team')}
+                  onClick={() => onNavigateTab({ tab: 'team' })}
                   className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
                 >
                   Ver equipe
@@ -886,12 +939,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div className="space-y-3">
-              {users.map((u) => {
-                const userTasksCount = tasks.filter((t) => t.responsavelId === u.id && t.status !== 'baixado').length;
-                const activePercentage = Math.min(100, Math.max(20, userTasksCount * 20));
+              {teamWorkload.map((u) => {
+                const userTasksCount = u.activeItems;
 
                 return (
-                  <div key={u.id} className="flex items-center justify-between gap-3 text-xs">
+                  <div key={u.userId} className="flex items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2 overflow-hidden">
                       <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 font-bold text-blue-900 flex items-center justify-center shrink-0 overflow-hidden">
                         {u.avatarUrl ? (

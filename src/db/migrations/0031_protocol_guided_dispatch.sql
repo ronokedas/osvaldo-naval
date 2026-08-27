@@ -1,0 +1,12 @@
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "situacao" text NOT NULL DEFAULT 'rascunho';
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "comprovante_url" text;
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "comprovante_nome" text;
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "email_destinatario" text;
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "email_message_id" text;
+ALTER TABLE "protocol_dispatches" ADD COLUMN IF NOT EXISTS "enviado_em" timestamp;
+ALTER TABLE "certifiers" ADD COLUMN IF NOT EXISTS "portal_url" text;
+ALTER TABLE "certifiers" ADD COLUMN IF NOT EXISTS "setor_destinatario" text;
+ALTER TABLE "certifiers" ADD COLUMN IF NOT EXISTS "endereco" text;
+ALTER TABLE "certifiers" ADD COLUMN IF NOT EXISTS "canal_preferencial" text;
+ALTER TABLE "certifiers" ADD COLUMN IF NOT EXISTS "instrucoes_protocolo" text;
+UPDATE "protocol_dispatches" SET "situacao" = CASE WHEN "protocolo_id" IN (SELECT id FROM protocols WHERE status IN ('aguardando_analise','correcao_enviada','aprovado','exigencia_recebida','correcao_em_elaboracao')) THEN 'legado_sem_comprovante' ELSE 'rascunho' END WHERE "situacao" = 'rascunho';

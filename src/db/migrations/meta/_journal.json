@@ -134,6 +134,53 @@
       "when": 1787659200000,
       "tag": "0024_security_hardening",
       "breakpoints": true
-    }
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787662800000,
+      "tag": "0025_integrated_protocol_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787666400000,
+      "tag": "0026_backfill_integrated_protocol_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787752800000,
+      "tag": "0027_unify_receivable_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787756400000,
+      "tag": "0028_normalize_receivable_payment_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787760000000,
+      "tag": "0029_financial_reconciliation_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787763600000,
+      "tag": "0030_reconcile_new_unlinked_income",
+      "breakpoints": true
+    },
+    {"idx":25,"version":"7","when":1787767200000,"tag":"0031_protocol_guided_dispatch","breakpoints":true},
+    {"idx":26,"version":"7","when":1787770800000,"tag":"0032_delivery_final_validation","breakpoints":true},
+    {"idx":27,"version":"7","when":1787774400000,"tag":"0033_assign_delivery_roles","breakpoints":true},
+    {"idx":28,"version":"7","when":1787778000000,"tag":"0034_delivery_supplemental_documents","breakpoints":true},
+    {"idx":29,"version":"7","when":1787781600000,"tag":"0035_user_theme_preference","breakpoints":true}
   ]
 }

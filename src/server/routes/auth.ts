@@ -79,4 +79,34 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
+router.put("/me", requireAuth, async (req: any, res) => {
+  try {
+    const nome = String(req.body?.nome || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!nome) return res.status(400).json({ error: "O nome é obrigatório." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)) return res.status(400).json({ error: "Informe um e-mail válido." });
+
+    const themePreference = req.body?.themePreference;
+    if (themePreference !== undefined && themePreference !== "classic" && themePreference !== "nautilus_dark") {
+      return res.status(400).json({ error: "Tema inválido." });
+    }
+    const updateData: Record<string, unknown> = {
+      nome,
+      email,
+      cargo: String(req.body?.cargo || "").trim(),
+      avatarUrl: req.body?.avatarUrl ?? null,
+      updatedAt: new Date(),
+    };
+    if (themePreference !== undefined) updateData.themePreference = themePreference;
+    if (req.body?.senha) updateData.senha = await argon2.hash(String(req.body.senha));
+
+    const updated = await db.update(users).set(updateData).where(eq(users.id, req.user.id)).returning();
+    res.json(serializeUser(updated[0]));
+  } catch (error) {
+    if ((error as any)?.code === "23505") return res.status(409).json({ error: "Este e-mail já está cadastrado." });
+    console.error("Profile update error:", error);
+    res.status(500).json({ error: "Não foi possível atualizar o perfil." });
+  }
+});
+
 export default router;

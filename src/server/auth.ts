@@ -1,7 +1,8 @@
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import { userHasPermission, Permission } from "./permissions.js";
+import { hasModuleAccess, userHasPermission, Permission } from "./permissions.js";
+import type { ModuleId } from "../access-control.js";
 
 export const requireAuth = async (req: any, res: any, next: any) => {
   if (!req.session?.userId) {
@@ -57,6 +58,36 @@ export const requirePermission = (perms: Permission[]) => {
       req.user = user;
       next();
     } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  };
+};
+
+export const requireModuleAccess = (module: ModuleId) => {
+  return async (req: any, res: any, next: any) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const user = (await db.select().from(users).where(eq(users.id, req.session.userId)))[0];
+      if (!user || user.ativo === false) return res.status(401).json({ error: "Unauthorized" });
+      if (!hasModuleAccess(user, module)) return res.status(403).json({ error: "Você não tem acesso a este módulo." });
+      req.user = user;
+      next();
+    } catch {
+      res.status(500).json({ error: "Server error" });
+    }
+  };
+};
+
+export const requireAnyModuleAccess = (modules: ModuleId[]) => {
+  return async (req: any, res: any, next: any) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const user = (await db.select().from(users).where(eq(users.id, req.session.userId)))[0];
+      if (!user || user.ativo === false) return res.status(401).json({ error: "Unauthorized" });
+      if (!modules.some((module) => hasModuleAccess(user, module))) return res.status(403).json({ error: "Você não tem acesso a este módulo." });
+      req.user = user;
+      next();
+    } catch {
       res.status(500).json({ error: "Server error" });
     }
   };

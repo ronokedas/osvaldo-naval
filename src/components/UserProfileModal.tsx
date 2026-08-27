@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { User } from '../types';
+import { ThemePreference, User } from '../types';
+import { THEME_PREFERENCES, applyThemePreference } from '../theme';
 import { isValidEmail } from '../utils/input-formatters';
 import {
   User as UserIcon,
@@ -19,24 +20,29 @@ import {
 
 interface UserProfileModalProps {
   currentUser: User;
-  onSaveProfile: (updatedFields: Partial<User>) => void;
+  onSaveProfile: (updatedFields: Partial<User>) => Promise<void>;
   onClose: () => void;
+  onPreviewTheme?: (theme: ThemePreference) => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   currentUser,
   onSaveProfile,
   onClose,
+  onPreviewTheme,
 }) => {
   const [nome, setNome] = useState(currentUser.nome);
   const [email, setEmail] = useState(currentUser.email);
   const [cargo, setCargo] = useState(currentUser.cargo);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(currentUser.avatarUrl);
-  const [novaSenha, setNovaSenha] = useState(currentUser.senha || '');
-  const [confirmarSenha, setConfirmarSenha] = useState(currentUser.senha || '');
+  const [themePreference, setThemePreference] = useState<ThemePreference>(currentUser.themePreference || 'classic');
+  const initialThemePreference = currentUser.themePreference || 'classic';
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
   
   const [showPassword, setShowPassword] = useState(false);
   const [isSavedToast, setIsSavedToast] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -65,7 +71,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   };
 
   // Handle Submit Form
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -84,19 +90,28 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       return;
     }
 
-    onSaveProfile({
-      nome: nome.trim(),
-      email: email.trim(),
-      cargo: cargo.trim(),
-      avatarUrl: avatarUrl,
-      senha: novaSenha ? novaSenha : currentUser.senha,
-    });
+    try {
+      setIsSaving(true);
+      await onSaveProfile({
+        nome: nome.trim(),
+        email: email.trim(),
+        cargo: cargo.trim(),
+        avatarUrl,
+        themePreference,
+        ...(novaSenha ? { senha: novaSenha } : {}),
+      });
+      setIsSavedToast(true);
+      setTimeout(onClose, 900);
+    } catch (error: any) {
+      setErrorMessage(error?.message || 'Não foi possível salvar o perfil.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-    setIsSavedToast(true);
-    setTimeout(() => {
-      setIsSavedToast(false);
-      onClose();
-    }, 1500);
+  const handleClose = () => {
+    applyThemePreference(initialThemePreference);
+    onClose();
   };
 
   return (
@@ -116,7 +131,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition cursor-pointer"
             title="Fechar"
           >
@@ -185,6 +200,48 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               />
             </div>
           </div>
+
+          <section className="theme-preference-section" aria-labelledby="theme-preference-title">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 id="theme-preference-title" className="text-sm font-bold text-[#0B192C]">Aparência</h3>
+                <p className="text-xs text-slate-500 mt-1">Escolha o visual da sua conta. A alteração será aplicada ao sistema inteiro.</p>
+              </div>
+              <ShieldCheck className="w-5 h-5 text-cyan-600 shrink-0" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {THEME_PREFERENCES.map((option) => {
+                const selected = themePreference === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setThemePreference(option.id);
+                      onPreviewTheme?.(option.id);
+                    }}
+                    className={`theme-option ${selected ? 'theme-option-selected' : ''}`}
+                  >
+                    <span className={`theme-option-preview theme-option-preview-${option.id}`} aria-hidden="true">
+                      <span className="theme-preview-line" />
+                      <span className="theme-preview-panel" />
+                      <span className="theme-preview-panel theme-preview-panel-small" />
+                    </span>
+                    <span className="flex items-start gap-2 text-left">
+                      <span className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-cyan-500' : 'border-slate-300'}`}>
+                        {selected && <span className="h-2 w-2 rounded-full bg-cyan-500" />}
+                      </span>
+                      <span>
+                        <span className="block text-xs font-bold text-slate-800">{option.label}</span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">{option.description}</span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           {/* Form Fields Grid */}
           <div className="space-y-4">
@@ -255,6 +312,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
                       value={novaSenha}
                       onChange={(e) => setNovaSenha(e.target.value)}
                       placeholder="Sua nova senha"
@@ -273,9 +331,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 {/* Confirmar Senha */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Confirmar Senha:</label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={confirmarSenha}
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={confirmarSenha}
                     onChange={(e) => setConfirmarSenha(e.target.value)}
                     placeholder="Repita a nova senha"
                     className="w-full bg-slate-50 border border-slate-300 focus:border-blue-500 focus:bg-white rounded-xl p-2.5 text-xs font-medium text-slate-800 focus:outline-none transition"
@@ -297,7 +356,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <div className="border-t border-slate-200 pt-4 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
               Cancelar
@@ -305,7 +364,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
             <button
               type="submit"
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+              disabled={isSaving}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
             >
               {isSavedToast ? (
                 <>
@@ -315,7 +375,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Salvar Alterações</span>
+                  <span>{isSaving ? 'Salvando…' : 'Salvar Alterações'}</span>
                 </>
               )}
             </button>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { User } from '../types';
+import { hasModuleAccess, ModuleId } from '../access-control';
 import {
   LayoutDashboard,
   Ship,
@@ -69,65 +70,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Ship,
       roles: ['admin', 'financeiro', 'tecnico'],
     },
-    { id: 'registrations' as TabType, label: 'Cadastros', icon: ContactRound, roles: ['admin', 'financeiro'] },
+    { id: 'registrations' as TabType, label: 'Cadastros', icon: ContactRound, module: 'registrations' as ModuleId },
     {
       id: 'commitments' as TabType,
       label: 'Pendências e Compromissos',
       icon: BellRing,
-      roles: ['admin', 'financeiro', 'tecnico'],
+      module: 'commitments' as ModuleId,
     },
     {
       id: 'tasks' as TabType,
       label: currentUser.role === 'tecnico' ? 'Minhas Tarefas' : 'Tarefas da Equipe',
       icon: CheckSquare,
       badge: myTasksCount > 0 ? myTasksCount : undefined,
-      roles: [],
+      module: 'tasks' as ModuleId,
     },
     {
       id: 'proposals' as TabType,
       label: 'Propostas',
       icon: FileText,
-      roles: ['admin', 'financeiro'],
+      module: 'proposals' as ModuleId,
     },
     {
       id: 'renewals' as TabType,
       label: 'Renovações Anuais',
       icon: CalendarClock,
-      roles: ['admin', 'financeiro'],
+      module: 'renewals' as ModuleId,
     },
     {
       id: 'service-orders' as TabType,
       label: 'Ordens de Serviço',
       icon: ClipboardList,
-      roles: ['admin', 'financeiro', 'tecnico'],
+      module: 'service-orders' as ModuleId,
     },
     {
       id: 'financial' as TabType,
       label: 'Financeiro',
       icon: DollarSign,
-      roles: ['admin', 'financeiro'],
+      module: 'financial' as ModuleId,
     },
     {
       id: 'protocols' as TabType,
       label: 'Protocolos & Entregas',
       icon: Send,
-      roles: ['admin', 'financeiro', 'tecnico'],
+      module: 'protocols' as ModuleId,
     },
     {
       id: 'documents' as TabType,
       label: 'Documentos',
       icon: Search,
-      roles: currentUser.role === 'admin' || currentUser.permissions?.includes('documents_access') ? [currentUser.role] : [],
+      module: 'documents' as ModuleId,
     },
     {
       id: 'settings' as TabType,
       label: 'Configurações do Sistema',
       icon: Settings,
-      roles: ['admin', 'financeiro', 'tecnico'],
+      module: 'settings' as ModuleId,
     },
   ];
 
-  const filteredItems = navItems.filter((item) => item.roles.includes(currentUser.role));
+  const filteredItems = navItems.filter((item) => !item.module || hasModuleAccess(currentUser, item.module));
 
   const handleNavClick = (tab: TabType) => {
     onSelectTab(tab);
