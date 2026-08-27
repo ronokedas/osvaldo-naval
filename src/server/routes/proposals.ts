@@ -250,8 +250,15 @@ router.post("/:id/send-email", requireCommercialAccess, async (req: any, res: an
     if (propList.length === 0) return res.status(404).json({ error: "Proposta não encontrada" });
     const prop = propList[0];
 
-    if (!data.destinatarioEmail) {
-      return res.status(400).json({ error: "Destinatário de e-mail é obrigatório" });
+    const vessel = prop.embarcacaoId
+      ? (await db.select().from(vessels).where(eq(vessels.id, prop.embarcacaoId)))[0]
+      : null;
+    const client = vessel?.clienteId
+      ? (await db.select().from(clients).where(eq(clients.id, vessel.clienteId)))[0]
+      : null;
+    const recipientEmail = String(data.destinatarioEmail || client?.email || vessel?.emailContato || "").trim();
+    if (!recipientEmail) {
+      return res.status(422).json({ error: "O cliente proprietário da embarcação não possui e-mail cadastrado." });
     }
 
     const pdfs = Array.isArray(data.pdfs) && data.pdfs.length
@@ -267,7 +274,7 @@ router.post("/:id/send-email", requireCommercialAccess, async (req: any, res: an
     const message = data.mensagem || `Prezado(a), segue em anexo a proposta ${prop.numero} referente à embarcação ${prop.embarcacaoNome}.`;
 
     const result = await sendEmail({
-      to: data.destinatarioEmail,
+      to: recipientEmail,
       subject,
       text: message,
       attachments: pdfs.map((pdf: any, index: number) => {
@@ -285,7 +292,7 @@ router.post("/:id/send-email", requireCommercialAccess, async (req: any, res: an
     await db.insert(proposal_deliveries).values({
       propostaId: id,
       canal: "email",
-      destinatario: data.destinatarioEmail,
+      destinatario: recipientEmail,
       status: result.ok ? "enviado" : "falha",
       erro: result.ok ? undefined : result.error,
       usuarioId: req.user?.id,

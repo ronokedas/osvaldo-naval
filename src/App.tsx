@@ -144,6 +144,7 @@ export default function App() {
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasks, setTasks] = useState<DocumentTask[]>([]);
+  const [agendaTodayCount, setAgendaTodayCount] = useState(0);
   const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>([]);
   const [receivables, setReceivables] = useState<AccountReceivable[]>([]);
   const [criticalPendings, setCriticalPendings] = useState<CriticalPending[]>([]);
@@ -257,16 +258,16 @@ export default function App() {
       const emptyResponse = (body: string) => Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
       const [vRes, clRes, pRes, tRes, fRes, arRes, prRes, cRes, emRes, sigRes, logRes, dashboardRes, financialSummaryRes] = await Promise.all([
         can('vessels') || can('registrations') || can('proposals') || can('renewals') ? fetch('/api/vessels') : emptyResponse('[]'),
-        can('registrations') || can('vessels') || can('proposals') || can('renewals') ? fetch('/api/clients') : emptyResponse('[]'),
+        can('registrations') || can('vessels') || can('proposals') || can('renewals') ? fetch('/api/clients', { cache: 'no-store' }) : emptyResponse('[]'),
         can('proposals') ? fetch('/api/proposals') : emptyResponse('[]'),
         can('tasks') ? fetch('/api/tasks') : emptyResponse('[]'),
         can('financial') ? fetch('/api/finance') : emptyResponse('[]'),
         can('financial') ? fetch('/api/receivables') : emptyResponse('[]'),
         can('protocols') ? fetch('/api/protocols') : emptyResponse('[]'),
         can('commitments') ? fetch('/api/critical-pendings') : emptyResponse('[]'),
-        currentUser.role === 'admin' ? fetch('/api/settings/email') : emptyResponse('{}'),
-        currentUser.role === 'admin' ? fetch('/api/settings/signature') : emptyResponse('{}'),
-        currentUser.role === 'admin' ? fetch('/api/settings/logo') : emptyResponse('{}'),
+        currentUser.role === 'admin' ? fetch('/api/settings/email', { cache: 'no-store' }) : emptyResponse('{}'),
+        currentUser.role === 'admin' ? fetch('/api/settings/signature', { cache: 'no-store' }) : emptyResponse('{}'),
+        currentUser.role === 'admin' ? fetch('/api/settings/logo', { cache: 'no-store' }) : emptyResponse('{}'),
         fetch('/api/dashboard/summary'),
         can('financial') ? fetch('/api/finance/summary') : emptyResponse('{}'),
       ]);
@@ -325,6 +326,27 @@ export default function App() {
       fetchData(false);
     }
   }, [activeTab, currentUser, fetchData]);
+
+  useEffect(() => {
+    if (!currentUser || !hasModuleAccess(currentUser, 'tasks')) {
+      setAgendaTodayCount(0);
+      return;
+    }
+    let cancelled = false;
+    const fetchAgendaSummary = async () => {
+      try {
+        const response = await fetch('/api/tasks/agenda?period=today&page=1&limit=1');
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (!cancelled) setAgendaTodayCount(Number(data.counts?.todayPending) || 0);
+      } catch (error) {
+        console.error('Erro ao carregar contador da agenda:', error);
+      }
+    };
+    fetchAgendaSummary();
+    const interval = window.setInterval(fetchAgendaSummary, 30000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser || !hasModuleAccess(currentUser, 'service-orders')) {
@@ -726,10 +748,7 @@ export default function App() {
     apiPut(`/api/protocols/${id}`, updatedFields);
   };
 
-  // Count active tasks assigned to current user
-  const myTasksCount = tasks.filter(
-    (t) => t.responsavelId === currentUser?.id && t.status !== 'baixado'
-  ).length;
+  const myTasksCount = agendaTodayCount;
 
   const handleUpdateProfile = async (updatedFields: Partial<User>) => {
     const updatedUser = await apiPut('/api/auth/me', updatedFields);
@@ -754,9 +773,10 @@ export default function App() {
     return result.temporaryPassword as string;
   };
 
-  const handleUpdateEmailConfig = (config: EmailConfig) => {
-    setEmailConfig(config);
-    apiPut('/api/settings/email', config);
+  const handleUpdateEmailConfig = async (config: EmailConfig) => {
+    const saved = await apiPut('/api/settings/email', config);
+    setEmailConfig(saved);
+    return saved as EmailConfig;
   };
 
   const handleUpdateSignatureConfig = (config: SignatureConfig) => {
@@ -776,9 +796,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetEmail }),
       });
-      return await res.json();
+      const data = await res.json().catch(() => ({}));
+      return res.ok
+        ? { ok: true, message: data.message || 'E-mail de teste enviado com sucesso.' }
+        : { ok: false, message: data.error || 'Não foi possível enviar o e-mail de teste.' };
     } catch (e: any) {
-      return { ok: false, error: e?.message || 'Erro ao testar SMTP' };
+      return { ok: false, message: e?.message || 'Erro ao testar SMTP' };
     }
   };
 
@@ -1076,11 +1099,10 @@ export default function App() {
 
           {activeTab === 'tasks' && (
             <LazyMyTasks
-              tasks={tasks}
               currentUser={currentUser}
-              onUpdateTaskStatus={handleUpdateTaskStatus}
-              onUploadTaskFile={handleUploadTaskFile}
-              onAddTaskNote={handleAddTaskNote}
+              canOpenServiceOrders={hasModuleAccess(currentUser, 'service-orders')}
+              onOpenServiceOrder={openOsDetail}
+              onTodayPendingCountChange={setAgendaTodayCount}
             />
           )}
 
@@ -1134,6 +1156,7 @@ export default function App() {
             <LazyProtocolsView
               protocols={protocols}
               vessels={vessels}
+              clients={clients}
               serviceOrders={serviceOrders}
               currentUser={currentUser}
               signatureConfig={signatureConfig}

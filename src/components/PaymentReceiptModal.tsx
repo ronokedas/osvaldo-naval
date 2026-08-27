@@ -3,7 +3,7 @@ import { formatDateBR } from '../utils/date-formatters';
 import { FinancialEntry, Vessel, Client, SignatureConfig, LogoConfig } from '../types';
 import { Printer, Download, X, CheckCircle2, Building, ShieldCheck, FileCheck, MessageCircle, Mail } from 'lucide-react';
 import { NautilusLogo } from './NautilusLogo';
-import { generateReceiptPdf, downloadBlob } from '../utils/pdfGenerator';
+import { generateReceiptPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
 import { numberToWords } from '../utils/numberToWords';
 
 interface PaymentReceiptModalProps {
@@ -26,6 +26,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   const [pdfUrl, setPdfUrl] = useState('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState('');
   const pdfFrameRef = useRef<HTMLIFrameElement>(null);
   const receiptNum = entry.reciboNumero || `REC-${entry.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase()}`;
   const clientName = vessel?.clienteNome || entry.clienteNome || 'Cliente / Armador';
@@ -58,7 +59,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
   const receiptTitle = entry.tipo === 'quitacao' ? 'Comprovante de Quitação' : 'Recibo de Pagamento';
   const shareText = `${receiptTitle} ${receiptNum} - ${clientName} - ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(entry.valor) || 0)}.`;
 
-  const handleShare = async (channel: 'whatsapp' | 'email') => {
+  const handleWhatsApp = async () => {
     setSharing(true);
     try {
       const blob = await generateReceiptPdf(entry, logoConfig, signatureConfig, client?.cnpjCpf);
@@ -73,16 +74,39 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
       // Desktop fallback: open the destination with a ready-to-send message and
       // download the PDF so it can be attached manually when needed.
       downloadBlob(blob, receiptFileName);
-      if (channel === 'whatsapp') {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
-      } else {
-        const subject = encodeURIComponent(`${receiptTitle} - ${receiptNum}`);
-        const body = encodeURIComponent(`${shareText}\n\nO PDF foi baixado automaticamente para ser anexado a esta mensagem.`);
-        window.location.href = `mailto:${encodeURIComponent(client?.email || '')}?subject=${subject}&body=${body}`;
-      }
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}\n\nO PDF foi baixado. Anexe o arquivo antes de enviar.`)}`, '_blank', 'noopener,noreferrer');
     } catch (error: any) {
       // Closing the native share sheet is not an error for the user.
       if (error?.name !== 'AbortError') console.error('Erro ao compartilhar recibo:', error);
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleEmail = async () => {
+    const recipientEmail = client?.email || vessel?.emailContato || '';
+    if (!recipientEmail) {
+      setShareFeedback('O cliente proprietário desta embarcação não possui e-mail cadastrado.');
+      return;
+    }
+    setSharing(true);
+    setShareFeedback('');
+    try {
+      const blob = await generateReceiptPdf(entry, logoConfig, signatureConfig, client?.cnpjCpf);
+      const response = await fetch(`/api/finance/${entry.id}/send-receipt-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinatarioEmail: recipientEmail,
+          pdfBase64: await blobToBase64(blob),
+          filename: receiptFileName,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Não foi possível enviar o recibo por e-mail.');
+      setShareFeedback(`Recibo enviado para ${data.recipientEmail || recipientEmail}.`);
+    } catch (error: any) {
+      setShareFeedback(error?.message || 'Não foi possível enviar o recibo por e-mail.');
     } finally {
       setSharing(false);
     }
@@ -115,7 +139,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               Baixar PDF
             </button>
             <button
-              onClick={() => void handleShare('whatsapp')}
+              onClick={() => void handleWhatsApp()}
               disabled={sharing}
               title="Compartilhar recibo pelo WhatsApp"
               className="inline-flex items-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe5d] text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition cursor-pointer shadow-sm disabled:opacity-60"
@@ -124,13 +148,13 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               WhatsApp
             </button>
             <button
-              onClick={() => void handleShare('email')}
+              onClick={() => void handleEmail()}
               disabled={sharing}
-              title={client?.email ? `Enviar recibo para ${client.email}` : 'Enviar recibo por e-mail'}
+              title={client?.email || vessel?.emailContato ? `Enviar recibo para ${client?.email || vessel?.emailContato}` : 'Cliente sem e-mail cadastrado'}
               className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg transition cursor-pointer shadow-sm disabled:opacity-60"
             >
               <Mail className="w-4 h-4" />
-              E-mail
+              {sharing ? 'Enviando...' : 'E-mail'}
             </button>
             <button
               onClick={handlePrint}
@@ -146,6 +170,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
+          {shareFeedback && <p className={`px-4 pb-3 text-xs font-bold ${shareFeedback.startsWith('Recibo enviado') ? 'text-emerald-300' : 'text-amber-300'}`}>{shareFeedback}</p>}
         </div>
 
         {pdfLoading && (

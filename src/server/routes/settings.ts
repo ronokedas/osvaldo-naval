@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "../auth.js";
 import express from "express";
 import fs from "fs";
 import path from "path";
+import { createEmailTransport, getEmailConfig, isValidEmailAddress, toSafeEmailConfig, validateEmailConfig, type StoredEmailConfig } from "../mailer.js";
 
 const router = Router();
 
@@ -16,14 +17,8 @@ router.get("/:type", requireAuth, async (req, res) => {
     const configList = await db.select().from(app_configs).where(eq(app_configs.id, type));
     if (configList.length === 0) return res.json({});
     
-    // Hide password for non-admins maybe, but the UI expects it for now
-    // In a real app we wouldn't send SMTP password to the UI. We'll nullify it if not admin.
-    let data = configList[0].data as any;
-    if (type === "email" && (req as any).user?.role !== "admin") {
-      data = { ...data, senha: "" };
-    }
-    
-    res.json(data);
+    const data = configList[0].data as any;
+    res.json(type === "email" ? toSafeEmailConfig(data) : data);
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
@@ -33,24 +28,38 @@ router.put("/:type", requireRole(["admin"]), async (req, res) => {
   try {
     const { type } = req.params;
     
-    // Check if exists
-    const existing = await db.select().from(app_configs).where(eq(app_configs.id, type));
-    let dataToSave = req.body;
-    
-    if (existing.length > 0) {
-      if (type === "email" && !dataToSave.senha) {
-        // preserve old password if not updated
-        const oldData = existing[0].data as any;
-        dataToSave.senha = oldData.senha;
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    if (type !== "email") {
+      const existing = await db.select().from(app_configs).where(eq(app_configs.id, type));
+      if (existing.length > 0) {
+        await db.update(app_configs).set({ data: body, updatedAt: new Date() }).where(eq(app_configs.id, type));
+      } else {
+        await db.insert(app_configs).values({ id: type, data: body });
       }
-      await db.update(app_configs).set({ data: dataToSave, updatedAt: new Date() }).where(eq(app_configs.id, type));
-    } else {
-      await db.insert(app_configs).values({ id: type, data: dataToSave });
+      return res.json(body);
     }
-    
-    // return saved without password
-    if (type === "email") dataToSave.senha = "";
-    res.json(dataToSave);
+
+    const existing = await getEmailConfig();
+    const suppliedPassword = typeof body.senha === "string" ? body.senha.trim() : "";
+    const dataToSave: StoredEmailConfig = {
+      smtpHost: String(body.smtpHost || "").trim(),
+      smtpPort: Number(body.smtpPort),
+      usuario: String(body.usuario || "").trim(),
+      senha: suppliedPassword || existing?.senha || "",
+      nomeRemetente: String(body.nomeRemetente || "").trim(),
+      emailRemetente: String(body.emailRemetente || "").trim(),
+      usarTlsSsl: body.usarTlsSsl === true,
+      ativo: body.ativo === true,
+      envioAutomaticoPropostas: body.envioAutomaticoPropostas === true,
+      envioAutomaticoProtocolos: body.envioAutomaticoProtocolos === true,
+      envioAutomaticoRecibos: body.envioAutomaticoRecibos === true,
+    };
+    const validationError = validateEmailConfig(dataToSave);
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    await db.insert(app_configs).values({ id: "email", data: dataToSave, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: app_configs.id, set: { data: dataToSave, updatedAt: new Date() } });
+    return res.json(toSafeEmailConfig(dataToSave));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
@@ -58,29 +67,18 @@ router.put("/:type", requireRole(["admin"]), async (req, res) => {
 
 router.post("/email/test", requireRole(["admin"]), async (req, res) => {
   try {
-    const { targetEmail } = req.body;
-    if (!targetEmail) {
+    const { targetEmail } = req.body || {};
+    if (!isValidEmailAddress(targetEmail)) {
       return res.status(400).json({ ok: false, error: "E-mail de destino é obrigatório" });
     }
-    const configList = await db.select().from(app_configs).where(eq(app_configs.id, "email"));
-    if (configList.length === 0 || !(configList[0].data as any)?.ativo) {
+    const config = await getEmailConfig();
+    if (!config?.ativo) {
       return res.status(400).json({ ok: false, error: "Configuração de e-mail não está ativa." });
     }
-    const config = configList[0].data as any;
-    if (!config.smtpHost || !config.usuario || !config.senha) {
-      return res.status(400).json({ ok: false, error: "Configuração SMTP incompleta. Verifique host, usuário e senha." });
-    }
-
-    const nodemailer = (await import("nodemailer")).default;
-    const transporter = nodemailer.createTransport({
-      host: config.smtpHost,
-      port: Number(config.smtpPort) || 587,
-      secure: config.usarTlsSsl === true,
-      auth: {
-        user: config.usuario,
-        pass: config.senha,
-      },
-    });
+    const validationError = validateEmailConfig(config);
+    if (validationError) return res.status(400).json({ ok: false, error: validationError });
+    const transporter = createEmailTransport(config);
+    await transporter.verify();
 
     await transporter.sendMail({
       from: `"${config.nomeRemetente || "Nautilus Projetos Navais"}" <${config.emailRemetente || config.usuario}>`,
@@ -91,8 +89,13 @@ router.post("/email/test", requireRole(["admin"]), async (req, res) => {
 
     res.json({ ok: true, message: "E-mail de teste enviado com sucesso." });
   } catch (err: any) {
-    console.error("SMTP test error:", err);
-    res.status(502).json({ ok: false, error: err?.message || "Falha ao conectar ao SMTP. Verifique a configuração." });
+    console.error("SMTP test error:", { code: err?.code, command: err?.command, responseCode: err?.responseCode, message: err?.message });
+    const message = err?.code === "EAUTH"
+      ? "A autenticação SMTP foi recusada. Verifique usuário e senha."
+      : err?.responseCode === 550 || err?.responseCode === 553
+        ? "O remetente não está autorizado na Brevo. Verifique o domínio ou e-mail remetente."
+        : "Não foi possível enviar o e-mail de teste. Verifique a conexão SMTP e tente novamente.";
+    res.status(502).json({ ok: false, error: message });
   }
 });
 

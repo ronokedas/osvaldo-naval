@@ -79,7 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'tasks' as TabType,
-      label: currentUser.role === 'tecnico' ? 'Minhas Tarefas' : 'Tarefas da Equipe',
+      label: 'Agenda da Equipe',
       icon: CheckSquare,
       badge: myTasksCount > 0 ? myTasksCount : undefined,
       module: 'tasks' as ModuleId,

@@ -1,394 +1,124 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, CheckCircle2, ChevronRight, Clock3, MapPin, RefreshCw, Search, UserRound, XCircle } from 'lucide-react';
+import { TeamAgendaItem, TeamAgendaPeriod, TeamAgendaResponse, User } from '../types';
 import { formatDateBR } from '../utils/date-formatters';
-import { DocumentTask, User, TaskStatus, Certificadora } from '../types';
-import {
-  CheckSquare,
-  Clock,
-  Award,
-  Upload,
-  Paperclip,
-  CheckCircle2,
-  AlertCircle,
-  RotateCcw,
-  Send,
-  Calendar,
-  FileText,
-  ExternalLink,
-} from 'lucide-react';
 
 interface MyTasksProps {
-  tasks: DocumentTask[];
   currentUser: User;
-  onUpdateTaskStatus: (taskId: string, newStatus: TaskStatus, certificadora?: Certificadora) => void;
-  onUploadTaskFile: (taskId: string, fileName: string, fileUrl: string) => void;
-  onAddTaskNote: (taskId: string, text: string) => void;
+  canOpenServiceOrders: boolean;
+  onOpenServiceOrder: (serviceOrderId: string) => void;
+  onTodayPendingCountChange: (count: number) => void;
 }
 
-export const MyTasks: React.FC<MyTasksProps> = ({
-  tasks,
-  currentUser,
-  onUpdateTaskStatus,
-  onUploadTaskFile,
-  onAddTaskNote,
-}) => {
-  const [filterTab, setFilterTab] = useState<'hoje' | 'semana' | 'todas'>('hoje');
-  const [selectedTask, setSelectedTask] = useState<DocumentTask | null>(null);
-  const [noteText, setNoteText] = useState('');
-  const [simulatedFile, setSimulatedFile] = useState<File | null>(null);
-  const [taskToSendToCertifier, setTaskToSendToCertifier] = useState<DocumentTask | null>(null);
+const periods: Array<{ id: TeamAgendaPeriod; label: string; empty: string }> = [
+  { id: 'today', label: 'Hoje', empty: 'Nenhum serviço agendado para hoje.' },
+  { id: 'week', label: 'Esta semana', empty: 'Nenhum serviço agendado nesta semana.' },
+  { id: 'upcoming', label: 'Próximos', empty: 'Nenhum serviço futuro agendado.' },
+  { id: 'history', label: 'Histórico', empty: 'Nenhum agendamento anterior encontrado.' },
+];
 
-  // Filter tasks assigned to user or all if admin
-  const userTasks = currentUser.role === 'tecnico'
-    ? tasks.filter((t) => t.responsavelId === currentUser.id)
-    : tasks;
+const statusMeta = (item: TeamAgendaItem) => {
+  if (item.status === 'cancelada') return { label: 'OS cancelada', icon: XCircle, className: 'border-red-300 bg-red-50 text-red-700' };
+  if (item.status === 'concluido') return { label: 'Concluído', icon: CheckCircle2, className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
+  if (item.status === 'em_execucao') return { label: 'Em execução', icon: Clock3, className: 'border-blue-300 bg-blue-50 text-blue-700' };
+  return { label: 'Aguardando início', icon: Clock3, className: 'border-amber-300 bg-amber-50 text-amber-700' };
+};
 
-  const filteredTasks = userTasks.filter((t) => {
-    if (filterTab === 'hoje') {
-      return t.prazo.toLowerCase().includes('hoje') || t.status === 'execucao' || t.status === 'pendente';
-    }
-    if (filterTab === 'semana') {
-      return t.status !== 'baixado';
-    }
-    return true;
-  });
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || '?';
+const roleLabel = (role: User['role']) => role === 'admin' ? 'Administrador' : role === 'financeiro' ? 'Financeiro' : 'Técnico';
+const dateTitle = (date: string) => {
+  const parsed = new Date(`${date}T12:00:00`);
+  return `${parsed.toLocaleDateString('pt-BR', { weekday: 'long' }).replace(/^./, (value) => value.toUpperCase())} · ${formatDateBR(date)}`;
+};
+const shiftIsoDate = (date: string, amount: number) => {
+  const parsed = new Date(`${date}T12:00:00Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + amount);
+  return parsed.toISOString().slice(0, 10);
+};
 
-  
-  const handleSimulatedFileUpload = async (taskId: string) => {
-    if (!simulatedFile) {
-      alert("Selecione um arquivo primeiro.");
-      return;
-    }
+export const MyTasks: React.FC<MyTasksProps> = ({ canOpenServiceOrders, onOpenServiceOrder, onTodayPendingCountChange }) => {
+  const [period, setPeriod] = useState<TeamAgendaPeriod>('today');
+  const [query, setQuery] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [status, setStatus] = useState('');
+  const [response, setResponse] = useState<TeamAgendaResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const controllerRef = useRef<AbortController | null>(null);
+  const responseRef = useRef<TeamAgendaResponse | null>(null);
+  const loadAgenda = useCallback(async (requestedPage = 1) => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setRefreshing(true);
+    if (!responseRef.current) setLoading(true);
+    setError('');
+    const params = new URLSearchParams({ period, page: String(requestedPage), limit: '50' });
+    if (employeeId) params.set('employeeId', employeeId);
+    if (status) params.set('status', status);
+    if (query.trim()) params.set('q', query.trim());
     try {
-      const formData = new FormData();
-      formData.append("file", simulatedFile);
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
-      
-      onUploadTaskFile(taskId, data.fileName, data.url);
-      
-      if (selectedTask) {
-        setSelectedTask({
-          ...selectedTask,
-          arquivoNome: data.fileName,
-          arquivoUrl: data.url,
-        });
-      }
-      setSimulatedFile(null);
-    } catch (err) {
-      alert("Falha no upload do arquivo");
-      console.error(err);
+      const result = await fetch(`/api/tasks/agenda?${params.toString()}`, { signal: controller.signal });
+      const data = await result.json().catch(() => ({}));
+      if (!result.ok) throw new Error(data.error || 'Não foi possível carregar a agenda.');
+      if (controller.signal.aborted) return;
+      responseRef.current = data;
+      setResponse(data);
+      setPage(requestedPage);
+      onTodayPendingCountChange(data.counts?.todayPending || 0);
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return;
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a agenda.');
+    } finally {
+      if (!controller.signal.aborted) { setLoading(false); setRefreshing(false); }
     }
-  };
+  }, [employeeId, onTodayPendingCountChange, period, query, status]);
 
+  useEffect(() => {
+    responseRef.current = null;
+    setResponse(null);
+    setLoading(true);
+    const timer = window.setTimeout(() => { void loadAgenda(1); }, query ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [employeeId, period, query, status, loadAgenda]);
 
-  const handleAddNoteSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTask || !noteText.trim()) return;
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') void loadAgenda(page); };
+    const interval = window.setInterval(() => void loadAgenda(page), 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', refresh); controllerRef.current?.abort(); };
+  }, [loadAgenda, page]);
 
-    onAddTaskNote(selectedTask.id, noteText);
-    setNoteText('');
-  };
+  const grouped = useMemo(() => response?.items.reduce<Record<string, TeamAgendaItem[]>>((groups, item) => {
+    (groups[item.dataAgendada] ||= []).push(item);
+    return groups;
+  }, {}) || {}, [response]);
+  const hasFilters = Boolean(query || employeeId || status);
+  const currentTab = periods.find((item) => item.id === period)!;
 
   return (
-    <div className="space-y-6 pb-12 max-w-3xl mx-auto">
-      {/* Mobile Header Title */}
-      <div className="bg-[#0B192C] text-white p-5 rounded-2xl shadow-md space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600/30 border border-blue-500/50 rounded-xl text-blue-400">
-              <CheckSquare className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-black">Tarefas em Campo & CAD</h1>
-              <p className="text-xs text-slate-300 font-medium">
-                {currentUser.nome} ({currentUser.cargo})
-              </p>
-            </div>
-          </div>
-          <span className="bg-blue-600 text-white font-mono font-black text-xs px-2.5 py-1 rounded-full">
-            {filteredTasks.length}
-          </span>
+    <main className="mx-auto w-full max-w-7xl space-y-5 pb-12">
+      <section className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm sm:p-7">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div><div className="mb-2 flex items-center gap-3 text-[var(--app-accent)]"><CalendarDays className="h-6 w-6" /><span className="text-xs font-bold uppercase tracking-[.18em]">Operação diária</span></div><h1 className="text-2xl font-black text-[var(--app-text)] sm:text-3xl">Agenda da Equipe</h1><p className="mt-1 text-sm text-[var(--app-text-muted)]">Serviços agendados por funcionário nas Ordens de Serviço.</p></div>
+          <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] px-4 py-3 text-right text-xs text-[var(--app-text-muted)]"><span className="block font-bold text-[var(--app-text)]">{response?.pagination.total ?? 0}</span>serviço(s) nesta visão</div>
         </div>
-
-        {/* Filter Toggle Pills */}
-        <div className="grid grid-cols-3 gap-1.5 bg-slate-900/80 p-1 rounded-xl text-xs font-bold text-center">
-          <button
-            onClick={() => setFilterTab('hoje')}
-            className={`py-2 rounded-lg transition cursor-pointer ${
-              filterTab === 'hoje' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Hoje
-          </button>
-          <button
-            onClick={() => setFilterTab('semana')}
-            className={`py-2 rounded-lg transition cursor-pointer ${
-              filterTab === 'semana' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Esta semana
-          </button>
-          <button
-            onClick={() => setFilterTab('todas')}
-            className={`py-2 rounded-lg transition cursor-pointer ${
-              filterTab === 'todas' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Todas
-          </button>
+        <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-[var(--app-surface-soft)] p-1 sm:grid-cols-4">
+          {periods.map((tab) => { const count = tab.id === 'today' ? response?.counts.today : tab.id === 'week' ? response?.counts.week : tab.id === 'upcoming' ? response?.counts.upcoming : response?.counts.history; return <button key={tab.id} type="button" aria-selected={period === tab.id} onClick={() => setPeriod(tab.id)} className={`rounded-lg px-3 py-2.5 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus)] ${period === tab.id ? 'bg-[var(--app-accent)] text-slate-950 shadow-sm' : 'text-[var(--app-text-muted)] hover:bg-[var(--app-surface-raised)] hover:text-[var(--app-text)]'}`}>{tab.label}<span className="ml-2 text-xs opacity-75">{count ?? 0}</span></button>; })}
         </div>
-      </div>
-
-      {/* Task Cards List */}
-      <div className="space-y-4">
-        {filteredTasks.map((t) => (
-          <div
-            key={t.id}
-            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 hover:border-blue-400 transition"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-mono">
-                  {t.tipo}
-                </span>
-                <h3 className="text-base font-bold text-slate-900">{t.titulo}</h3>
-                <p className="text-xs font-bold text-slate-800">{t.embarcacaoNome}</p>
-                <p className="text-xs text-slate-500">{t.clienteNome}</p>
-              </div>
-
-              <span
-                className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
-                  t.status === 'execucao'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : t.status === 'enviado'
-                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                    : t.status === 'exigencia'
-                    ? 'bg-red-50 text-red-700 border-red-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}
-              >
-                {t.status === 'execucao'
-                  ? 'Em execução'
-                  : t.status === 'enviado'
-                  ? 'Na certificadora'
-                  : t.status === 'exigencia'
-                  ? 'Exigência'
-                  : t.status === 'pronto'
-                  ? 'Pronto'
-                  : 'Pendente'}
-              </span>
-            </div>
-
-            {/* Certifying Body & Prazo */}
-            <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <span className="flex items-center gap-1 font-semibold text-slate-700">
-                <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                Prazo: <strong className="text-slate-900">{formatDateBR(t.prazo)}</strong>
-              </span>
-              <span className="flex items-center gap-1 font-mono font-bold text-slate-800">
-                <Award className="w-3.5 h-3.5 text-indigo-600" />
-                {t.certificadora}
-              </span>
-            </div>
-
-            {/* Attached file if present */}
-            {t.arquivoNome && (
-              <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-2.5 text-xs font-mono text-blue-800">
-                <Paperclip className="w-4 h-4 text-blue-600 shrink-0" />
-                <span className="truncate">{t.arquivoNome}</span>
-                {t.arquivoUrl && (
-                  <a
-                    href={t.arquivoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 font-sans font-bold text-blue-700 shadow-sm transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    title={`Visualizar ${t.arquivoNome}`}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> Ver
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* One-touch Status Action Buttons */}
-            <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 text-xs font-bold">
-              <button
-                onClick={() => onUpdateTaskStatus(t.id, 'pendente')}
-                className={`py-2 rounded-xl border transition flex items-center justify-center gap-1 cursor-pointer ${
-                  t.status === 'pendente'
-                    ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Pendente
-              </button>
-
-              <button
-                onClick={() => onUpdateTaskStatus(t.id, 'execucao')}
-                className={`py-2 rounded-xl border transition flex items-center justify-center gap-1 cursor-pointer ${
-                  t.status === 'execucao'
-                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <Clock className="w-3.5 h-3.5" />
-                Em execução
-              </button>
-
-              <button
-                onClick={() => setTaskToSendToCertifier(t)}
-                className={`py-2 rounded-xl border transition flex items-center justify-center gap-1 cursor-pointer ${
-                  t.status === 'enviado'
-                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <Send className="w-3.5 h-3.5" />
-                Certificadora
-              </button>
-            </div>
-
-            <button
-              onClick={() => setSelectedTask(t)}
-              className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer transition"
-            >
-              <FileText className="w-4 h-4" /> Anexar Laudo / Ver Detalhes
-            </button>
-          </div>
-        ))}
-
-        {filteredTasks.length === 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-            <p className="font-bold text-base text-slate-800">Todas as tarefas em dia!</p>
-            <p className="text-xs text-slate-400 mt-1">Nenhum documento pendente neste filtro.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Detail & File Upload Modal */}
-      {selectedTask && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">{selectedTask.titulo}</h3>
-                <p className="text-slate-500">{selectedTask.embarcacaoNome}</p>
-              </div>
-              <button
-                onClick={() => setSelectedTask(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Upload File Zone */}
-            {selectedTask.arquivoNome && selectedTask.arquivoUrl && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
-                <div className="flex min-w-0 items-center gap-2 text-blue-900">
-                  <Paperclip className="h-4 w-4 shrink-0 text-blue-600" />
-                  <span className="truncate font-bold">{selectedTask.arquivoNome}</span>
-                </div>
-                <a
-                  href={selectedTask.arquivoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-3 py-2 font-bold text-blue-700 shadow-sm hover:bg-blue-100"
-                >
-                  <ExternalLink className="h-4 w-4" /> Visualizar
-                </a>
-              </div>
-            )}
-
-            <div className="border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 rounded-2xl text-center space-y-3">
-              <Upload className="w-8 h-8 text-blue-600 mx-auto" />
-              <div>
-                <p className="font-bold text-slate-800">Anexar Documento / Desenho (PDF, DWG)</p>
-                <p className="text-[11px] text-slate-500">
-                  Insira o relatório de medição de ultrassom ou prancha CAD em até 25MB.
-                </p>
-              </div>
-
-              <input
-                type="file"
-                onChange={(e) => setSimulatedFile(e.target.files?.[0] || null)}
-                className="hidden"
-                id="task-file-input"
-              />
-
-              <div className="flex items-center justify-center gap-2">
-                <label
-                  htmlFor="task-file-input"
-                  className="px-4 py-2 bg-[#0B192C] text-white font-bold rounded-xl cursor-pointer hover:bg-slate-800 transition"
-                >
-                  Selecionar Arquivo
-                </label>
-                <button
-                  type="button"
-                  onClick={() => handleSimulatedFileUpload(selectedTask.id)}
-                  className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl cursor-pointer hover:bg-blue-500 transition"
-                >
-                  Confirmar Envio
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t">
-              <button
-                onClick={() => setSelectedTask(null)}
-                className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl"
-              >
-                Concluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {taskToSendToCertifier && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="certifier-confirmation-title">
-          <div className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-              <Send className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 id="certifier-confirmation-title" className="text-lg font-bold text-slate-900">Confirmar envio à certificadora?</h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Esta ação registra no sistema que <strong>{taskToSendToCertifier.titulo}</strong> foi enviado para <strong>{taskToSendToCertifier.certificadora}</strong> e altera a tarefa para “Na certificadora”.
-              </p>
-            </div>
-            {!taskToSendToCertifier.arquivoUrl ? (
-              <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                <AlertCircle className="h-5 w-5 shrink-0" />
-                <span>Anexe o documento antes de registrar o envio.</span>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                <strong className="block text-slate-800">Importante:</strong> o sistema registra o envio e o status; ele não transmite o arquivo automaticamente ao órgão externo.
-              </div>
-            )}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button onClick={() => setTaskToSendToCertifier(null)} className="rounded-xl px-4 py-2.5 font-bold text-slate-600 hover:bg-slate-100">Cancelar</button>
-              <button
-                disabled={!taskToSendToCertifier.arquivoUrl}
-                onClick={() => {
-                  onUpdateTaskStatus(taskToSendToCertifier.id, 'enviado');
-                  setTaskToSendToCertifier(null);
-                }}
-                className="rounded-xl bg-indigo-600 px-4 py-2.5 font-bold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Confirmar registro
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </section>
+      <section className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm sm:p-5"><div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_180px_auto]"><label className="relative block"><span className="sr-only">Buscar na agenda</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--app-text-faint)]" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar serviço, OS, funcionário, embarcação ou cliente..." className="h-11 w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-input)] pl-10 pr-3 text-sm text-[var(--app-text)] placeholder:text-[var(--app-text-faint)]" /></label><label><span className="sr-only">Filtrar funcionário</span><select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} className="h-11 w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-input)] px-3 text-sm text-[var(--app-text)]"><option value="">Todos os funcionários</option>{response?.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.nome}</option>)}</select></label><label><span className="sr-only">Filtrar status</span><select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-input)] px-3 text-sm text-[var(--app-text)]"><option value="">Todos os status</option><option value="pendente">Aguardando início</option><option value="em_execucao">Em execução</option><option value="concluido">Concluído</option><option value="cancelada">OS cancelada</option></select></label><button type="button" onClick={() => void loadAgenda(1)} disabled={refreshing} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--app-accent)] px-4 text-sm font-bold text-slate-950 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Atualizar</button></div>{hasFilters && <button type="button" onClick={() => { setQuery(''); setEmployeeId(''); setStatus(''); }} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--app-accent)] hover:underline"><XCircle className="h-3.5 w-3.5" /> Limpar filtros</button>}</section>
+      {error && <section role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800"><p className="font-bold">Não foi possível atualizar a agenda</p><p className="mt-1">{error}</p><button type="button" onClick={() => void loadAgenda(page)} className="mt-3 rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white">Tentar novamente</button></section>}
+      {loading && !response ? <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface)] p-16 text-center text-sm text-[var(--app-text-muted)]">Carregando agenda...</div> : response && response.items.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--app-border-strong)] bg-[var(--app-surface)] p-16 text-center"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" /><h2 className="mt-3 text-lg font-bold text-[var(--app-text)]">{hasFilters ? 'Nenhum resultado encontrado' : currentTab.empty}</h2><p className="mt-1 text-sm text-[var(--app-text-muted)]">{hasFilters ? 'Tente remover ou ajustar os filtros da agenda.' : 'Os agendamentos aparecerão aqui assim que forem atribuídos e marcados na OS.'}</p></div> : period === 'week' ? <div className="overflow-x-auto pb-2"><div className="grid min-w-[1610px] grid-cols-7 gap-3">{response?.range.start && response.range.end && Array.from({ length: 7 }, (_, index) => shiftIsoDate(response.range.start!, index)).map((date) => <AgendaDay key={date} date={date} items={grouped[date] || []} canOpenServiceOrders={canOpenServiceOrders} onOpenServiceOrder={onOpenServiceOrder} />)}</div></div> : <div className="space-y-5">{Object.entries(grouped).sort(([a], [b]) => period === 'history' ? b.localeCompare(a) : a.localeCompare(b)).map(([date, items]) => <section key={date}><h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-[var(--app-text)]"><span className="h-2 w-2 rounded-full bg-[var(--app-accent)]" />{dateTitle(date)}</h2><div className="grid gap-3 lg:grid-cols-2">{items.map((item) => <AgendaCard key={item.id} item={item} canOpenServiceOrders={canOpenServiceOrders} onOpenServiceOrder={onOpenServiceOrder} />)}</div></section>)}</div>}
+      {response && response.pagination.totalPages > page && <button type="button" onClick={() => void loadAgenda(page + 1)} disabled={refreshing} className="mx-auto flex rounded-xl border border-[var(--app-border)] bg-[var(--app-surface)] px-5 py-3 text-sm font-bold text-[var(--app-text)] hover:border-[var(--app-accent)] disabled:opacity-60">Carregar mais</button>}
+    </main>
   );
 };
+
+const AgendaDay: React.FC<{ date: string; items: TeamAgendaItem[]; canOpenServiceOrders: boolean; onOpenServiceOrder: (id: string) => void }> = ({ date, items, canOpenServiceOrders, onOpenServiceOrder }) => <section className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface)] p-3"><header className="mb-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-3"><p className="text-xs font-black uppercase tracking-wide text-[var(--app-accent)]">{dateTitle(date)}</p><p className="mt-1 text-xs text-[var(--app-text-muted)]">{items.length} serviço(s)</p></header>{items.length ? <div className="space-y-3">{items.map((item) => <AgendaCard key={item.id} item={item} canOpenServiceOrders={canOpenServiceOrders} onOpenServiceOrder={onOpenServiceOrder} />)}</div> : <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed border-[var(--app-border)] p-4 text-center text-xs text-[var(--app-text-faint)]">Nenhum serviço neste dia</div>}</section>;
+
+const AgendaCard: React.FC<{ item: TeamAgendaItem; canOpenServiceOrders: boolean; onOpenServiceOrder: (id: string) => void }> = ({ item, canOpenServiceOrders, onOpenServiceOrder }) => { const meta = statusMeta(item); const StatusIcon = meta.icon; return <article className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-soft)] p-4 shadow-sm transition hover:border-[var(--app-border-strong)] hover:shadow-md"><div className="flex items-start gap-3"><div className="shrink-0">{item.responsavel.avatarUrl ? <img src={item.responsavel.avatarUrl} alt={`Foto de ${item.responsavel.nome}`} className="h-11 w-11 rounded-full object-cover ring-2 ring-[var(--app-border)]" /> : <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--app-accent-soft)] text-sm font-black text-[var(--app-accent)] ring-2 ring-[var(--app-border)]">{initials(item.responsavel.nome)}</div>}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-base font-black text-[var(--app-text)]">{item.descricao}</p><p className="mt-0.5 text-xs font-semibold text-[var(--app-text-muted)]">{item.responsavel.nome} · {item.responsavel.cargo || roleLabel(item.responsavel.role)}</p></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${meta.className}`}><StatusIcon className="h-3 w-3" />{meta.label}</span></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--app-text-muted)]"><span className="font-bold text-[var(--app-accent)]">{item.serviceOrderNumber}</span>{item.embarcacaoNome && <span>{item.embarcacaoNome}</span>}{item.clienteNome && <span>{item.clienteNome}</span>}</div><div className="mt-3 grid gap-1 text-xs text-[var(--app-text-muted)] sm:grid-cols-2"><span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="h-3.5 w-3.5 text-[var(--app-accent)]" />{formatDateBR(item.dataAgendada)} às {item.horarioAgendado}</span>{item.localAgendado && <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{item.localAgendado}</span>}{item.contatoAgendamento && <span className="inline-flex items-center gap-1.5"><UserRound className="h-3.5 w-3.5" />{item.contatoAgendamento}</span>}</div>{item.observacoesAgendamento && <p className="mt-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-surface)] p-2 text-xs text-[var(--app-text-muted)]">{item.observacoesAgendamento}</p>}{canOpenServiceOrders && <button type="button" onClick={() => onOpenServiceOrder(item.serviceOrderId)} className="mt-3 inline-flex items-center gap-1 text-xs font-black text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus)]">Abrir Ordem de Serviço <ChevronRight className="h-3.5 w-3.5" /></button>}</div></div></article>; };
+
+export default MyTasks;

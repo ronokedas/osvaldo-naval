@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { User, EmailConfig, SignatureConfig, LogoConfig, UserRole } from '../types';
 import { isValidEmail } from '../utils/input-formatters';
 import { defaultModulesForRole, MODULE_CATALOG, moduleIdsFromPermissions, modulePermission } from '../access-control';
@@ -40,10 +40,10 @@ interface SettingsViewProps {
   logoConfig?: LogoConfig;
   onCreateUser: (userData: Partial<User>) => Promise<void>;
   onUpdateUser: (userId: string, updatedFields: Partial<User>) => Promise<void>;
-  onUpdateEmailConfig: (config: EmailConfig) => void;
+  onUpdateEmailConfig: (config: EmailConfig) => Promise<EmailConfig>;
   onUpdateSignatureConfig: (config: SignatureConfig) => void;
   onUpdateLogoConfig?: (config: LogoConfig) => void;
-  onTestEmailDispatch: (targetEmail: string) => Promise<{ success: boolean; message: string }>;
+  onTestEmailDispatch: (targetEmail: string) => Promise<{ ok: boolean; message: string }>;
   onOpenProfile?: () => void;
 }
 
@@ -91,10 +91,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Local state for Email Form
   const [localEmailConfig, setLocalEmailConfig] = useState<EmailConfig>({ ...emailConfig });
+  const [emailDirty, setEmailDirty] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState(currentUser.email || '');
-  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailSavedToast, setEmailSavedToast] = useState(false);
+
+  useEffect(() => {
+    if (!emailDirty) setLocalEmailConfig({ ...emailConfig, senha: '' });
+  }, [emailConfig, emailDirty]);
+
+  const updateEmailDraft = (changes: Partial<EmailConfig>) => {
+    setEmailDirty(true);
+    setLocalEmailConfig((current) => ({ ...current, ...changes }));
+  };
+
+  const resolvedSenderEmail = localEmailConfig.emailRemetente || emailConfig.emailRemetente || '';
 
   // Local state for Signature Form
   const [localSigConfig, setLocalSigConfig] = useState<SignatureConfig>({ ...signatureConfig });
@@ -301,30 +314,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   // Handle Save Email Config
-  const handleSaveEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isValidEmail(localEmailConfig.emailRemetente)) {
-      alert('Informe um e-mail remetente válido.');
-      return;
+  const saveEmailConfig = async () => {
+    const configToSave: EmailConfig = { ...localEmailConfig, emailRemetente: resolvedSenderEmail };
+    if (!isValidEmail(configToSave.emailRemetente)) {
+      throw new Error('Informe um e-mail remetente válido.');
     }
-    onUpdateEmailConfig(localEmailConfig);
-    setEmailSavedToast(true);
-    setTimeout(() => setEmailSavedToast(false), 3000);
+    setSavingEmail(true);
+    try {
+      const saved = await onUpdateEmailConfig(configToSave);
+      setLocalEmailConfig({ ...saved, senha: '' });
+      setEmailDirty(false);
+      setEmailSavedToast(true);
+      setTimeout(() => setEmailSavedToast(false), 3000);
+      return saved;
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleSaveEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await saveEmailConfig();
+    } catch (error: any) {
+      setTestResult({ ok: false, message: error?.message || 'Não foi possível salvar a configuração SMTP.' });
+    }
   };
 
   // Handle Test Email
   const handleTestEmail = async () => {
     if (!isValidEmail(testEmailAddress)) {
-      setTestResult({ success: false, message: 'Informe um e-mail de teste válido.' });
+      setTestResult({ ok: false, message: 'Informe um e-mail de teste válido.' });
       return;
     }
     setTestingEmail(true);
     setTestResult(null);
     try {
+      await saveEmailConfig();
       const res = await onTestEmailDispatch(testEmailAddress);
       setTestResult(res);
     } catch (err: any) {
-      setTestResult({ success: false, message: err?.message || 'Falha ao conectar com servidor SMTP' });
+      setTestResult({ ok: false, message: err?.message || 'Falha ao conectar com servidor SMTP' });
     } finally {
       setTestingEmail(false);
     }
@@ -810,7 +840,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <input
                     type="checkbox"
                     checked={localEmailConfig.ativo}
-                    onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, ativo: e.target.checked })}
+                    onChange={(e) => updateEmailDraft({ ativo: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
@@ -828,7 +858,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   value={localEmailConfig.smtpHost}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, smtpHost: e.target.value })}
+                    onChange={(e) => updateEmailDraft({ smtpHost: e.target.value })}
                   placeholder="ex: smtp.nautilus.eng.br"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -840,7 +870,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   value={localEmailConfig.smtpPort}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, smtpPort: Number(e.target.value) })}
+                    onChange={(e) => updateEmailDraft({ smtpPort: Number(e.target.value) })}
                   placeholder="587 ou 465"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -852,7 +882,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   value={localEmailConfig.usuario}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, usuario: e.target.value })}
+                    onChange={(e) => updateEmailDraft({ usuario: e.target.value })}
                   placeholder="notificacoes@nautilus.eng.br"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -864,10 +894,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="password"
                   value={localEmailConfig.senha || ''}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, senha: e.target.value })}
+                    onChange={(e) => updateEmailDraft({ senha: e.target.value })}
                   placeholder="••••••••••••"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {localEmailConfig.senhaConfigurada && !localEmailConfig.senha && (
+                  <p className="mt-1 text-[11px] font-medium text-emerald-700">Senha SMTP configurada. Preencha somente para substituí-la.</p>
+                )}
               </div>
 
               <div>
@@ -875,7 +908,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="text"
                   value={localEmailConfig.nomeRemetente}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, nomeRemetente: e.target.value })}
+                    onChange={(e) => updateEmailDraft({ nomeRemetente: e.target.value })}
                   placeholder="Nautilus Projetos Navais"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -886,8 +919,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className="block text-slate-700 font-bold mb-1">E-mail Remetente (From)</label>
                 <input
                   type="email"
-                  value={localEmailConfig.emailRemetente}
-                  onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, emailRemetente: e.target.value })}
+                  value={resolvedSenderEmail}
+                    onChange={(e) => updateEmailDraft({ emailRemetente: e.target.value })}
                   placeholder="contato@nautilus.eng.br"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -901,11 +934,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="checkbox"
                 id="usarTlsSsl"
                 checked={localEmailConfig.usarTlsSsl}
-                onChange={(e) => setLocalEmailConfig({ ...localEmailConfig, usarTlsSsl: e.target.checked })}
+                onChange={(e) => updateEmailDraft({ usarTlsSsl: e.target.checked })}
                 className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
               />
               <label htmlFor="usarTlsSsl" className="text-xs font-bold text-slate-700 cursor-pointer">
-                Exigir conexão de segurança criptografada TLS/SSL (Recomendado)
+                Usar conexão segura (STARTTLS em 587/2525; TLS em 465)
               </label>
             </div>
 
@@ -921,7 +954,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="checkbox"
                     checked={localEmailConfig.envioAutomaticoPropostas}
                     onChange={(e) =>
-                      setLocalEmailConfig({ ...localEmailConfig, envioAutomaticoPropostas: e.target.checked })
+                      updateEmailDraft({ envioAutomaticoPropostas: e.target.checked })
                     }
                     className="w-4 h-4 text-blue-600 rounded"
                   />
@@ -933,7 +966,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="checkbox"
                     checked={localEmailConfig.envioAutomaticoProtocolos}
                     onChange={(e) =>
-                      setLocalEmailConfig({ ...localEmailConfig, envioAutomaticoProtocolos: e.target.checked })
+                      updateEmailDraft({ envioAutomaticoProtocolos: e.target.checked })
                     }
                     className="w-4 h-4 text-blue-600 rounded"
                   />
@@ -945,7 +978,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="checkbox"
                     checked={localEmailConfig.envioAutomaticoRecibos}
                     onChange={(e) =>
-                      setLocalEmailConfig({ ...localEmailConfig, envioAutomaticoRecibos: e.target.checked })
+                      updateEmailDraft({ envioAutomaticoRecibos: e.target.checked })
                     }
                     className="w-4 h-4 text-blue-600 rounded"
                   />
@@ -972,7 +1005,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={handleTestEmail}
-                  disabled={testingEmail || !localEmailConfig.ativo}
+                  disabled={testingEmail || savingEmail || !localEmailConfig.ativo}
                   className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold text-xs text-white flex items-center justify-center gap-2 cursor-pointer transition ${
                     localEmailConfig.ativo
                       ? 'bg-amber-600 hover:bg-amber-500'
@@ -980,19 +1013,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   }`}
                 >
                   <SendHorizontal className="w-3.5 h-3.5" />
-                  {testingEmail ? 'Disparando...' : 'Enviar E-mail de Teste'}
+                  {testingEmail ? 'Salvando e disparando...' : 'Salvar e enviar teste'}
                 </button>
               </div>
 
               {testResult && (
                 <div
                   className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
-                    testResult.success
+                    testResult.ok
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                       : 'bg-rose-100 text-rose-800 border border-rose-300'
                   }`}
                 >
-                  {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                  {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
                   <span>{testResult.message}</span>
                 </div>
               )}
@@ -1010,10 +1043,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <button
                 type="submit"
+                disabled={savingEmail}
                 className="inline-flex items-center gap-2 bg-[#0B192C] hover:bg-slate-800 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer shadow-sm"
               >
                 <Save className="w-4 h-4" />
-                Salvar Parâmetros SMTP
+                {savingEmail ? 'Salvando...' : 'Salvar Parâmetros SMTP'}
               </button>
             </div>
           </div>

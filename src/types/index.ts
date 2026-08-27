@@ -16,6 +16,51 @@ export interface User {
   themePreference?: ThemePreference;
 }
 
+export type TeamAgendaPeriod = 'today' | 'week' | 'upcoming' | 'history';
+export type TeamAgendaServiceStatus = 'pendente' | 'em_execucao' | 'concluido' | 'cancelada';
+
+export interface TeamAgendaEmployee {
+  id: string;
+  nome: string;
+  cargo?: string;
+  role: UserRole;
+  avatarUrl?: string;
+}
+
+export interface TeamAgendaItem {
+  id: string;
+  serviceOrderId: string;
+  serviceOrderNumber: string;
+  serviceOrderStatus: OsStatus;
+  descricao: string;
+  tipo?: string;
+  status: TeamAgendaServiceStatus;
+  dataAgendada: string;
+  horarioAgendado: string;
+  localAgendado?: string;
+  contatoAgendamento?: string;
+  observacoesAgendamento?: string;
+  embarcacaoNome?: string;
+  clienteNome?: string;
+  responsavel: TeamAgendaEmployee;
+}
+
+export interface TeamAgendaResponse {
+  period: TeamAgendaPeriod;
+  timezone: 'America/Sao_Paulo';
+  range: { start?: string; end?: string };
+  counts: {
+    today: number;
+    todayPending: number;
+    week: number;
+    upcoming: number;
+    history: number;
+  };
+  employees: TeamAgendaEmployee[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+  items: TeamAgendaItem[];
+}
+
 export interface EmailConfig {
   smtpHost: string;
   smtpPort: number;
@@ -28,6 +73,8 @@ export interface EmailConfig {
   envioAutomaticoPropostas: boolean;
   envioAutomaticoProtocolos: boolean;
   envioAutomaticoRecibos: boolean;
+  /** Nunca contém a senha; informa apenas se há uma credencial persistida. */
+  senhaConfigurada?: boolean;
 }
 
 export interface SignatureConfig {

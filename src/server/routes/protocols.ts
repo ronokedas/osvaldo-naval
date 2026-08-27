@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import {
   protocols, protocol_dispatches, protocol_dispatch_documents, protocol_responses,
   protocol_response_documents, protocol_attachments, protocol_events,
-  service_orders, documents, document_versions, deliveries, approved_document_files, users, notifications, os_events,
+  service_orders, documents, document_versions, deliveries, approved_document_files, users, notifications, os_events, vessels, clients,
 } from "../../db/schema.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireAuth, requirePermission, requireRole } from "../auth.js";
@@ -11,11 +11,22 @@ import { PERMISSIONS } from "../permissions.js";
 import { serializeProtocol } from "../serializers.js";
 import { awaitingExternalLabel, deriveProtocolStatus, EXTERNAL_RESPONSE_TYPES, isValidProtocolAttachment } from "../protocol-workflow.js";
 import { assertServicesCompleted, reconcileOsReadiness } from "../delivery-workflow.js";
+import { sendEmail } from "../mailer.js";
 
 const router = Router();
 const requireProtocolPermission = requirePermission([PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA]);
 const EXTERNAL_TYPES = new Set(["capitania_dpc", "certificadora"]);
 const today = () => new Date().toISOString().split("T")[0];
+
+async function resolveProtocolRecipient(protocol: any) {
+  const vessel = protocol.embarcacaoId
+    ? (await db.select().from(vessels).where(eq(vessels.id, protocol.embarcacaoId)))[0]
+    : null;
+  const client = vessel?.clienteId
+    ? (await db.select().from(clients).where(eq(clients.id, vessel.clienteId)))[0]
+    : null;
+  return String(client?.email || vessel?.emailContato || "").trim();
+}
 
 async function nextProtocolNumber(tx: any) {
   const year = new Date().getFullYear();
@@ -109,10 +120,45 @@ router.get("/", requireAuth, async (req: any, res: any) => {
   }
 });
 
+router.get("/:id/email-recipient", requireAuth, async (req, res) => {
+  const protocol = (await db.select().from(protocols).where(eq(protocols.id, req.params.id)))[0];
+  if (!protocol) return res.status(404).json({ error: "Protocolo não encontrado." });
+  const email = await resolveProtocolRecipient(protocol);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)) {
+    return res.status(422).json({ error: "O cliente proprietário da embarcação não possui um e-mail válido cadastrado." });
+  }
+  res.json({ email });
+});
+
 router.get("/:id", requireAuth, async (req, res) => {
   const rows = await db.select().from(protocols).where(eq(protocols.id, req.params.id));
   if (!rows.length) return res.status(404).json({ error: "Protocolo não encontrado" });
   res.json((await hydrateProtocols(rows))[0]);
+});
+
+router.post("/:id/send-email", requireProtocolPermission, async (req: any, res: any) => {
+  try {
+    const protocol = (await db.select().from(protocols).where(eq(protocols.id, req.params.id)))[0];
+    if (!protocol) return res.status(404).json({ error: "Protocolo não encontrado." });
+    const { destinatarioEmail, assunto, mensagem, pdfBase64, filename } = req.body || {};
+    const recipientEmail = String(destinatarioEmail || await resolveProtocolRecipient(protocol)).trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(recipientEmail)) return res.status(422).json({ error: "O cliente proprietário da embarcação não possui um e-mail válido cadastrado." });
+    const encoded = String(pdfBase64 || "");
+    const base64Data = encoded.includes("base64,") ? encoded.split("base64,")[1] : encoded;
+    if (!base64Data) return res.status(400).json({ error: "O PDF do termo é obrigatório." });
+    const result = await sendEmail({
+      to: recipientEmail,
+      subject: String(assunto || `Termo de Protocolo ${protocol.numeroProtocolo}`),
+      text: String(mensagem || `Segue o Termo de Protocolo ${protocol.numeroProtocolo} da Nautilus Projetos Navais.`),
+      attachments: [{ filename: String(filename || `Protocolo_${protocol.numeroProtocolo.replace(/[^a-zA-Z0-9_-]/g, "-")}.pdf`), content: Buffer.from(base64Data, "base64"), contentType: "application/pdf" }],
+    });
+    await db.insert(protocol_events).values({ protocoloId: protocol.id, tipo: result.ok ? "termo_enviado_email" : "falha_envio_termo_email", descricao: result.ok ? `Termo enviado por e-mail para ${recipientEmail}.` : `Falha ao enviar termo por e-mail: ${result.error || "erro desconhecido"}.`, autorId: req.user?.id, autorNome: req.user?.nome });
+    if (!result.ok) return res.status(502).json({ error: result.error || "Não foi possível enviar o e-mail." });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Erro ao enviar termo por e-mail:", error);
+    res.status(500).json({ error: "Não foi possível enviar o termo por e-mail." });
+  }
 });
 
 router.post("/", requireProtocolPermission, async (req: any, res: any) => {

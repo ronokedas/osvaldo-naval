@@ -14,6 +14,7 @@ import {
   notifyFinancialUpdate 
 } from "../../utils/financial-utils.js";
 import { paidAmount, receivableBalance } from "../financial-balance.js";
+import { isValidEmailAddress, sendEmail } from "../mailer.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -107,6 +108,44 @@ router.get("/", async (req, res) => {
       error: "Erro ao buscar lançamentos", 
       message: "Não foi possível recuperar os dados financeiros. Tente novamente."
     });
+  }
+});
+
+// POST - Enviar o PDF de um recibo para o cliente proprietário da embarcação.
+router.post("/:id/send-receipt-email", requireFinanceWrite, async (req, res) => {
+  try {
+    const entry = (await db.select().from(financial_entries).where(eq(financial_entries.id, req.params.id)))[0];
+    if (!entry) return res.status(404).json({ error: "Lançamento financeiro não encontrado." });
+    if (entry.natureza === "saida" || entry.tipo === "despesa") return res.status(400).json({ error: "Recibos por e-mail estão disponíveis somente para recebimentos." });
+
+    const vessel = entry.embarcacaoId
+      ? (await db.select().from(vessels).where(eq(vessels.id, entry.embarcacaoId)))[0]
+      : null;
+    const client = vessel?.clienteId
+      ? (await db.select().from(clients).where(eq(clients.id, vessel.clienteId)))[0]
+      : null;
+    const recipientEmail = String(req.body?.destinatarioEmail || client?.email || vessel?.emailContato || "").trim();
+    if (!isValidEmailAddress(recipientEmail)) return res.status(422).json({ error: "O cliente proprietário da embarcação não possui um e-mail válido cadastrado." });
+
+    const encoded = String(req.body?.pdfBase64 || "");
+    const base64Data = encoded.includes("base64,") ? encoded.split("base64,")[1] : encoded;
+    if (!base64Data) return res.status(400).json({ error: "O PDF do recibo é obrigatório." });
+    const receiptNumber = entry.reciboNumero || `REC-${entry.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase()}`;
+    const result = await sendEmail({
+      to: recipientEmail,
+      subject: `Recibo ${receiptNumber} - Nautilus Projetos Navais`,
+      text: `Prezado(a), segue em anexo o recibo ${receiptNumber} referente à embarcação ${entry.embarcacaoNome || vessel?.nome || ""}.`,
+      attachments: [{
+        filename: String(req.body?.filename || `Recibo_${receiptNumber.replace(/[^a-zA-Z0-9_-]/g, "-")}.pdf`),
+        content: Buffer.from(base64Data, "base64"),
+        contentType: "application/pdf",
+      }],
+    });
+    if (!result.ok) return res.status(502).json({ error: result.error || "Não foi possível enviar o recibo por e-mail." });
+    res.json({ ok: true, recipientEmail });
+  } catch (error) {
+    console.error("Erro ao enviar recibo por e-mail:", error);
+    res.status(500).json({ error: "Não foi possível enviar o recibo por e-mail." });
   }
 });
 

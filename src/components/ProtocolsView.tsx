@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, FileCheck, FileText, History, Paperclip, Plus, Printer, Search, Send, X } from 'lucide-react';
-import { LogoConfig, Protocol, ServiceOrder, ServiceOrderDetail, SignatureConfig, User, Vessel } from '../types';
+import { Client, LogoConfig, Protocol, ServiceOrder, ServiceOrderDetail, SignatureConfig, User, Vessel } from '../types';
 import { formatDateBR, formatDateTimeBR } from '../utils/date-formatters';
 import { ProtocolSlipModal } from './ProtocolSlipModal';
 
 interface Props {
   protocols: Protocol[];
   vessels: Vessel[];
+  clients: Client[];
   serviceOrders: ServiceOrder[];
   currentUser: User;
   signatureConfig?: SignatureConfig;
@@ -47,7 +48,7 @@ async function postJson(url: string, body: any) {
   return data;
 }
 
-export const ProtocolsView: React.FC<Props> = ({ protocols, vessels, serviceOrders, currentUser, signatureConfig, logoConfig, onCreateProtocol, onRefresh, onOpenOs }) => {
+export const ProtocolsView: React.FC<Props> = ({ protocols, vessels, clients, serviceOrders, currentUser, signatureConfig, logoConfig, onCreateProtocol, onRefresh, onOpenOs }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
   const [showCreate, setShowCreate] = useState(false);
@@ -194,7 +195,7 @@ export const ProtocolsView: React.FC<Props> = ({ protocols, vessels, serviceOrde
     {confirmProtocol && <ConfirmDispatchModal protocol={confirmProtocol} onClose={() => setConfirmProtocol(null)} onSaved={async () => { setConfirmProtocol(null); await onRefresh(); }} />}
     {finalDocumentsProtocol && <FinalDocumentsModal protocol={finalDocumentsProtocol} onClose={() => setFinalDocumentsProtocol(null)} onSaved={async () => { setFinalDocumentsProtocol(null); await onRefresh(); }} />}
     {supplementalDocumentProtocol && <SupplementalFinalDocumentModal protocol={supplementalDocumentProtocol} onClose={() => setSupplementalDocumentProtocol(null)} onSaved={async () => { setSupplementalDocumentProtocol(null); await onRefresh(); }} />}
-    {selectedSlip && <ProtocolSlipModal protocol={selectedSlip} vessel={vessels.find((item) => item.id === selectedSlip.embarcacaoId)} serviceOrder={serviceOrders.find((item) => item.id === selectedSlip.osId)} signatureConfig={signatureConfig} logoConfig={logoConfig} onClose={() => setSelectedSlip(null)} />}
+    {selectedSlip && <ProtocolSlipModal protocol={selectedSlip} vessel={vessels.find((item) => item.id === selectedSlip.embarcacaoId)} client={clients.find((item) => item.id === vessels.find((vessel) => vessel.id === selectedSlip.embarcacaoId)?.clienteId)} serviceOrder={serviceOrders.find((item) => item.id === selectedSlip.osId)} signatureConfig={signatureConfig} logoConfig={logoConfig} onClose={() => setSelectedSlip(null)} />}
   </div>;
 };
 
