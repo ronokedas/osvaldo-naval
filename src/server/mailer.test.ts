@@ -35,4 +35,5 @@ test("valida campos SMTP obrigatórios", () => {
   assert.equal(validateEmailConfig({ ...config, smtpPort: 70000 }), "Informe uma porta SMTP válida.");
   assert.equal(validateEmailConfig({ ...config, emailRemetente: "invalido" }), "Informe um e-mail remetente válido.");
   assert.equal(validateEmailConfig({ ...config, senha: "" }), "Informe a senha SMTP.");
+  assert.equal(validateEmailConfig({ ...config, senha: "" }, false), null);
 });

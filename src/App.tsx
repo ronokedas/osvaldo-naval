@@ -773,8 +773,8 @@ export default function App() {
     return result.temporaryPassword as string;
   };
 
-  const handleUpdateEmailConfig = async (config: EmailConfig) => {
-    const saved = await apiPut('/api/settings/email', config);
+  const handleUpdateEmailConfig = async (config: EmailConfig, options?: { removerSenha?: boolean }) => {
+    const saved = await apiPut('/api/settings/email', { ...config, removerSenha: options?.removerSenha === true });
     setEmailConfig(saved);
     return saved as EmailConfig;
   };

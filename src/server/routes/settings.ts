@@ -41,20 +41,23 @@ router.put("/:type", requireRole(["admin"]), async (req, res) => {
 
     const existing = await getEmailConfig();
     const suppliedPassword = typeof body.senha === "string" ? body.senha.trim() : "";
+    const removeStoredPassword = body.removerSenha === true;
     const dataToSave: StoredEmailConfig = {
       smtpHost: String(body.smtpHost || "").trim(),
       smtpPort: Number(body.smtpPort),
       usuario: String(body.usuario || "").trim(),
-      senha: suppliedPassword || existing?.senha || "",
+      senha: removeStoredPassword ? "" : suppliedPassword || existing?.senha || "",
       nomeRemetente: String(body.nomeRemetente || "").trim(),
       emailRemetente: String(body.emailRemetente || "").trim(),
       usarTlsSsl: body.usarTlsSsl === true,
-      ativo: body.ativo === true,
-      envioAutomaticoPropostas: body.envioAutomaticoPropostas === true,
-      envioAutomaticoProtocolos: body.envioAutomaticoProtocolos === true,
-      envioAutomaticoRecibos: body.envioAutomaticoRecibos === true,
+      ativo: removeStoredPassword ? false : body.ativo === true,
+      envioAutomaticoPropostas: removeStoredPassword ? false : body.envioAutomaticoPropostas === true,
+      envioAutomaticoProtocolos: removeStoredPassword ? false : body.envioAutomaticoProtocolos === true,
+      envioAutomaticoRecibos: removeStoredPassword ? false : body.envioAutomaticoRecibos === true,
     };
-    const validationError = validateEmailConfig(dataToSave);
+    // Gateway inativo pode permanecer salvo sem credencial: isso permite
+    // gerar backups sem a chave SMTP. Ao reativar, a senha volta a ser exigida.
+    const validationError = validateEmailConfig(dataToSave, !removeStoredPassword && dataToSave.ativo);
     if (validationError) return res.status(400).json({ error: validationError });
 
     await db.insert(app_configs).values({ id: "email", data: dataToSave, updatedAt: new Date() })

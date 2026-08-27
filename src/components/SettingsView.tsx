@@ -40,7 +40,7 @@ interface SettingsViewProps {
   logoConfig?: LogoConfig;
   onCreateUser: (userData: Partial<User>) => Promise<void>;
   onUpdateUser: (userId: string, updatedFields: Partial<User>) => Promise<void>;
-  onUpdateEmailConfig: (config: EmailConfig) => Promise<EmailConfig>;
+  onUpdateEmailConfig: (config: EmailConfig, options?: { removerSenha?: boolean }) => Promise<EmailConfig>;
   onUpdateSignatureConfig: (config: SignatureConfig) => void;
   onUpdateLogoConfig?: (config: LogoConfig) => void;
   onTestEmailDispatch: (targetEmail: string) => Promise<{ ok: boolean; message: string }>;
@@ -338,6 +338,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await saveEmailConfig();
     } catch (error: any) {
       setTestResult({ ok: false, message: error?.message || 'Não foi possível salvar a configuração SMTP.' });
+    }
+  };
+
+  const handleRemoveStoredSmtpPassword = async () => {
+    if (!window.confirm('Remover a senha SMTP salva? Os envios automáticos e manuais serão desativados até você cadastrar uma nova senha.')) return;
+    setSavingEmail(true);
+    setTestResult(null);
+    try {
+      const saved = await onUpdateEmailConfig({ ...localEmailConfig, emailRemetente: resolvedSenderEmail, senha: '' }, { removerSenha: true });
+      setLocalEmailConfig({ ...saved, senha: '' });
+      setEmailDirty(false);
+      setTestResult({ ok: true, message: 'Senha SMTP removida do banco. O envio de e-mails foi desativado.' });
+    } catch (error: any) {
+      setTestResult({ ok: false, message: error?.message || 'Não foi possível remover a senha SMTP.' });
+    } finally {
+      setSavingEmail(false);
     }
   };
 
@@ -899,7 +915,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {localEmailConfig.senhaConfigurada && !localEmailConfig.senha && (
-                  <p className="mt-1 text-[11px] font-medium text-emerald-700">Senha SMTP configurada. Preencha somente para substituí-la.</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-medium text-emerald-700">
+                    <span>Senha SMTP configurada. Preencha somente para substituí-la.</span>
+                    <button type="button" onClick={() => void handleRemoveStoredSmtpPassword()} disabled={savingEmail} className="font-bold text-rose-700 underline underline-offset-2 hover:text-rose-800 disabled:opacity-50">Remover senha salva</button>
+                  </div>
                 )}
               </div>
 
