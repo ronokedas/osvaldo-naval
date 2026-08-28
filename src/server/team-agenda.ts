@@ -41,21 +41,22 @@ const shiftDate = (value: string, amount: number): string => {
 export const isValidAgendaDate = (value: unknown): value is string => typeof value === 'string' && parseDate(value) !== null;
 export const isValidAgendaTime = (value: unknown): value is string => typeof value === 'string' && /^(?:[01]\d|2[0-3]):(?:00|30)$/.test(value);
 
+/**
+ * Janela da aba semanal: os sete dias completos a partir de amanhã.
+ * Não usamos a semana-calendário para não exibir dias que já passaram.
+ */
 export const getAgendaWeekRange = (now: Date = new Date()): { today: string; start: string; end: string } => {
   const today = getSaoPauloDate(now);
-  const date = parseDate(today)!;
-  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
-  const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
-  const start = shiftDate(today, -daysFromMonday);
-  return { today, start, end: shiftDate(start, 6) };
+  const start = shiftDate(today, 1);
+  return { today, start, end: shiftDate(today, 7) };
 };
 
 export const getAgendaPeriodRange = (period: TeamAgendaPeriod, now: Date = new Date()): { start?: string; end?: string } => {
   const week = getAgendaWeekRange(now);
   if (period === 'today') return { start: week.today, end: week.today };
   if (period === 'week') return { start: week.start, end: week.end };
-  if (period === 'upcoming') return { start: shiftDate(week.end, 1) };
-  return { end: shiftDate(week.start, -1) };
+  if (period === 'upcoming') return { start: shiftDate(week.end, 1), end: shiftDate(week.end, 30) };
+  return { end: shiftDate(week.today, -1) };
 };
 
 export const classifyAgendaDate = (date: string, now: Date = new Date()): TeamAgendaPeriod | null => {
@@ -64,8 +65,8 @@ export const classifyAgendaDate = (date: string, now: Date = new Date()): TeamAg
   const today = getSaoPauloDate(now);
   if (date === today) return 'today';
   if (date >= range.start! && date <= range.end!) return 'week';
-  if (date > range.end!) return 'upcoming';
-  return 'history';
+  if (agendaDateInPeriod(date, 'upcoming', now)) return 'upcoming';
+  return date < today ? 'history' : null;
 };
 
 export const agendaDateInPeriod = (date: string, period: TeamAgendaPeriod, now: Date = new Date()): boolean => {

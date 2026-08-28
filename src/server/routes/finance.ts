@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { financial_entries, vessels, financial_attachments, notifications, users, clients, financial_categories, financial_suppliers, accounts_receivable, accounts_payable, payments } from "../../db/schema.js";
-import { eq, desc, sql, and, or } from "drizzle-orm";
+import { eq, desc, sql, and, or, count } from "drizzle-orm";
 import { requireAdminAccess } from "../middleware/requireFinanceRole.js";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
@@ -15,6 +15,7 @@ import {
 } from "../../utils/financial-utils.js";
 import { paidAmount, receivableBalance } from "../financial-balance.js";
 import { isValidEmailAddress, sendEmail } from "../mailer.js";
+import { isPaginatedQuery, paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -78,13 +79,14 @@ router.get("/summary", async (_req, res) => {
 // GET - Listar todos os lançamentos financeiros
 router.get("/", async (req, res) => {
   try {
-    const { embarcacaoId, osId, tipo, dataInicio, dataFim, search } = req.query;
+    const { embarcacaoId, osId, tipo, natureza, dataInicio, dataFim, search } = req.query;
     
     const conditions: any[] = [];
     
     if (embarcacaoId) conditions.push(eq(financial_entries.embarcacaoId, embarcacaoId as string));
     if (osId) conditions.push(eq(financial_entries.osId, osId as string));
     if (tipo) conditions.push(eq(financial_entries.tipo, tipo as string));
+    if (natureza) conditions.push(eq(financial_entries.natureza, natureza as string));
     if (dataInicio && dataFim) {
       conditions.push(sql`${financial_entries.data} BETWEEN ${dataInicio} AND ${dataFim}`);
     }
@@ -96,13 +98,28 @@ router.get("/", async (req, res) => {
       ));
     }
 
+    const order = [desc(financial_entries.data), desc(financial_entries.createdAt), desc(financial_entries.id)];
+    if (isPaginatedQuery(req.query as Record<string, unknown>)) {
+      const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const [rows, totalRows] = await Promise.all([
+        db.select().from(financial_entries).where(where).orderBy(...order).limit(limit).offset(offset),
+        db.select({ total: count() }).from(financial_entries).where(where),
+      ]);
+      const total = Number(totalRows[0]?.total || 0);
+      return res.json({ items: rows.map(serializeFinancialEntry), pagination: paginationMeta(page, limit, total) });
+    }
+
     const all = await db.select()
       .from(financial_entries)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(financial_entries.createdAt));
+      .orderBy(...order);
     
     res.json(all.map(serializeFinancialEntry));
   } catch (error) {
+    if (error instanceof Error && (error.message === "INVALID_PAGE" || error.message === "INVALID_LIMIT")) {
+      return res.status(400).json({ error: "Parâmetros de paginação inválidos." });
+    }
     console.error("Erro ao buscar lançamentos financeiros:", error);
     res.status(500).json({ 
       error: "Erro ao buscar lançamentos", 
@@ -152,7 +169,7 @@ router.post("/:id/send-receipt-email", requireFinanceWrite, async (req, res) => 
 // GET - Exportar CSV
 router.get("/export/csv", requireFinanceWrite, async (req, res) => {
   try {
-    const entries = await db.select().from(financial_entries).orderBy(desc(financial_entries.createdAt));
+    const entries = await db.select().from(financial_entries).orderBy(desc(financial_entries.data), desc(financial_entries.createdAt), desc(financial_entries.id));
     
     const csv = generateFinancialCSV(entries.map(serializeFinancialEntry));
     

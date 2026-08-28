@@ -8,7 +8,7 @@ import {
   proposal_acceptances, proposal_deliveries, accounts_receivable, payments,
   financial_entries, clients,
 } from "../../db/schema.js";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, ilike, or, count } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import {
@@ -16,6 +16,7 @@ import {
   serializeProposalDelivery, serializeAccountReceivable, serializePayment,
 } from "../serializers.js";
 import { sendEmail } from "../mailer.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 const requireProposalAccess = requireAuth;
@@ -56,6 +57,22 @@ const acceptanceUpload = multer({
     if (allowed.test(ext)) return cb(null, true);
     cb(new Error('Tipo de arquivo não permitido. Aceitos: PDF, DOC/DOCX e imagens.'));
   },
+});
+
+router.get("/list", requireProposalAccess, async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const q = String(req.query.q || '').trim();
+    const where = q ? or(ilike(proposals.numero, `%${q}%`), ilike(proposals.assunto, `%${q}%`), ilike(proposals.embarcacaoNome, `%${q}%`), ilike(proposals.clienteNome, `%${q}%`)) : undefined;
+    const [items, totalRows] = await Promise.all([
+      db.select().from(proposals).where(where).orderBy(desc(proposals.createdAt), desc(proposals.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(proposals).where(where),
+    ]);
+    return res.json({ items: items.map(serializeProposal), pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    return res.status(500).json({ error: 'Não foi possível carregar as propostas.' });
+  }
 });
 
 router.get("/", requireProposalAccess, async (req, res) => {

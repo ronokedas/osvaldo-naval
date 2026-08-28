@@ -4,7 +4,7 @@ import {
   accounts_receivable, payments, receipts, proposals, service_orders,
   financial_entries, vessels,
 } from "../../db/schema.js";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, count, inArray } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../serializers.js";
 import { paidAmount, receivableStatus } from "../financial-balance.js";
 import { reconcileOsReadiness } from "../delivery-workflow.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 const requireFinance = requirePermission([PERMISSIONS.FINANCEIRO_ADMINISTRACAO]);
@@ -61,6 +62,38 @@ router.get("/", requireAuth, async (req: any, res: any) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.get("/list", requireAuth, async (req: any, res: any) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const status = req.query.status && req.query.status !== 'todos' ? String(req.query.status) : undefined;
+    const where = status ? eq(accounts_receivable.status, status) : undefined;
+    const [rows, totalRows] = await Promise.all([
+      db.select().from(accounts_receivable).where(where).orderBy(desc(accounts_receivable.createdAt), desc(accounts_receivable.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(accounts_receivable).where(where),
+    ]);
+    const [allProposals, allOrders] = await Promise.all([db.select().from(proposals), db.select().from(service_orders)]);
+    const proposalsById = new Map(allProposals.map((proposal) => [proposal.id, proposal]));
+    const ordersById = new Map(allOrders.map((order) => [order.id, order]));
+    const ids = rows.map((row) => row.id);
+    const paymentRows = ids.length ? await db.select().from(payments).where(inArray(payments.contaReceberId, ids)) : [];
+    const paymentsByAccount = new Map<string, typeof paymentRows>();
+    for (const payment of paymentRows) {
+      if (!payment.contaReceberId) continue;
+      const list = paymentsByAccount.get(payment.contaReceberId) || [];
+      list.push(payment);
+      paymentsByAccount.set(payment.contaReceberId, list);
+    }
+    res.json({
+      items: rows.map((row) => serializeAccountReceivable({ ...row, valorPago: paidAmount(paymentsByAccount.get(row.id) || []), propostaNumero: proposalsById.get(row.propostaId)?.numero, osNumero: row.osId ? ordersById.get(row.osId)?.numero : undefined })),
+      pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    console.error(error);
+    res.status(500).json({ error: 'Não foi possível carregar as contas a receber.' });
   }
 });
 

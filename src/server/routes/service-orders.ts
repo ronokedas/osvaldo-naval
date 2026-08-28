@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { service_orders, documents, deliveries, delivery_dispatches, delivery_dispatch_documents, approved_document_files, os_finalization_reviews, service_order_items, service_order_item_comments, schedules, os_events, external_submissions, external_responses, document_versions, proposals, vessels, clients, users, notifications, protocols } from "../../db/schema.js";
-import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, or, ilike, count } from "drizzle-orm";
 import { requireAuth, requirePermission, requireRole } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import { serializeServiceOrder, serializeSchedule, serializeDocument, serializeDocumentVersion, serializeExternalSubmission, serializeExternalResponse, serializeDelivery, serializeOsEvent, serializeNotification, serializeProtocol } from "../serializers.js";
 import { allServicesCompleted, assertServicesCompleted, getOsReadinessBlockers, isDeliveryActionPending, reconcileOsReadiness, reconcileVesselCompletion } from "../delivery-workflow.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 
@@ -157,6 +158,46 @@ router.get("/notifications", requireAuth, async (req: any, res: any) => {
     res.json(list.map(serializeNotification));
   } catch {
     res.status(500).json({ error: "Não foi possível carregar notificações" });
+  }
+});
+
+// Lightweight paginated collection. Full documents, remittances and timeline
+// remain exclusive to GET /:id so the Kanban does not load the entire dossier.
+router.get("/list", requireAuth, async (req: any, res: any) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const conditions: any[] = [];
+    if (req.query.status && req.query.status !== 'todos') conditions.push(eq(service_orders.status, String(req.query.status)));
+    const q = String(req.query.q || '').trim();
+    if (q) conditions.push(or(ilike(service_orders.numero, `%${q}%`), ilike(service_orders.status, `%${q}%`)));
+    const currentUser = req.user;
+    if (currentUser.role !== 'admin' && currentUser.role !== 'financeiro') {
+      const assigned = await db.select({ osId: service_order_items.osId }).from(service_order_items).where(eq(service_order_items.tecnicoResponsavelId, currentUser.id));
+      const ids = [...new Set(assigned.map((row) => row.osId))];
+      if (!ids.length) return res.json({ items: [], pagination: paginationMeta(page, limit, 0) });
+      conditions.push(inArray(service_orders.id, ids));
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [rows, totalRows] = await Promise.all([
+      db.select().from(service_orders).where(where).orderBy(desc(service_orders.createdAt), desc(service_orders.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(service_orders).where(where),
+    ]);
+    const vesselIds = rows.map((row) => row.embarcacaoId).filter(Boolean) as string[];
+    const proposalIds = rows.map((row) => row.propostaId).filter(Boolean) as string[];
+    const [vesselRows, clientRows, proposalRows, itemRows] = await Promise.all([
+      vesselIds.length ? db.select().from(vessels).where(inArray(vessels.id, vesselIds)) : [],
+      rows.length ? db.select().from(clients).where(inArray(clients.id, rows.map((row) => row.clienteId).filter(Boolean) as string[])) : [],
+      proposalIds.length ? db.select().from(proposals).where(inArray(proposals.id, proposalIds)) : [],
+      rows.length ? db.select().from(service_order_items).where(inArray(service_order_items.osId, rows.map((row) => row.id))) : [],
+    ]);
+    const vesselMap = new Map<string, any>(vesselRows.map((row: any) => [row.id, row] as [string, any]));
+    const clientMap = new Map<string, any>(clientRows.map((row: any) => [row.id, row] as [string, any]));
+    const proposalMap = new Map<string, any>(proposalRows.map((row: any) => [row.id, row] as [string, any]));
+    res.json({ items: rows.map((row) => ({ ...serializeServiceOrder(row), propostaNumero: proposalMap.get(row.propostaId || '')?.numero, embarcacaoNome: vesselMap.get(row.embarcacaoId || '')?.nome, clienteNome: clientMap.get(row.clienteId || '')?.nome, quantidadeServicos: itemRows.filter((item) => item.osId === row.id).length })), pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    console.error('Erro ao carregar lista paginada de OS:', error);
+    res.status(500).json({ error: 'Não foi possível carregar as Ordens de Serviço.' });
   }
 });
 

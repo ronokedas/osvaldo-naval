@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/server/protocol-workflow.test.ts src/server/financial-balance.test.ts src/server/delivery-workflow.test.ts src/server/team-agenda.test.ts src/server/mailer.test.ts src/access-control.test.ts src/theme.test.ts"
+    "test": "node --import tsx --test src/server/protocol-workflow.test.ts src/server/financial-balance.test.ts src/server/delivery-workflow.test.ts src/server/team-agenda.test.ts src/server/mailer.test.ts src/access-control.test.ts src/theme.test.ts src/utils/input-formatters.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

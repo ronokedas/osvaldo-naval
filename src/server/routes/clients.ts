@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { clients } from "../../db/schema.js";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq, ilike, or, count } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 
@@ -12,6 +13,24 @@ router.get("/", requireAuth, async (_req, res) => {
     res.json(await db.select().from(clients).orderBy(asc(clients.nome)));
   } catch {
     res.status(500).json({ error: "Não foi possível carregar os clientes" });
+  }
+});
+
+// Paginated collection for large administrative lists. The legacy GET above
+// intentionally remains an array for existing consumers.
+router.get("/list", requireAuth, async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const q = String(req.query.q || '').trim();
+    const where = q ? or(ilike(clients.nome, `%${q}%`), ilike(clients.email, `%${q}%`), ilike(clients.cnpjCpf, `%${q}%`)) : undefined;
+    const [items, totalRows] = await Promise.all([
+      db.select().from(clients).where(where).orderBy(asc(clients.nome), desc(clients.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(clients).where(where),
+    ]);
+    res.json({ items, pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    res.status(500).json({ error: 'Não foi possível carregar os clientes' });
   }
 });
 

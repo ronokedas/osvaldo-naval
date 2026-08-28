@@ -159,6 +159,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>(tabFromCurrentPath);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]);
   const [selectedVessel, setSelectedVessel] = useState<Vessel | null>(null);
   const [selectedProposalForView, setSelectedProposalForView] = useState<Proposal | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -267,7 +268,7 @@ export default function App() {
         can('commitments') ? fetch('/api/critical-pendings') : emptyResponse('[]'),
         currentUser.role === 'admin' ? fetch('/api/settings/email', { cache: 'no-store' }) : emptyResponse('{}'),
         currentUser.role === 'admin' ? fetch('/api/settings/signature', { cache: 'no-store' }) : emptyResponse('{}'),
-        currentUser.role === 'admin' ? fetch('/api/settings/logo', { cache: 'no-store' }) : emptyResponse('{}'),
+        fetch('/api/branding/logo', { cache: 'no-store' }),
         fetch('/api/dashboard/summary'),
         can('financial') ? fetch('/api/finance/summary') : emptyResponse('{}'),
       ]);
@@ -825,34 +826,21 @@ export default function App() {
     }
   };
 
-  const globalSearchResults = React.useMemo<GlobalSearchResult[]>(() => {
-    const query = searchQuery.trim().toLocaleLowerCase('pt-BR');
-    if (!query) return [];
-    const matches = (value: unknown) => String(value || '').toLocaleLowerCase('pt-BR').includes(query);
-    const results: GlobalSearchResult[] = [];
-    clients.forEach((client) => {
-      if (matches(`${client.nome} ${client.empresa} ${client.email} ${client.cnpjCpf}`)) results.push({ id: client.id, type: 'cliente', title: client.nome, detail: client.empresa || client.email });
-    });
-    vessels.forEach((vessel) => {
-      if (matches(`${vessel.nome} ${vessel.registro} ${vessel.clienteNome}`)) results.push({ id: vessel.id, type: 'embarcacao', title: vessel.nome, detail: `${vessel.registro} · ${vessel.clienteNome}` });
-    });
-    proposals.forEach((proposal) => {
-      if (matches(`${proposal.numero} ${proposal.embarcacaoNome} ${proposal.clienteNome} ${proposal.assunto}`)) results.push({ id: proposal.id, type: 'proposta', title: proposal.numero, detail: `${proposal.embarcacaoNome} · ${proposal.clienteNome}` });
-    });
-    serviceOrders.forEach((order) => {
-      if (matches(`${order.numero} ${order.propostaNumero} ${order.embarcacaoNome} ${order.clienteNome}`)) results.push({ id: order.id, type: 'ordem', title: `OS ${order.numero}`, detail: `${order.embarcacaoNome || 'Embarcação não informada'} · ${order.statusLabel || order.status}` });
-      (order.documentos || []).forEach((document) => {
-        if (matches(`${document.titulo} ${order.numero} ${order.embarcacaoNome} ${order.clienteNome}`)) results.push({ id: document.id, type: 'documento', title: document.titulo, detail: `OS ${order.numero} · ${order.embarcacaoNome || 'Embarcação não informada'}` });
-      });
-    });
-    tasks.forEach((task) => {
-      if (matches(`${task.titulo} ${task.embarcacaoNome} ${task.clienteNome}`)) results.push({ id: task.id, type: 'tarefa', title: task.titulo, detail: `${task.embarcacaoNome} · ${task.responsavelNome}` });
-    });
-    protocols.forEach((protocol) => {
-      if (matches(`${protocol.numeroProtocolo} ${protocol.osId || ''} ${protocol.embarcacaoNome} ${protocol.clienteNome} ${protocol.status}`)) results.push({ id: protocol.id, type: 'protocolo', title: protocol.numeroProtocolo || 'Protocolo', detail: `${protocol.embarcacaoNome} · ${protocol.status.replaceAll('_', ' ')}` });
-    });
-    return results.slice(0, 12);
-  }, [clients, vessels, proposals, serviceOrders, tasks, protocols, searchQuery]);
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) { setGlobalSearchResults([]); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=12`, { signal: controller.signal });
+        if (response.ok) setGlobalSearchResults(await response.json());
+        else setGlobalSearchResults([]);
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') setGlobalSearchResults([]);
+      }
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [searchQuery]);
 
   const handleGlobalSearchResult = (result: GlobalSearchResult) => {
     setSearchQuery('');

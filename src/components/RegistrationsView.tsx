@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { CurrencyInput } from './CurrencyInput';
 import { formatCpfCnpj, formatPhone, isValidCpfCnpj, isValidEmail } from '../utils/input-formatters';
+import { PaginationControls } from './PaginationControls';
 
 const onlyDigits = (value: string) => value.replace(/\D/g, '');
 
@@ -22,6 +23,8 @@ export function RegistrationsView({ onChanged, canManage = false }: { onChanged?
   const [clients, setClients] = useState<any[]>([]);
   const [certifiers, setCertifiers] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  const [clientPage, setClientPage] = useState(1);
+  const [clientPageSize, setClientPageSize] = useState(25);
   const [vessels, setVessels] = useState<any[]>([]);
 
   // Client form state
@@ -223,6 +226,8 @@ export function RegistrationsView({ onChanged, canManage = false }: { onChanged?
       c.cnpjCpf?.includes(clientSearch) ||
       c.email?.toLowerCase().includes(clientSearch.toLowerCase())
   );
+  const pagedClients = filteredClients.slice((clientPage - 1) * clientPageSize, clientPage * clientPageSize);
+  useEffect(() => setClientPage(1), [clientSearch]);
 
   const filteredCertifiers = certifiers.filter(
     (c) =>
@@ -403,7 +408,7 @@ export function RegistrationsView({ onChanged, canManage = false }: { onChanged?
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 max-h-[32rem] overflow-y-auto pr-1">
-              {filteredClients.map((c) => {
+              {pagedClients.map((c) => {
                 const clientVessels = vessels.filter((v) => v.clienteId === c.id);
                 return (
                   <div
@@ -448,6 +453,7 @@ export function RegistrationsView({ onChanged, canManage = false }: { onChanged?
                   </div>
                 );
               })}
+              <PaginationControls page={clientPage} pageSize={clientPageSize} total={filteredClients.length} onPageChange={setClientPage} onPageSizeChange={(size) => { setClientPageSize(size); setClientPage(1); }} />
               {filteredClients.length === 0 && (
                 <p className="text-center py-4 text-xs text-slate-400">Nenhum cliente encontrado.</p>
               )}

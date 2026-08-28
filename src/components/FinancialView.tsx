@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { PaymentReceiptModal } from './PaymentReceiptModal';
 import { CurrencyInput } from './CurrencyInput';
+import { PaginationControls } from './PaginationControls';
 
 interface FinancialViewProps {
   vessels: Vessel[];
@@ -74,6 +75,12 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
   const [receivableStatus, setReceivableStatus] = useState<'todos' | 'pendentes' | 'pagos'>('todos');
   const [expandedReceivableId, setExpandedReceivableId] = useState<string | null>(null);
   const [receivableDetails, setReceivableDetails] = useState<Record<string, any>>({});
+  const [receivablePage, setReceivablePage] = useState(1);
+  const [receivablePageSize, setReceivablePageSize] = useState(25);
+  const [entryPage, setEntryPage] = useState(1);
+  const [entryPageSize, setEntryPageSize] = useState(25);
+  const [payablePage, setPayablePage] = useState(1);
+  const [payablePageSize, setPayablePageSize] = useState(25);
 
   useEffect(() => {
     setShowPendingOnly(initialFilter === 'pending');
@@ -143,6 +150,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
     const matchesStatus = receivableStatus === 'todos' || (receivableStatus === 'pendentes' ? (account.saldo || 0) > 0.009 : (account.saldo || 0) <= 0.009);
     return matchesSearch && matchesStatus;
   });
+  const pagedReceivables = filteredReceivables.slice((receivablePage - 1) * receivablePageSize, receivablePage * receivablePageSize);
 
   const openReceivableDetails = async (accountId: string) => {
     if (expandedReceivableId === accountId) {
@@ -173,6 +181,11 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
       && (!entryStartDate || e.data >= entryStartDate)
       && (!entryEndDate || e.data <= entryEndDate);
   });
+  const orderedEntries = [...filteredEntries].sort((a, b) => `${b.data || ''}|${b.id}`.localeCompare(`${a.data || ''}|${a.id}`));
+  const pagedEntries = orderedEntries.slice((entryPage - 1) * entryPageSize, entryPage * entryPageSize);
+  const pagedPayables = payables.slice((payablePage - 1) * payablePageSize, payablePage * payablePageSize);
+  useEffect(() => { setReceivablePage(1); }, [receivableSearch, receivableStatus]);
+  useEffect(() => { setEntryPage(1); }, [search, entryNature, entryType, entryVesselId, entryStartDate, entryEndDate]);
 
   useEffect(() => {
     const options = receivablesForVessel(selectedVesselId);
@@ -443,7 +456,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                 <table className="w-full text-left text-xs border-collapse min-w-[850px]">
                   <thead><tr className="bg-[#0B192C] text-white uppercase font-bold tracking-wider text-[10px]"><th className="p-3">Proposta / OS</th><th className="p-3">Embarcação / Cliente</th><th className="p-3 text-right">Original</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Saldo</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Ações</th></tr></thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {filteredReceivables.map((account) => {
+                    {pagedReceivables.map((account) => {
                       const vessel = vessels.find((item) => item.id === account.embarcacaoId);
                       const client = clients.find((item) => item.id === account.clienteId);
                       const pending = Number(account.saldo || 0) > 0.009;
@@ -463,6 +476,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                     })}
                   </tbody>
                 </table>
+                <PaginationControls page={receivablePage} pageSize={receivablePageSize} total={filteredReceivables.length} onPageChange={setReceivablePage} onPageSizeChange={(size) => { setReceivablePageSize(size); setReceivablePage(1); }} />
               </div>
             )}
           </div>
@@ -636,7 +650,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {payables.map((account) => {
+                    {pagedPayables.map((account) => {
                       const today = new Date().toISOString().slice(0, 10);
                       const isOverdue =
                         account.vencimento &&
@@ -728,6 +742,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
                     })}
                   </tbody>
                 </table>
+                <PaginationControls page={payablePage} pageSize={payablePageSize} total={payables.length} onPageChange={setPayablePage} onPageSizeChange={(size) => { setPayablePageSize(size); setPayablePage(1); }} />
               </div>
             )}
           </div>
@@ -919,7 +934,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredEntries.map((e) => {
+              {pagedEntries.map((e) => {
                 const vessel = vessels.find((v) => v.id === e.embarcacaoId);
 
                 return (
@@ -1003,6 +1018,7 @@ export const FinancialView: React.FC<FinancialViewProps> = ({
               })}
             </tbody>
           </table>
+          <PaginationControls page={entryPage} pageSize={entryPageSize} total={orderedEntries.length} onPageChange={setEntryPage} onPageSizeChange={(size) => { setEntryPageSize(size); setEntryPage(1); }} />
         </div>
         )}
       </div>}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Vessel, Client, Certificadora } from '../types';
 import { Ship, Search, Plus, Filter, ArrowRight, DollarSign, Award, CheckCircle2 } from 'lucide-react';
+import { PaginationControls } from './PaginationControls';
 
 interface VesselsListProps {
   vessels: Vessel[];
@@ -24,6 +25,8 @@ export const VesselsList: React.FC<VesselsListProps> = ({
   const [certifierFilter, setCertifierFilter] = useState<string>('todas');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [availableClients, setAvailableClients] = useState<Client[]>(clients);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Sync with prop
   React.useEffect(() => {
@@ -77,6 +80,8 @@ export const VesselsList: React.FC<VesselsListProps> = ({
       certifierFilter === 'todas' || v.certificadoraPrincipal === certifierFilter;
     return matchesSearch && matchesStatus && matchesCertifier;
   });
+  const pagedVessels = filteredVessels.slice((page - 1) * pageSize, page * pageSize);
+  React.useEffect(() => setPage(1), [search, statusFilter, certifierFilter]);
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,7 +193,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
 
       {/* Vessel Grid Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredVessels.map((v) => {
+        {pagedVessels.map((v) => {
           const percentReceived = v.valorTotal > 0 ? Math.round((v.valorRecebido / v.valorTotal) * 100) : 0;
           const remainingBalance = v.valorTotal - v.valorRecebido;
 
@@ -259,6 +264,7 @@ export const VesselsList: React.FC<VesselsListProps> = ({
             </div>
           );
         })}
+        <PaginationControls page={page} pageSize={pageSize} total={filteredVessels.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
       </div>
 
       {filteredVessels.length === 0 && (

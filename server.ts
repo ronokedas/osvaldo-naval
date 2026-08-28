@@ -25,6 +25,8 @@ import certifiersRoutes from "./src/server/routes/certifiers.js";
 import servicesRoutes from "./src/server/routes/services.js";
 import documentLibraryRoutes from "./src/server/routes/document-library.js";
 import dashboardRoutes from "./src/server/routes/dashboard.js";
+import searchRoutes from "./src/server/routes/search.js";
+import brandingRoutes from "./src/server/routes/branding.js";
 import { pool } from "./src/db/index.js";
 import { requireAnyModuleAccess, requireModuleAccess } from "./src/server/auth.js";
 
@@ -104,6 +106,8 @@ async function startServer() {
   app.use("/api/services", requireAnyModuleAccess(["registrations", "proposals"]), servicesRoutes);
   app.use("/api/document-library", requireModuleAccess("documents"), documentLibraryRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/search", searchRoutes);
+  app.use("/api/branding", brandingRoutes);
   // Global Error Handler for API
   app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("API Error:", err);

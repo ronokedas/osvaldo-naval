@@ -5,13 +5,14 @@ import {
   protocol_response_documents, protocol_attachments, protocol_events,
   service_orders, documents, document_versions, deliveries, approved_document_files, users, notifications, os_events, vessels, clients,
 } from "../../db/schema.js";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, ilike, count } from "drizzle-orm";
 import { requireAuth, requirePermission, requireRole } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import { serializeProtocol } from "../serializers.js";
 import { awaitingExternalLabel, deriveProtocolStatus, EXTERNAL_RESPONSE_TYPES, isValidProtocolAttachment } from "../protocol-workflow.js";
 import { assertServicesCompleted, reconcileOsReadiness } from "../delivery-workflow.js";
 import { sendEmail } from "../mailer.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 const requireProtocolPermission = requirePermission([PERMISSIONS.REGISTRAR_ENVIO_RESPOSTA_EXTERNA]);
@@ -103,6 +104,27 @@ async function ensureDeliveryTask(tx: any, protocol: any, actor: any) {
   if (assignee) await tx.insert(notifications).values({ usuarioId: assignee.id, tipo: "entrega_atribuida", titulo: "Nova entrega atribuída", mensagem: `Os documentos finais da OS ${order.numero} estão prontos para entrega.`, osId: protocol.osId, prioridade: "alta" });
   return delivery;
 }
+
+router.get("/list", requireAuth, async (req: any, res: any) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const conditions: any[] = [];
+    if (req.query.status && req.query.status !== 'todos') conditions.push(eq(protocols.status, String(req.query.status)));
+    if (req.query.tipo && req.query.tipo !== 'todos') conditions.push(eq(protocols.tipoProtocolo, String(req.query.tipo)));
+    const q = String(req.query.q || '').trim();
+    if (q) conditions.push(ilike(protocols.numeroProtocolo, `%${q}%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [rows, totalRows] = await Promise.all([
+      db.select().from(protocols).where(where).orderBy(desc(protocols.createdAt), desc(protocols.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(protocols).where(where),
+    ]);
+    res.json({ items: await hydrateProtocols(rows), pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    console.error(error);
+    res.status(500).json({ error: 'Não foi possível carregar os protocolos.' });
+  }
+});
 
 router.get("/", requireAuth, async (req: any, res: any) => {
   try {

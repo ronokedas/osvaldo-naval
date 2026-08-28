@@ -4,6 +4,7 @@ import { ProposalPdfTemplate } from './ProposalPdfTemplate';
 import { generateProposalPdf, generateReceiptPdf, downloadBlob, blobToBase64 } from '../utils/pdfGenerator';
 import { INITIAL_STANDARD_OBSERVATIONS } from '../data/initialData';
 import { CurrencyInput } from './CurrencyInput';
+import { PaginationControls } from './PaginationControls';
 import { formatDateBR } from '../utils/date-formatters';
 import {
   FileText,
@@ -56,6 +57,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
   initialStatuses,
 }) => {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [statusFilter, setStatusFilter] = useState<string[]>(initialStatuses || []);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -149,6 +152,8 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         p.embarcacaoNome.toLowerCase().includes(search.toLowerCase()) ||
         p.clienteNome.toLowerCase().includes(search.toLowerCase()))
   );
+  const pagedProposals = filteredProposals.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => setPage(1), [search, statusFilter]);
 
   const calculateTotal = (itemsList: ScopeItem[]) => {
     return itemsList.reduce((acc, item) => acc + item.quantidade * item.valorUnitario, 0);
@@ -583,7 +588,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
-              {filteredProposals.map((p) => (
+              {pagedProposals.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50 transition">
                   <td className="p-3.5 font-mono font-bold text-blue-900 text-sm">{p.numero}</td>
                   <td className="p-3.5">
@@ -620,6 +625,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </td>
                 </tr>
               ))}
+              <PaginationControls page={page} pageSize={pageSize} total={filteredProposals.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
             </tbody>
           </table>
         </div>

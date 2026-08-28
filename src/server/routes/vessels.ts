@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { vessels, certifiers, service_orders, documents, document_versions, accounts_receivable, payments } from "../../db/schema.js";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, ilike, and, or, count, inArray } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
 import { serializeVessel } from "../serializers.js";
 import { receivableBalance } from "../financial-balance.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 
@@ -15,6 +16,26 @@ router.get("/", requireAuth, async (req, res) => {
     res.json(allVessels.map(serializeVessel));
   } catch (error) {
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.get("/list", requireAuth, async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const q = String(req.query.q || '').trim();
+    const conditions: any[] = [];
+    if (q) conditions.push(or(ilike(vessels.nome, `%${q}%`), ilike(vessels.registro, `%${q}%`), ilike(vessels.clienteNome, `%${q}%`)));
+    if (req.query.status && req.query.status !== 'todos') conditions.push(eq(vessels.status, String(req.query.status)));
+    if (req.query.clienteId) conditions.push(eq(vessels.clienteId, String(req.query.clienteId)));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [items, totalRows] = await Promise.all([
+      db.select().from(vessels).where(where).orderBy(desc(vessels.createdAt), desc(vessels.id)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(vessels).where(where),
+    ]);
+    res.json({ items: items.map(serializeVessel), pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    res.status(500).json({ error: 'Não foi possível carregar as embarcações' });
   }
 });
 

@@ -1,15 +1,19 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { accounts_payable, financial_categories, financial_entries, financial_suppliers, vessels } from "../../db/schema.js";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, count } from "drizzle-orm";
 import { requireAuth, requirePermission } from "../auth.js";
 import { PERMISSIONS } from "../permissions.js";
+import { paginationMeta, parsePagination } from "../pagination.js";
 
 const router = Router();
 const requireFinance = requirePermission([PERMISSIONS.FINANCEIRO_ADMINISTRACAO]);
 const safe = (handler: (req: any, res: any) => Promise<unknown>) => async (req: any, res: any) => {
   try { await handler(req, res); }
   catch (error) {
+    if (error instanceof Error && (error.message === 'INVALID_PAGE' || error.message === 'INVALID_LIMIT')) {
+      return res.status(400).json({ error: 'Parâmetros de paginação inválidos.' });
+    }
     console.error("Erro na operação de contas a pagar:", error);
     if (!res.headersSent) res.status(500).json({ error: "Não foi possível concluir a operação financeira." });
   }
@@ -47,6 +51,17 @@ router.get("/", requireAuth, safe(async (_req, res) => {
   const result = [];
   for (const row of rows) result.push(await summary(row.id));
   res.json(result.filter(Boolean));
+}));
+
+router.get("/list", requireAuth, safe(async (req, res) => {
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  const [rows, totalRows] = await Promise.all([
+    db.select().from(accounts_payable).orderBy(desc(accounts_payable.createdAt), desc(accounts_payable.id)).limit(limit).offset(offset),
+    db.select({ total: count() }).from(accounts_payable),
+  ]);
+  const items = [];
+  for (const row of rows) items.push(await summary(row.id));
+  res.json({ items: items.filter(Boolean), pagination: paginationMeta(page, limit, Number(totalRows[0]?.total || 0)) });
 }));
 
 router.post("/", requireFinance, safe(async (req: any, res) => {
