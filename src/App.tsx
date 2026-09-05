@@ -569,7 +569,7 @@ export default function App() {
       prazoEntregaDias: proposalData.prazoEntregaDias || 10,
       observacoesGerais: proposalData.observacoesGerais || '',
       condicaoPagamento: proposalData.condicaoPagamento || 'À vista',
-      status: proposalData.status || 'enviado',
+      status: proposalData.status || 'rascunho',
       itens: proposalData.itens || [],
       valorDesconto: proposalData.valorDesconto || 0,
       valorTotal: proposalData.valorTotal || 0,
@@ -588,10 +588,18 @@ export default function App() {
     }
   };
 
-  const handleUpdateProposal = (proposalId: string, updatedData: Partial<Proposal>) => {
+  const handleUpdateProposal = async (proposalId: string, updatedData: Partial<Proposal>) => {
     const updated = proposals.map((p) => (p.id === proposalId ? { ...p, ...updatedData } : p));
     setProposals(updated);
-    apiPut(`/api/proposals/${proposalId}`, updatedData);
+    try {
+      const res = await apiPut(`/api/proposals/${proposalId}`, updatedData);
+      if (res) {
+        const normalized = normalizeProposal(res);
+        setProposals((prev) => prev.map((p) => (p.id === proposalId ? normalized : p)));
+      }
+    } catch (e) {
+      console.error('Erro ao atualizar proposta:', e);
+    }
   };
 
   // Task Actions

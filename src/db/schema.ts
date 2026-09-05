@@ -20,6 +20,7 @@ export const users = pgTable("users", {
 export const clients = pgTable("clients", {
   id: uuid("id").primaryKey().defaultRandom(),
   nome: text("nome").notNull(),
+  responsavel: text("responsavel"),
   email: text("email"),
   telefone: text("telefone"),
   whatsapp: text("whatsapp"),

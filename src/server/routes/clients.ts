@@ -22,7 +22,14 @@ router.get("/list", requireAuth, async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
     const q = String(req.query.q || '').trim();
-    const where = q ? or(ilike(clients.nome, `%${q}%`), ilike(clients.email, `%${q}%`), ilike(clients.cnpjCpf, `%${q}%`)) : undefined;
+    const where = q
+      ? or(
+          ilike(clients.nome, `%${q}%`),
+          ilike(clients.responsavel, `%${q}%`),
+          ilike(clients.email, `%${q}%`),
+          ilike(clients.cnpjCpf, `%${q}%`)
+        )
+      : undefined;
     const [items, totalRows] = await Promise.all([
       db.select().from(clients).where(where).orderBy(asc(clients.nome), desc(clients.id)).limit(limit).offset(offset),
       db.select({ total: count() }).from(clients).where(where),
@@ -54,6 +61,7 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
 
     const created = (await db.insert(clients).values({
       nome,
+      responsavel: data.responsavel ? String(data.responsavel).trim() : null,
       email: data.email || null,
       telefone: data.telefone || null,
       whatsapp: data.whatsapp || null,
@@ -68,14 +76,28 @@ router.post("/", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_P
 
 router.put("/:id", requirePermission([PERMISSIONS.CADASTRAR_CLIENTES_EMBARCACOES_PROPOSTAS]), async (req, res) => {
   try {
-    const data = req.body || {}; const nome = String(data.nome || "").trim();
+    const data = req.body || {};
+    const nome = String(data.nome || "").trim();
     if (!nome) return res.status(400).json({ error: "Nome do cliente é obrigatório" });
     const cnpjCpf = data.cnpjCpf ? String(data.cnpjCpf).replace(/\D/g, "") : null;
     if (cnpjCpf && !(cnpjCpf.length === 11 ? validateCPF(cnpjCpf) : cnpjCpf.length === 14 ? validateCNPJ(cnpjCpf) : false)) return res.status(400).json({ error: "CPF/CNPJ inválido. Por favor, verifique os números digitados." });
-    const updated = await db.update(clients).set({ nome, email: data.email || null, telefone: data.telefone || null, whatsapp: data.whatsapp || null, cnpjCpf, endereco: data.endereco || null, updatedAt: new Date() }).where(eq(clients.id, req.params.id)).returning();
+    
+    const updated = await db.update(clients).set({
+      nome,
+      responsavel: data.responsavel !== undefined ? (data.responsavel ? String(data.responsavel).trim() : null) : undefined,
+      email: data.email || null,
+      telefone: data.telefone || null,
+      whatsapp: data.whatsapp || null,
+      cnpjCpf,
+      endereco: data.endereco || null,
+      updatedAt: new Date()
+    }).where(eq(clients.id, req.params.id)).returning();
+    
     if (!updated.length) return res.status(404).json({ error: "Cliente não encontrado" });
     res.json(updated[0]);
-  } catch { res.status(500).json({ error: "Não foi possível atualizar o cliente" }); }
+  } catch {
+    res.status(500).json({ error: "Não foi possível atualizar o cliente" });
+  }
 });
 
 // CPF validation algorithm

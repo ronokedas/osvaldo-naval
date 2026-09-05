@@ -214,6 +214,39 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     setIsEditorOpen(true);
   };
 
+  const handleEditProposal = (p: Proposal) => {
+    setEditingProposalId(p.id);
+
+    // Identifica o clienteId a partir da proposta ou da embarcação
+    let resolvedClienteId = p.clienteId || '';
+    if (!resolvedClienteId && p.embarcacaoId) {
+      const v = vessels.find((ves) => ves.id === p.embarcacaoId);
+      if (v?.clienteId) {
+        resolvedClienteId = v.clienteId;
+      } else if (v?.clienteNome) {
+        const c = clients.find((cli) => cli.nome.trim().toLowerCase() === v.clienteNome.trim().toLowerCase());
+        if (c) resolvedClienteId = c.id;
+      }
+    }
+
+    setClienteId(resolvedClienteId);
+    setEmbarcacaoId(p.embarcacaoId || '');
+    setEmbarcacoesIds(p.embarcacoesIds && p.embarcacoesIds.length > 0 ? p.embarcacoesIds : (p.embarcacaoId ? [p.embarcacaoId] : []));
+    setDestinatario(p.destinatario || 'Sr. Armador / Proprietário');
+    setAssunto(p.assunto || '');
+    setPrazoDias(Number(p.prazoEntregaDias) || 10);
+    setObservacoes(p.observacoesGerais || INITIAL_STANDARD_OBSERVATIONS);
+    setCondicaoPagamento(p.condicaoPagamento || '');
+    setElaboradoPor(p.elaboradoPor || currentUser.nome || 'Deisy Saldanha - Administrativo/Financeiro');
+    setItens(Array.isArray(p.itens) ? p.itens.map((item) => ({ ...item })) : []);
+    setValorDesconto(Number(p.valorDesconto) || 0);
+    setSelectedServiceId('');
+
+    // Fecha o modal de visualização se estiver aberto
+    setSelectedProposal(null);
+    setIsEditorOpen(true);
+  };
+
   const handleSaveProposal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProposalId && !embarcacaoId) {
@@ -234,6 +267,10 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
     if (editingProposalId) {
       onUpdateProposal(editingProposalId, {
         clienteId: clienteId || undefined,
+        embarcacaoId: embarcacaoId || undefined,
+        embarcacoesIds: embarcacoesIds.length ? embarcacoesIds : (embarcacaoId ? [embarcacaoId] : undefined),
+        embarcacaoNome: selectedVessel ? selectedVessel.nome : undefined,
+        clienteNome: selectedVessel ? selectedVessel.clienteNome : undefined,
         destinatario,
         assunto,
         prazoEntregaDias: Number(prazoDias),
@@ -248,6 +285,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
       onCreateProposal({
         clienteId,
         embarcacaoId,
+        embarcacoesIds: embarcacoesIds.length ? embarcacoesIds : (embarcacaoId ? [embarcacaoId] : []),
         embarcacaoNome: selectedVessel ? selectedVessel.nome : 'Embarcação',
         clienteNome: selectedVessel ? selectedVessel.clienteNome : 'Cliente',
         dataEmissao: nowFormatted,
@@ -256,7 +294,7 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         prazoEntregaDias: Number(prazoDias),
         observacoesGerais: observacoes,
         condicaoPagamento,
-        status: 'enviado',
+        status: 'rascunho',
         itens,
         valorDesconto: discount,
         valorTotal: totalVal,
@@ -613,15 +651,26 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                     </span>
                   </td>
                   <td className="p-3.5 text-center">
-                    <button
-                      onClick={() => {
-                        setSelectedProposal(p);
-                        handleLoadAcceptance(p);
-                      }}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> Visualizar / PDF
-                    </button>
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                      {p.status !== 'aprovado' && canManageProposal && (
+                        <button
+                          onClick={() => handleEditProposal(p)}
+                          className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                          title="Editar detalhes da proposta antes do aceite"
+                        >
+                          <Edit className="w-3.5 h-3.5" /> Editar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setSelectedProposal(p);
+                          handleLoadAcceptance(p);
+                        }}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Visualizar / PDF
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -653,6 +702,15 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {canManageProposal && (
+                    <button
+                      onClick={() => handleEditProposal(selectedProposal)}
+                      className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
+                      title="Editar detalhes da proposta"
+                    >
+                      <Edit className="w-3.5 h-3.5" /> Editar Proposta
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownloadPdf(selectedProposal)}
                     className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
@@ -733,8 +791,13 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
-              <h2 className="text-lg font-bold text-slate-900">Criar Nova Proposta Comercial</h2>
-              <button onClick={() => setIsEditorOpen(false)} className="text-slate-400 font-bold text-base">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-600" />
+                {editingProposalId
+                  ? `Editar Proposta ${proposals.find((p) => p.id === editingProposalId)?.numero || ''}`
+                  : 'Criar Nova Proposta Comercial'}
+              </h2>
+              <button onClick={() => setIsEditorOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold text-base cursor-pointer">
                 ✕
               </button>
             </div>
@@ -949,12 +1012,15 @@ export const ProposalsList: React.FC<ProposalsListProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="px-4 py-2 border rounded-lg font-bold"
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 rounded-lg font-bold transition cursor-pointer text-slate-700"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg">
-                  Salvar & Emitir Proposta
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition cursor-pointer shadow-md shadow-blue-500/20 active:scale-[0.99]"
+                >
+                  {editingProposalId ? 'Salvar Alterações da Proposta' : 'Salvar Proposta (Rascunho)'}
                 </button>
               </div>
             </form>

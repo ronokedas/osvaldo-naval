@@ -188,28 +188,42 @@ router.put("/:id", requireCommercialAccess, async (req, res) => {
     const data = req.body;
     
     const current = (await db.select().from(proposals).where(eq(proposals.id, id)))[0];
-    if (!current) return res.status(404).json({ error: "Not found" });
+    if (!current) return res.status(404).json({ error: "Proposta não encontrada" });
+
+    // Bloquear alteração direta de propostas que já foram aceitas/aprovadas
+    if (current.status === "aprovado" && data.status !== "aprovado") {
+      return res.status(400).json({ error: "Propostas já aprovadas/aceitas não podem ser alteradas pois possuem aceite e Ordem de Serviço vinculados." });
+    }
+
     const updateData: any = { updatedAt: new Date() };
     if (data.status !== undefined) updateData.status = data.status;
     if (data.clienteId !== undefined) updateData.clienteId = data.clienteId || null;
+    if (data.clienteNome !== undefined) updateData.clienteNome = data.clienteNome || null;
+    if (data.embarcacaoId !== undefined) updateData.embarcacaoId = data.embarcacaoId || null;
     if (data.embarcacoesIds !== undefined) updateData.embarcacoesIds = data.embarcacoesIds;
+    if (data.embarcacaoNome !== undefined) updateData.embarcacaoNome = data.embarcacaoNome || null;
     if (data.itens !== undefined) updateData.itens = data.itens;
     if (data.itens !== undefined || data.valorDesconto !== undefined) {
-      const values = calculateProposalValues(data.itens !== undefined ? data.itens : current.itens, data.valorDesconto !== undefined ? data.valorDesconto : current.valorDesconto);
+      const values = calculateProposalValues(
+        data.itens !== undefined ? data.itens : current.itens,
+        data.valorDesconto !== undefined ? data.valorDesconto : current.valorDesconto
+      );
       updateData.valorDesconto = values.valorDesconto.toString();
       updateData.valorTotal = values.valorTotal.toString();
     }
     if (data.destinatario !== undefined) updateData.destinatario = data.destinatario;
     if (data.assunto !== undefined) updateData.assunto = data.assunto;
-    if (data.prazoEntregaDias !== undefined) updateData.prazoEntregaDias = data.prazoEntregaDias;
+    if (data.prazoEntregaDias !== undefined) updateData.prazoEntregaDias = Number(data.prazoEntregaDias) || 0;
     if (data.condicaoPagamento !== undefined) updateData.condicoesPagamento = data.condicaoPagamento;
+    if (data.condicoesPagamento !== undefined) updateData.condicoesPagamento = data.condicoesPagamento;
     if (data.observacoesGerais !== undefined) updateData.observacoes = data.observacoesGerais;
+    if (data.observacoes !== undefined) updateData.observacoes = data.observacoes;
     if (data.elaboradoPor !== undefined) updateData.elaboradoPor = data.elaboradoPor;
     if (data.aceiteData !== undefined) updateData.aceiteData = data.aceiteData;
     if (data.aceiteAssinaturaNome !== undefined) updateData.aceiteAssinaturaNome = data.aceiteAssinaturaNome;
     
     const updated = await db.update(proposals).set(updateData).where(eq(proposals.id, id)).returning();
-    if (updated.length === 0) return res.status(404).json({ error: "Not found" });
+    if (updated.length === 0) return res.status(404).json({ error: "Proposta não encontrada" });
     
     if (data.status === "aprovado" && updated[0].embarcacaoId) {
       await db.update(vessels).set({ valorTotal: updated[0].valorTotal }).where(eq(vessels.id, updated[0].embarcacaoId));
@@ -217,7 +231,8 @@ router.put("/:id", requireCommercialAccess, async (req, res) => {
     
     res.json(serializeProposal(updated[0]));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error(error);
+    res.status(500).json({ error: "Não foi possível atualizar a proposta" });
   }
 });
 

@@ -114,6 +114,7 @@ export type Certificadora = 'ABS' | 'DNV' | 'RBNA' | 'Amazon Naval' | 'Auto Ship
 export interface Client {
   id: string;
   nome: string;
+  responsavel?: string;
   empresa: string;
   telefone: string;
   whatsapp?: string;
