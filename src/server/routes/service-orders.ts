@@ -463,6 +463,383 @@ router.get("/:id", requireAuth, async (req: any, res: any) => {
   }
 });
 
+// ---------- GET /api/service-orders/:id/relatorio (visualização executiva no navegador externo) ----------
+router.get("/:id/relatorio", requireAuth, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const osList = await db.select().from(service_orders).where(eq(service_orders.id, id));
+    if (osList.length === 0) return res.status(404).send("<h1>OS não encontrada</h1>");
+    const os = osList[0];
+
+    const allItems = await db.select().from(service_order_items).where(eq(service_order_items.osId, id));
+    const allUsers = await db.select().from(users);
+    const docs = await db.select().from(documents).where(eq(documents.osId, id));
+    const docIds = docs.map((d) => d.id);
+    const versions = docIds.length
+      ? await db.select().from(document_versions).where(inArray(document_versions.documentoId, docIds)).orderBy(desc(document_versions.versao))
+      : [];
+    const canonicalProtocols = await db.select().from(protocols).where(eq(protocols.osId, id)).orderBy(desc(protocols.createdAt));
+    const deliv = await db.select().from(deliveries).where(eq(deliveries.osId, id));
+    const deliveryIds = deliv.map((delivery) => delivery.id);
+    const [deliveryDispatchRows] = await Promise.all([
+      deliveryIds.length ? db.select().from(delivery_dispatches).where(inArray(delivery_dispatches.deliveryId, deliveryIds)) : [],
+    ]);
+
+    let vessel = null;
+    if (os.embarcacaoId) {
+      const vList = await db.select().from(vessels).where(eq(vessels.id, os.embarcacaoId!));
+      vessel = vList[0] || null;
+    }
+    let client = null;
+    if (os.clienteId) {
+      const cList = await db.select().from(clients).where(eq(clients.id, os.clienteId!));
+      client = cList[0] || null;
+    }
+    const embarcacaoNome = vessel?.nome || 'Embarcação não informada';
+    const clienteNome = client?.nome || 'Cliente não informado';
+
+    const formatDate = (dateVal?: string | Date | null) => {
+      if (!dateVal) return "-";
+      try {
+        const dateStr = dateVal instanceof Date ? dateVal.toISOString() : String(dateVal);
+        const [y, m, d] = dateStr.split("T")[0].split("-");
+        return `${d}/${m}/${y}`;
+      } catch {
+        return String(dateVal);
+      }
+    };
+
+    const statusMap: Record<string, { label: string; bg: string; text: string }> = {
+      aberta: { label: "Aberta", bg: "#e0f2fe", text: "#0369a1" },
+      em_andamento: { label: "Em Execução", bg: "#dbeafe", text: "#1d4ed8" },
+      exigencia_externa: { label: "Exigência Externa (RBNA/Capitania)", bg: "#fee2e2", text: "#b91c1c" },
+      aguardando_entrega: { label: "Aguardando Entrega", bg: "#ffedd5", text: "#c2410c" },
+      concluida: { label: "Concluída", bg: "#dcfce7", text: "#15803d" },
+      cancelada: { label: "Cancelada", bg: "#f1f5f9", text: "#475569" },
+    };
+
+    const currentStatus = statusMap[os.status] || { label: os.status, bg: "#f1f5f9", text: "#334155" };
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OS ${os.numero} - ${embarcacaoNome}</title>
+  <style>
+    :root {
+      --primary: #0B192C;
+      --accent: #1E3E62;
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --border: #E2E8F0;
+      --text: #0F172A;
+      --text-muted: #64748B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 16px;
+    }
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+    }
+    .brand-title {
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #FFFFFF;
+      color: var(--primary);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .section-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 24px 0 12px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      background: #F8FAFC;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .info-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .info-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      margin-top: 2px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+      background: #FFFFFF;
+    }
+    .service-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .file-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #2563EB;
+      text-decoration: underline;
+      margin-top: 6px;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .container { box-shadow: none; border: none; padding: 0; max-width: 100%; }
+      .actions { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div class="brand-title">⚓ NAUTILUS ENGENHARIA NAVAL</div>
+        <div class="brand-sub">Relatório Operacional da Ordem de Serviço</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+      </div>
+    </div>
+
+    <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <h1 style="font-size: 20px; font-weight: 900; color: var(--primary);">OS: ${os.numero}</h1>
+        <p style="font-size: 12px; color: var(--text-muted); font-weight: 500;">Aberta em: ${formatDate(os.createdAt)}</p>
+      </div>
+      <span class="badge" style="background: ${currentStatus.bg}; color: ${currentStatus.text};">
+        ${currentStatus.label}
+      </span>
+    </div>
+
+    <!-- Informações da Embarcação e Cliente -->
+    <div class="section-title">Dados Gerais</div>
+    <div class="info-grid">
+      <div class="info-item">
+        <span class="info-label">Embarcação</span>
+        <span class="info-val">${embarcacaoNome}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Tipo</span>
+        <span class="info-val">${vessel?.tipo || 'Embarcação'}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Registro / Matrícula</span>
+        <span class="info-val">${vessel?.registro || 'Não informado'}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Cliente / Armador</span>
+        <span class="info-val">${clienteNome}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Previsão Conclusão</span>
+        <span class="info-val">${formatDate(os.dataConclusao)}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Certificadora Principal</span>
+        <span class="info-val">${vessel?.certificadoraPrincipal || 'A definir'}</span>
+      </div>
+    </div>
+
+    <!-- Controle dos Serviços das OS -->
+    <div class="section-title">
+      <span>Controle dos Serviços da OS (${allItems.length})</span>
+    </div>
+    ${allItems.length === 0 ? '<p style="font-size: 12px; color: var(--text-muted);">Nenhum serviço registrado nesta OS.</p>' : allItems.map((item) => {
+      const tecnico = allUsers.find((u) => u.id === item.tecnicoResponsavelId);
+      const isConcluido = item.status === 'concluido';
+      const isExec = item.status === 'em_execucao';
+      const badgeBg = isConcluido ? '#dcfce7' : isExec ? '#dbeafe' : '#fef3c7';
+      const badgeColor = isConcluido ? '#15803d' : isExec ? '#1d4ed8' : '#b45309';
+      const statusLabel = isConcluido ? 'Concluído' : isExec ? 'Em Execução' : 'Aguardando Início';
+
+      return `
+      <div class="card" style="border-left: 4px solid ${isConcluido ? '#16a34a' : isExec ? '#2563eb' : '#d97706'};">
+        <div class="service-row">
+          <div>
+            <strong style="font-size: 13px; color: var(--text);">${item.descricao}</strong>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              Técnico Responsável: <strong style="color: var(--primary);">${tecnico ? tecnico.nome : 'Não atribuído'}</strong>
+              ${item.dataAgendada ? ` • Agendado: <strong>${formatDate(item.dataAgendada)} às ${item.horarioAgendado || '08:00'}</strong>` : ' • <span style="color: #b45309;">Aguardando agendamento</span>'}
+            </div>
+          </div>
+          <span class="badge" style="background: ${badgeBg}; color: ${badgeColor};">
+            ${statusLabel}
+          </span>
+        </div>
+        ${item.relatorioUrl ? `
+          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);">
+            <a href="${item.relatorioUrl}" target="_blank" class="file-link">
+              📎 Abrir Anexo Técnico / Relatório (${item.relatorioNome || 'Documento'})
+            </a>
+          </div>
+        ` : ''}
+      </div>
+      `;
+    }).join('')}
+
+    <!-- Documentos e Dossiê -->
+    <div class="section-title">
+      <span>Documentos & Dossiê Técnico (${docs.length})</span>
+    </div>
+    ${docs.length === 0 ? '<p style="font-size: 12px; color: var(--text-muted);">Nenhum documento anexado ao dossiê.</p>' : docs.map((doc) => {
+      const docVers = versions.filter((v) => v.documentoId === doc.id);
+      const latestVer = docVers[0];
+      return `
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <strong style="font-size: 13px;">${doc.titulo}</strong>
+            <div style="font-size: 11px; color: var(--text-muted);">Versão Atual: V${doc.versaoAtual || 1} • Status: ${doc.status}</div>
+          </div>
+          ${latestVer?.arquivoNomeFisico ? `
+            <a href="/api/upload/files/${encodeURIComponent(latestVer.arquivoNomeFisico)}" target="_blank" class="btn" style="color: #2563eb;">
+              📥 Baixar V${latestVer.versao}
+            </a>
+          ` : ''}
+        </div>
+      </div>
+      `;
+    }).join('')}
+
+    <!-- Protocolos e Submissões Externas -->
+    ${canonicalProtocols.length > 0 ? `
+      <div class="section-title">Protocolos Órgãos Externos (${canonicalProtocols.length})</div>
+      ${canonicalProtocols.map((p) => `
+        <div class="card" style="background: #f8fafc;">
+          <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="font-size: 12px; font-family: monospace;">${p.numeroProtocolo}</strong>
+              <div style="font-size: 11px; color: var(--text-muted);">${p.orgaoOuEmpresa || 'Capitania / RBNA'} • Status: ${p.status}</div>
+            </div>
+            <span style="font-size: 11px; font-weight: 700; color: #475569;">${formatDate(p.dataEnvio || p.createdAt)}</span>
+          </div>
+        </div>
+      `).join('')}
+    ` : ''}
+
+    <!-- Entregas e Remessas dos Documentos -->
+    <div class="section-title">
+      <span>Entregas dos Documentos (${deliveryDispatchRows.length} remessa(s))</span>
+    </div>
+    ${deliveryDispatchRows.length === 0 ? '<p style="font-size: 12px; color: var(--text-muted);">Nenhuma remessa registrada até o momento.</p>' : deliveryDispatchRows.map((d, index) => `
+      <div class="card" style="border-left: 4px solid #ea580c; background: #fffaf5;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <strong style="font-size: 13px; color: #9a3412;">Remessa ${index + 1} (${String(d.tipo || '').toUpperCase()})</strong>
+            <div style="font-size: 11px; color: #431407; margin-top: 2px;">
+              Entregue em: <strong>${formatDate(d.dataEntrega)}</strong> via <strong>${d.meioEntrega || 'Não informado'}</strong>
+            </div>
+            <div style="font-size: 11px; color: #431407;">
+              Recebedor: <strong>${d.nomeRecebedor || 'Não informado'}</strong> • Destino: ${d.destino || '-'}
+            </div>
+          </div>
+          ${d.comprovanteUrl ? `
+            <a href="${d.comprovanteUrl}" target="_blank" class="btn" style="color: #c2410c; border-color: #fed7aa; background: #fff;">
+              📄 Ver Comprovante
+            </a>
+          ` : '<span style="font-size: 10px; color: var(--text-muted);">Sem comprovante</span>'}
+        </div>
+      </div>
+    `).join('')}
+
+    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text-muted);">
+      Nautilus Engenharia Naval • Sistema de Gestão e Monitoramento Operacional
+    </div>
+  </div>
+</body>
+</html>`;
+
+    res.type("html").send(html);
+  } catch (error) {
+    console.error("Erro ao gerar relatório da OS:", error);
+    res.status(500).send("<h1>Erro ao gerar visualização externa da OS</h1>");
+  }
+});
+
 // ---------- POST /api/service-orders/:id/schedule ----------
 router.post("/:id/schedule", requirePermission([PERMISSIONS.REGISTRAR_ACEITE_AGENDAR]), async (req: any, res: any) => {
   try {

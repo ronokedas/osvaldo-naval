@@ -4,8 +4,8 @@ import { User } from '../types';
 import { hasModuleAccess, ModuleId } from '../access-control';
 import { 
   LayoutDashboard, 
-  Ship, 
-  FileText, 
+  CalendarCheck, 
+  DollarSign, 
   BellRing
 } from 'lucide-react';
 
@@ -22,7 +22,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentUser,
   myTasksCount,
 }) => {
-  // Define nav items similarly to Sidebar but optimized for mobile
+  // Atalhos requisitados pelo Osvaldo: Início, Agenda da Equipe, Financeiro, Pendências
   const navItems = [
     {
       id: 'dashboard' as TabType,
@@ -31,24 +31,30 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       roles: ['admin', 'financeiro', 'tecnico'],
     },
     {
-      id: 'vessels' as TabType,
-      label: 'Frota',
-      icon: Ship,
-      module: 'vessels' as ModuleId,
+      id: 'tasks' as TabType,
+      label: 'Agenda Equipe',
+      icon: CalendarCheck,
+      module: 'tasks' as ModuleId,
+      badge: myTasksCount > 0 ? myTasksCount : undefined,
     },
     {
-      id: 'proposals' as TabType,
-      label: 'Propostas',
-      icon: FileText,
-      module: 'proposals' as ModuleId,
+      id: 'financial' as TabType,
+      label: 'Financeiro',
+      icon: DollarSign,
+      module: 'financial' as ModuleId,
     },
-    { id: 'commitments' as TabType, label: 'Pendências', icon: BellRing, module: 'commitments' as ModuleId },
+    { 
+      id: 'commitments' as TabType, 
+      label: 'Pendências', 
+      icon: BellRing, 
+      module: 'commitments' as ModuleId,
+    },
   ];
 
   const visibleItems = navItems.filter((item) => !item.module || hasModuleAccess(currentUser, item.module));
 
   return (
-    <div 
+    <div
       className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
@@ -67,6 +73,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             >
               <div className="relative">
                 <Icon className={`w-5 h-5 ${isActive ? 'fill-blue-100' : ''}`} />
+                {item.badge ? (
+                  <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center">
+                    {item.badge}
+                  </span>
+                ) : null}
               </div>
               <span className={`text-[10px] font-medium ${isActive ? 'font-bold' : ''}`}>
                 {item.label}

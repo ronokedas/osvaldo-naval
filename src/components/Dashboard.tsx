@@ -21,10 +21,13 @@ import {
   Activity,
   Layers,
   BellRing,
+  Smartphone,
+  Monitor,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { formatDateBR } from '../utils/date-formatters';
 import { hasModuleAccess } from '../access-control';
+import { MobileExecutiveDashboard } from './MobileExecutiveDashboard';
 
 const hasPerm = (user: User | null | undefined, permission: string) => !!user && (user.role === 'admin' || (user.permissions || []).includes(permission));
 
@@ -74,6 +77,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [activeTabMode, setActiveTabMode] = useState<'pipeline' | 'smart_actions' | 'chart'>('pipeline');
   const [selectedPipelineStage, setSelectedPipelineStage] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [mobileViewMode, setMobileViewMode] = useState<'executive' | 'complete'>('executive');
 
   // Metrics calculation
   const openVessels = vessels.filter((v) => v.status === 'aberta');
@@ -296,14 +300,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return { label: 'Sem Serviço', bg: 'bg-slate-100 text-slate-500 border-slate-200' };
       case 'aguardando_agendamento':
       case 'visita_agendada':
+
       default:
         return { label: 'Agendamento / Início', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
     }
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Top Banner / Welcome Header */}
+    <div className="pb-12">
+      {/* Mobile Executive Dashboard (Visão do Dia • Osvaldo - Modelo 2) */}
+      <div className="md:hidden">
+        <MobileExecutiveDashboard
+          currentUser={currentUser}
+          vessels={vessels}
+          tasks={tasks}
+          proposals={proposals}
+          criticalPendings={criticalPendings}
+          financialEntries={financialEntries}
+          serviceOrders={serviceOrders}
+          summary={summary}
+          onSelectVessel={onSelectVessel}
+          onNavigateTab={onNavigateTab}
+          onOpenServiceOrder={onOpenServiceOrder}
+        />
+      </div>
+
+      {/* Desktop Dashboard (Visão Completa em telas maiores) */}
+      <div className="hidden md:block space-y-6">
+        {/* Top Banner / Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C] tracking-tight">
@@ -1007,5 +1031,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };
